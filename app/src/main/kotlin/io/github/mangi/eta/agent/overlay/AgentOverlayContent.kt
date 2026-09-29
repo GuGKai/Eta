@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -121,7 +122,7 @@ private val RainbowColors = listOf(
 /**
  * 屏幕四边氛围光窗口：全屏触摸穿透（FLAG_NOT_TOUCHABLE），不挡操作。
  * 窗口类型 TYPE_ACCESSIBILITY_OVERLAY，截图时被 takeScreenshotOfWindow 过滤，对 Agent 透明。
- * - RUNNING：半透明黑底压暗 + 彩虹色旋转 SweepGradient 光圈。
+ * - RUNNING：半透明黑底压暗 + 彩虹色旋转 SweepGradient 光圈，圆角取 Display 的真实屏幕圆角。
  * - PAUSED / FINISHED / FAILED：不绘制。
  */
 @Composable
@@ -137,6 +138,10 @@ internal fun AgentOverlayGlow(state: AgentOverlayState) {
         animationSpec = infiniteRepeatable(tween(5000), RepeatMode.Restart),
         label = "rotation",
     )
+
+    // 光圈必须贴合物理屏幕圆角；硬编码半径会在四角露出明显错位。
+    val display = LocalView.current.display
+    val cornerRadii = remember(display) { displayCornerRadii(display) }
 
     Box(
         modifier = Modifier.fillMaxSize().drawBehind {
@@ -168,9 +173,42 @@ internal fun AgentOverlayGlow(state: AgentOverlayState) {
                 shader.setLocalMatrix(matrix)
                 paint.shader = shader
                 val rect = android.graphics.RectF(0f, 0f, w, h)
-                canvas.nativeCanvas.drawRoundRect(rect, 30f, 30f, paint)
+                val path = android.graphics.Path()
+                if (cornerRadii.isEmpty()) {
+                    path.addRect(rect, android.graphics.Path.Direction.CW)
+                } else {
+                    path.addRoundRect(rect, cornerRadii, android.graphics.Path.Direction.CW)
+                }
+                canvas.nativeCanvas.drawPath(path, paint)
             }
         }
+    )
+}
+
+/**
+ * 读取真实屏幕圆角半径（px），顺序为 Path.addRoundRect 需要的
+ * 左上、右上、右下、左下，每角两个值；已按当前旋转方向取值。
+ * 设备未上报圆角信息时返回空数组，调用方按直角绘制。
+ */
+private fun displayCornerRadii(display: android.view.Display?): FloatArray {
+    if (display == null) return floatArrayOf()
+
+    fun radius(position: Int): Float = runCatching {
+        display.getRoundedCorner(position)?.radius?.toFloat()
+    }.getOrNull()?.coerceAtLeast(0f) ?: 0f
+
+    val topLeft = radius(android.view.RoundedCorner.POSITION_TOP_LEFT)
+    val topRight = radius(android.view.RoundedCorner.POSITION_TOP_RIGHT)
+    val bottomRight = radius(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)
+    val bottomLeft = radius(android.view.RoundedCorner.POSITION_BOTTOM_LEFT)
+    if (topLeft == 0f && topRight == 0f && bottomRight == 0f && bottomLeft == 0f) {
+        return floatArrayOf()
+    }
+    return floatArrayOf(
+        topLeft, topLeft,
+        topRight, topRight,
+        bottomRight, bottomRight,
+        bottomLeft, bottomLeft,
     )
 }
 
