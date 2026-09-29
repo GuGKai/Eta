@@ -61,7 +61,7 @@ internal class EtaBackupException(message: String, cause: Throwable? = null) :
     IllegalArgumentException(message, cause)
 
 internal object EtaBackupRepository {
-    private const val MAX_BACKUP_BYTES = 64L * 1024L * 1024L
+    private const val MAX_BACKUP_BYTES = 256L * 1024L * 1024L
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -75,7 +75,7 @@ internal object EtaBackupRepository {
             val document = snapshot(context.applicationContext)
             val bytes = json.encodeToString(document).toByteArray(Charsets.UTF_8)
             if (bytes.size > MAX_BACKUP_BYTES) {
-                throw EtaBackupException("备份文件超过 64 MiB 限制")
+                throw EtaBackupException(backupSizeLimitMessage(MAX_BACKUP_BYTES))
             }
             output.write(bytes)
             output.flush()
@@ -290,9 +290,14 @@ private fun InputStream.readBytesLimited(maxBytes: Long): ByteArray {
         if (count < 0) break
         total += count
         if (total > maxBytes) {
-            throw EtaBackupException("备份文件超过 64 MiB 限制")
+            throw EtaBackupException(backupSizeLimitMessage(maxBytes))
         }
         output.write(buffer, 0, count)
     }
     return output.toByteArray()
 }
+
+
+/** 备份体积上限提示文案。 */
+private fun backupSizeLimitMessage(limit: Long): String =
+    "备份文件超过 ${limit / 1024 / 1024} MiB 限制"
