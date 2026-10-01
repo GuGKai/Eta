@@ -58,6 +58,7 @@ internal object AgentConversationStore {
          * 重启后列表被压紧；增量保存按下标截断后缀，这些会话必须先整段重写一次。
          */
         val unalignedConversationIds: Set<String> = emptySet(),
+        val pinned: Set<String> = emptySet(),
     )
 
     private val saveMutex = Mutex()
@@ -73,8 +74,9 @@ internal object AgentConversationStore {
         conversationsById: Map<String, AgentChatHomeUiState>,
         titles: Map<String, String>,
         updatedAt: Map<String, Long>,
+        pinned: Set<String> = emptySet(),
     ) = AgentConversationPersistence().save(
-        context, Snapshot(selectedConversationId, conversationsById, titles, updatedAt),
+        context, Snapshot(selectedConversationId, conversationsById, titles, updatedAt, pinned = pinned),
     )
 
     internal suspend fun saveChanges(
@@ -115,6 +117,7 @@ internal object AgentConversationStore {
                                     createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     modelId = state.modelId,
+                                    pinned = state.pinned,
                                 )
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))
@@ -191,12 +194,15 @@ internal object AgentConversationStore {
                 conversationsById = emptyMap(),
                 titles = emptyMap(),
                 updatedAt = emptyMap(),
+                pinned = emptySet(),
             )
         }
 
         val states = linkedMapOf<String, AgentChatHomeUiState>()
         val titles = mutableMapOf<String, String>()
         val updatedAt = mutableMapOf<String, Long>()
+        val pinned = mutableSetOf<String>()
+
         conversations.forEach { conversation ->
             val effort = ReasoningEffort.fromWireValue(conversation.reasoningEffort) ?: ReasoningEffort.DEFAULT
             val character = if (conversation.hasRoleplay) loadCharacterSummary(dao, conversation.id) else null
@@ -214,6 +220,7 @@ internal object AgentConversationStore {
             )
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
+            if (conversation.pinned) pinned += conversation.id
         }
 
         val selected = dao.state()?.selectedConversationId
@@ -231,6 +238,7 @@ internal object AgentConversationStore {
             titles = titles,
             updatedAt = updatedAt,
             unalignedConversationIds = unaligned,
+            pinned = pinned,
         )
     }
 
