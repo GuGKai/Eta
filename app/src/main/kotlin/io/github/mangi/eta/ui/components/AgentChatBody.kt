@@ -97,6 +97,7 @@ import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -467,6 +468,26 @@ internal fun AgentConversationMessages(
     }
     var isBottomSettling by remember { mutableStateOf(isStreaming) }
 
+    // 每轮最终正式回答开始输出时，把视口停靠在「本轮工作过程卡片」顶部并停止跟底，
+    // 让用户从正文第一行往下读，而不是被一路拖到最新一行。卡片的收尾折叠由上游自己完成。
+    var finalAnswerAnchored by remember { mutableStateOf(false) }
+    var finalAnswerHandledId by remember { mutableStateOf<String?>(null) }
+    var wasUserDragging by remember { mutableStateOf(false) }
+    val latestTailMessage by rememberUpdatedState(tailMessage)
+    val latestTimelineEntries by rememberUpdatedState(timelineEntries)
+    val streamingAnswerId = tailMessage
+        ?.takeIf { message -> message.content.isNotBlank() }
+        ?.id
+
+    LaunchedEffect(isStreaming) {
+        if (isStreaming) {
+            // 新一轮开始：清掉上一轮的停靠，恢复跟底等待这一轮的最终正文。
+            finalAnswerAnchored = false
+            finalAnswerHandledId = null
+            wasUserDragging = false
+        }
+    }
+
     LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging) {
         if (!keepBottomAnchored || isUserDragging) {
             isBottomSettling = false
@@ -481,13 +502,66 @@ internal fun AgentConversationMessages(
         }
     }
 
+    LaunchedEffect(isStreaming, streamingAnswerId) {
+        val answerId = streamingAnswerId ?: return@LaunchedEffect
+        if (!isStreaming || finalAnswerHandledId == answerId) return@LaunchedEffect
+        // 中间过渡文本后面往往还会跟工具调用：先等一小段时间再确认它仍是本轮收尾正文。
+        delay(FinalAnswerAnchorSettleMillis)
+        if (!isStreaming) return@LaunchedEffect
+        if (latestTailMessage?.id != answerId) return@LaunchedEffect
+        val entries = latestTimelineEntries
+        val answerIndex = entries.indexOfLast { entry ->
+            entry is AgentTimelineEntry.Message && entry.message.id == answerId
+        }
+        if (answerIndex < 0) return@LaunchedEffect
+        val isLastEntry = (entries.lastOrNull() as? AgentTimelineEntry.Message)?.message?.id == answerId
+        if (!isLastEntry) return@LaunchedEffect
+        val lastUserIndex = entries.indexOfLast { entry ->
+            entry is AgentTimelineEntry.Message && entry.message is UserMessageUi
+        }
+        val previousIndex = answerIndex - 1
+        // 停靠在本轮折叠后的工作过程卡片上：卡片整条落在顶部窗口组件下方，正文第一行紧随其后。
+        val targetIndex = if (previousIndex > lastUserIndex &&
+            entries.getOrNull(previousIndex) is AgentTimelineEntry.WorkProcess
+        ) {
+            previousIndex
+        } else {
+            answerIndex
+        }
+        // 卡片收起由上游在正文开始输出时自动完成；等这段收起动画播完再停靠视口，
+        // 否则卡片高度还在变化，滚动落点会偏。
+        if (targetIndex == previousIndex) {
+            delay(WorkProcessCollapseMillis)
+        }
+        finalAnswerHandledId = answerId
+        finalAnswerAnchored = true
+        scrollState.animateScrollToItem(targetIndex)
+    }
+
+    LaunchedEffect(isStreaming, latestTailMessage?.id) {
+        if (isStreaming && finalAnswerAnchored && latestTailMessage?.id != finalAnswerHandledId) {
+            // 停靠之后又冒出新的工具步骤：刚才停住的只是过渡文本，恢复跟底。
+            finalAnswerAnchored = false
+        }
+    }
+
+    LaunchedEffect(isUserDragging, isAtBottom) {
+        if (isUserDragging) {
+            wasUserDragging = true
+        } else if (wasUserDragging && isAtBottom) {
+            // 用户主动滑回底部：放弃本轮停靠，恢复跟底。
+            wasUserDragging = false
+            finalAnswerAnchored = false
+        }
+    }
+
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
             isStreaming = isStreaming,
             keepBottomAnchored = keepBottomAnchored,
             isUserDragging = isUserDragging,
             isBottomSettling = isBottomSettling,
-        )
+        ) && !finalAnswerAnchored
     )
     val currentBottomItemIndex by rememberUpdatedState(bottomItemIndex)
     val bottomFollowDecisions = remember(scrollState) {
@@ -990,6 +1064,10 @@ private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f
 private const val BOTTOM_FOLLOW_MIN_STEP_PX = 0.5f
+// 最终正文开始输出后先等这么久，确认它仍是本轮收尾正文再停靠视口。
+private const val FinalAnswerAnchorSettleMillis = 420L
+// 工作过程卡片收起动画的等待时长：收起播完再停靠，避免卡片高度还在变化时滚动偏位。
+private const val WorkProcessCollapseMillis = 360L
 private const val BOTTOM_FOLLOW_SNAP_DISTANCE_PX = 0.75f
 
 internal fun resolveKeepBottomAnchored(
