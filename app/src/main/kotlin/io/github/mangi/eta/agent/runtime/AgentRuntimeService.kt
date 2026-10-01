@@ -2,7 +2,13 @@ package io.github.mangi.eta.agent.runtime
 
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
+import io.github.mangi.eta.R
+import io.github.mangi.eta.ui.MainActivity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -30,6 +36,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
@@ -88,6 +95,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
     private var orbView: ComposeView? = null
+
+    /** 回复完成通知的独立渠道：用户可在系统通知设置里单独配置声音/震动。 */
+    private val replyChannelId = "eta_reply_done"
+    private val replyNotificationId = 1108
+    private val replyPreviewLimit = 60
     private var bubbleView: ComposeView? = null
     private var resultCardView: ComposeView? = null
     private var glowParams: WindowManager.LayoutParams? = null
@@ -424,7 +436,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             runCatching {
                 state.value = state.value.applyEvent(event)
                 if (revealsForegroundOperation && entrySurfaceReady) {
-                    if (orbView == null) {
+                    if (glowView == null) {
                         AgentHapticFeedback.perform(
                             this,
                             AgentHapticFeedback.Type.RUN_STARTED,
@@ -467,6 +479,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             activeSession = null
             runCatching {
                 if (result.ok) {
+                    notifyReplyCompleted(result.content)
                     enterFinalState(
                         state.value.copy(
                             phase = AgentOverlayPhase.FINISHED,
@@ -493,6 +506,48 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AndroidAgentLogger.warnThrottled("runtime_terminal_overlay_failed") {
                     "Agent runtime terminal overlay failed: type=${throwable.safeLogType()}"
                 }
+            }
+        }
+    }
+
+    /**
+     * 回复完成后弹出的普通通知：走独立渠道，用户可在系统通知设置里配置是否响铃/震动。
+     */
+    private fun notifyReplyCompleted(content: String) {
+        // 用户此刻就在 Eta 界面里，回复已直接可见，不再发通知打扰。
+        if (AppForegroundState.isUiVisible) return
+        runCatching {
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+            if (manager.getNotificationChannel(replyChannelId) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        replyChannelId,
+                        getString(R.string.execution_reply_done_channel),
+                        NotificationManager.IMPORTANCE_DEFAULT,
+                    ),
+                )
+            }
+            val body = MarkdownTextStripper.strip(content)
+            val open = PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val preview = body.take(replyPreviewLimit)
+                .ifBlank { getString(R.string.execution_reply_done_fallback) }
+            val notification = Notification.Builder(this, replyChannelId)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(getString(R.string.execution_reply_done_title))
+                .setContentText(preview)
+                .setStyle(Notification.BigTextStyle().bigText(body))
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build()
+            manager.notify(replyNotificationId, notification)
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_reply_notification_failed") {
+                "Agent reply notification failed: type=${throwable.safeLogType()}"
             }
         }
     }
@@ -804,7 +859,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun showOverlay() {
-        if (orbView != null) return
+        if (glowView != null) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return
         val wm = overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
@@ -823,23 +878,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowView = glow
         glowParams = glowLp
 
-        // ── 光球窗口：始终显示，右侧中下 ──────────────────────────────
-        val orb = createOverlayComposeView {
-            AgentOverlayOrb(
-                state = state.value,
-                onToggleCollapse = ::toggleCollapse,
-            )
-        }
-        val orbLp = orbLayoutParams()
-        runCatching { wm.addView(orb, orbLp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_orb_add_view_failed") {
-                "Agent runtime orb addView failed: type=${throwable.safeLogType()}"
-            }
-            return
-        }
-        orbView = orb
-        orbParams = orbLp
-        orb.visibility = View.VISIBLE
+        // ── 光球窗口：已停用（用户要求移除屏幕右侧中下的悬浮球）──────
 
         // ── 小气泡窗口：展开态显示，跟随光球，窗口外触摸穿透 ─────────
         if (!collapsed.value) {

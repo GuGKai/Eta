@@ -6,4 +6,8 @@
         <item quantity="other">%1$d 项任务正在运行，可返回 Eta 查看进度</item>
     </plurals>
     <string name="execution_stop">停止运行任务</string>
+    <string name="execution_reply_done_channel">回复完成提醒</string>
+    <string name="execution_live_title">ETA 👉 %1$s</string>
+    <string name="execution_reply_done_title">Eta 已完成回复</string>
+    <string name="execution_reply_done_fallback">点击查看回复</string>
 </resources>

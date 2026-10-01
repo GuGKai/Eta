@@ -21,6 +21,8 @@
   <string name="action_edit">编辑</string>
   <string name="action_rename">重命名</string>
   <string name="action_export">导出</string>
+  <string name="action_pin">置顶</string>
+  <string name="action_unpin">取消置顶</string>
   <string name="action_done">完成</string>
   <string name="action_add">添加</string>
   <string name="action_remove">移除</string>
@@ -458,6 +460,7 @@
   <string name="tool_status_failed">失败</string>
   <string name="tool_browser_loading">正在加载 · %1$d%%</string>
   <string name="tool_browser_preview">页面预览</string>
+  <string name="execution_live_step">正在处理 · %1$s</string>
   <plurals name="work_processing_step">
     <item quantity="other">正在处理 · 第 %d 步</item>
   </plurals>

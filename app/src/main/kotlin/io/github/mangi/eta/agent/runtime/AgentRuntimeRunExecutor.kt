@@ -65,6 +65,7 @@ internal class AgentRuntimeRunExecutor(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
     ): Outcome {
+        ExecutionLiveProgress.onRunStarted(request.prompt)
         val runController = session.controller
         val archivedEvents = mutableListOf<AgentEvent>()
         var entrySurfaceGuard: EntrySurfaceGuard? = null
@@ -173,6 +174,7 @@ internal class AgentRuntimeRunExecutor(
                     entrySurfaceGuard?.consumeScreenshotExcludedPackages().orEmpty()
                 },
                 beforeToolExecution = { toolName ->
+                    ExecutionLiveProgress.onStepStarted(toolName)
                     val requiresAccessibility =
                         AgentToolRequirements.requiresAccessibility(toolName)
                     if (

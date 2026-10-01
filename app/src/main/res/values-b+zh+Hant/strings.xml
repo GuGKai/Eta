@@ -446,6 +446,7 @@
   <string name="tool_status_failed">失敗</string>
   <string name="tool_browser_loading">載入中 · %1$d%%</string>
   <string name="tool_browser_preview">頁面預覽</string>
+  <string name="execution_live_step">正在處理 · %1$s</string>
   <plurals name="work_processing_step">
     <item quantity="other">處理中 · 第 %d 步</item>
   </plurals>

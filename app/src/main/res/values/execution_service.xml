@@ -7,4 +7,8 @@
         <item quantity="other">%1$d tasks are running. Return to Eta to check progress.</item>
     </plurals>
     <string name="execution_stop">Stop running tasks</string>
+    <string name="execution_reply_done_channel">Reply finished</string>
+    <string name="execution_live_title">ETA 👉 %1$s</string>
+    <string name="execution_reply_done_title">Eta finished replying</string>
+    <string name="execution_reply_done_fallback">Tap to view the reply</string>
 </resources>

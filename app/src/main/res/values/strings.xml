@@ -21,6 +21,8 @@
   <string name="action_edit">Edit</string>
   <string name="action_rename">Rename</string>
   <string name="action_export">Export</string>
+  <string name="action_pin">Pin to top</string>
+  <string name="action_unpin">Unpin</string>
   <string name="action_done">Done</string>
   <string name="action_add">Add</string>
   <string name="action_remove">Remove</string>
@@ -470,6 +472,7 @@
   <string name="tool_status_failed">Failed</string>
   <string name="tool_browser_loading">Loading · %1$d%%</string>
   <string name="tool_browser_preview">Page preview</string>
+  <string name="execution_live_step">Processing · %1$s</string>
   <plurals name="work_processing_step">
     <item quantity="one">Working · step %d</item>
     <item quantity="other">Working · step %d</item>
