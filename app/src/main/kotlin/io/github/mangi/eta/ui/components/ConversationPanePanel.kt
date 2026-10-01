@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsBar
@@ -63,6 +64,7 @@ import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
@@ -87,6 +89,7 @@ private object ConversationPanelMetrics {
     val SectionIconSize = 14.dp
     val SectionIconGap = 8.dp
     val SectionCountGap = 12.dp
+    val SectionDividerVerticalPadding = 6.dp
     val RowMinHeight = 48.dp
     val RowGap = 4.dp
     val RowCornerRadius = 12.dp
@@ -120,6 +123,7 @@ internal fun ConversationPanePanel(
     onSearchChange: (String) -> Unit,
     onConversationSelected: (String) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
+    onConversationPinnedChange: (ConversationSummaryUi, Boolean) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
     onOpenSettings: () -> Unit,
@@ -177,7 +181,7 @@ internal fun ConversationPanePanel(
                         EmptyConversations(isSearching = query.isNotBlank())
                     }
                 } else {
-                    groups.forEach { group ->
+                    groups.forEachIndexed { index, group ->
                         item(key = "section-${group.section}") {
                             ConversationSectionHeader(group = group)
                         }
@@ -190,9 +194,18 @@ internal fun ConversationPanePanel(
                                 selected = conversation.id == state.selectedConversationId,
                                 onClick = { onConversationSelected(conversation.id) },
                                 onRename = { onConversationRename(conversation) },
+                                onTogglePinned = {
+                                    onConversationPinnedChange(conversation, !conversation.isPinned)
+                                },
                                 onExport = { onConversationExport(conversation) },
                                 onDelete = { onConversationDelete(conversation) },
                             )
+                        }
+                        // 置顶区与日期区之间补一条分割线，分组标题样式保持原有日期分隔方式。
+                        if (group.section == ConversationDrawerSection.Pinned && index < groups.lastIndex) {
+                            item(key = "section-divider-pinned") {
+                                ConversationSectionDivider()
+                            }
                         }
                     }
                 }
@@ -277,7 +290,11 @@ private fun ConversationSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Schedule,
+            imageVector = if (group.section == ConversationDrawerSection.Pinned) {
+                Icons.Rounded.PushPin
+            } else {
+                Icons.Rounded.Schedule
+            },
             contentDescription = null,
             modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
             tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
@@ -299,6 +316,17 @@ private fun ConversationSectionHeader(
     }
 }
 
+@Composable
+private fun ConversationSectionDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(
+            vertical = ConversationPanelMetrics.SectionDividerVerticalPadding,
+        ),
+        thickness = 0.33.dp,
+        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationTextRow(
@@ -306,6 +334,7 @@ private fun ConversationTextRow(
     selected: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    onTogglePinned: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -319,11 +348,12 @@ private fun ConversationTextRow(
                 .heightIn(min = ConversationPanelMetrics.RowMinHeight)
                 .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
                 .background(
-                    if (selected) {
+                    when {
                         // 与侧栏背景保持一档亮度差；浅色下与 surfaceContainerHigh 相同。
-                        MiuixTheme.colorScheme.surfaceContainerHighest
-                    } else {
-                        Color.Transparent
+                        selected -> MiuixTheme.colorScheme.surfaceContainerHighest
+                        // 置顶行比侧栏底色深一档，未选中时也能与普通会话区分。
+                        conversation.isPinned -> MiuixTheme.colorScheme.surfaceContainerHigh
+                        else -> Color.Transparent
                     },
                 )
                 .combinedClickable(
@@ -375,9 +405,24 @@ private fun ConversationTextRow(
             alignment = PopupPositionProvider.Align.BottomEnd,
             onDismissRequest = { showActionMenu = false },
         ) {
+            val pinText = stringResource(
+                if (conversation.isPinned) R.string.action_unpin else R.string.action_pin,
+            )
             val renameText = stringResource(R.string.action_rename)
             val exportText = stringResource(R.string.action_export)
             val deleteText = stringResource(R.string.action_delete)
+            val pinItem = remember(pinText) {
+                DropdownItem(
+                    text = pinText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.Rounded.PushPin,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                        )
+                    },
+                )
+            }
             val renameItem = remember(renameText) {
                 DropdownItem(
                     text = renameText,
@@ -422,10 +467,20 @@ private fun ConversationTextRow(
             )
             ListPopupColumn {
                 DropdownImpl(
-                    item = renameItem,
-                    optionSize = 3,
+                    item = pinItem,
+                    optionSize = 4,
                     isSelected = false,
                     index = 0,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onTogglePinned()
+                    },
+                )
+                DropdownImpl(
+                    item = renameItem,
+                    optionSize = 4,
+                    isSelected = false,
+                    index = 1,
                     onSelectedIndexChange = {
                         showActionMenu = false
                         onRename()
@@ -433,9 +488,9 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = exportItem,
-                    optionSize = 3,
+                    optionSize = 4,
                     isSelected = false,
-                    index = 1,
+                    index = 2,
                     onSelectedIndexChange = {
                         showActionMenu = false
                         onExport()
@@ -443,9 +498,9 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = deleteItem,
-                    optionSize = 3,
+                    optionSize = 4,
                     isSelected = false,
-                    index = 2,
+                    index = 3,
                     dropdownColors = deleteColors,
                     onSelectedIndexChange = {
                         showActionMenu = false

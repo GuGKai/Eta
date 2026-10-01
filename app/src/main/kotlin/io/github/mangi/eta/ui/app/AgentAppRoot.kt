@@ -281,6 +281,9 @@ fun AgentAppRoot(
             onConversationRename = { conversation ->
                 conversationRenameTarget = conversation
             },
+            onConversationPinnedChange = { conversation, pinned ->
+                agentState.setConversationPinned(conversation.id, pinned)
+            },
             onConversationExport = { conversation ->
                 conversationExportTarget = conversation
                 conversationExportLauncher.launch(
