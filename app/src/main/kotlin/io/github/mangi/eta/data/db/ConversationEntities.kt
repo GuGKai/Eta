@@ -22,6 +22,7 @@ internal data class ConversationEntity(
     @ColumnInfo(name = "revisions_json", defaultValue = "''") val revisionsJson: String = "",
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "pinned", defaultValue = "0") val pinned: Boolean = false,
 )
 
 internal data class ConversationMetadata(
@@ -34,6 +35,7 @@ internal data class ConversationMetadata(
     @ColumnInfo(name = "revisions_json") val revisionsJson: String = "",
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "pinned") val pinned: Boolean = false,
 )
 
 @Serializable

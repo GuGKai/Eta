@@ -43,6 +43,7 @@ internal object AgentConversationStore {
         val conversationsById: Map<String, AgentChatHomeUiState>,
         val titles: Map<String, String>,
         val updatedAt: Map<String, Long>,
+        val pinned: Set<String>,
     )
 
     private val saveMutex = Mutex()
@@ -58,6 +59,7 @@ internal object AgentConversationStore {
         conversationsById: Map<String, AgentChatHomeUiState>,
         titles: Map<String, String>,
         updatedAt: Map<String, Long>,
+        pinned: Set<String>,
     ) {
         val appContext = context.applicationContext
         saveMutex.withLock {
@@ -81,6 +83,7 @@ internal object AgentConversationStore {
                         revisionsJson = if (state.roleplay == null) "" else json.encodeToString(state.roleplayMessages),
                         createdAt = updatedAt[id] ?: now,
                         updatedAt = updatedAt[id] ?: now,
+                        pinned = id in pinned,
                     )
                 }
                 val messages = sorted.flatMap { (conversationId, state) ->
@@ -117,6 +120,7 @@ internal object AgentConversationStore {
                 conversationsById = emptyMap(),
                 titles = emptyMap(),
                 updatedAt = emptyMap(),
+                pinned = emptySet(),
             )
         }
 
@@ -138,6 +142,7 @@ internal object AgentConversationStore {
         val states = linkedMapOf<String, AgentChatHomeUiState>()
         val titles = mutableMapOf<String, String>()
         val updatedAt = mutableMapOf<String, Long>()
+        val pinned = mutableSetOf<String>()
 
         conversations.forEach { conversation ->
             val checkpoint = dao.contextCheckpoint(conversation.id)
@@ -168,6 +173,7 @@ internal object AgentConversationStore {
             ).let(RoleplayConversationReducer::decorate)
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
+            if (conversation.pinned) pinned += conversation.id
         }
 
         val selected = dao.state()?.selectedConversationId
@@ -179,6 +185,7 @@ internal object AgentConversationStore {
             conversationsById = states,
             titles = titles,
             updatedAt = updatedAt,
+            pinned = pinned,
         )
     }
 
