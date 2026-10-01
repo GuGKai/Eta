@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.data.model.ReasoningEffort
@@ -473,8 +474,13 @@ internal fun AgentConversationMessages(
     var finalAnswerAnchored by remember { mutableStateOf(false) }
     var finalAnswerHandledId by remember { mutableStateOf<String?>(null) }
     var wasUserDragging by remember { mutableStateOf(false) }
+    // 待执行的停靠目标：写入后交给独立协程滚动，避免流式结束（含后台完成）把滚动一起取消。
+    var pendingAnchorIndex by remember { mutableStateOf<Int?>(null) }
+    // 每次回到前台自增：后台挂起的停靠会在回到前台后重试。
+    var resumeTick by remember { mutableStateOf(0) }
     val latestTailMessage by rememberUpdatedState(tailMessage)
     val latestTimelineEntries by rememberUpdatedState(timelineEntries)
+    val latestStreaming by rememberUpdatedState(isStreaming)
     val streamingAnswerId = tailMessage
         ?.takeIf { message -> message.content.isNotBlank() }
         ?.id
@@ -485,7 +491,13 @@ internal fun AgentConversationMessages(
             finalAnswerAnchored = false
             finalAnswerHandledId = null
             wasUserDragging = false
+            pendingAnchorIndex = null
         }
+    }
+
+    LifecycleResumeEffect(Unit) {
+        resumeTick++
+        onPauseOrDispose { }
     }
 
     LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging) {
@@ -502,12 +514,15 @@ internal fun AgentConversationMessages(
         }
     }
 
-    LaunchedEffect(isStreaming, streamingAnswerId) {
+    // key 只挂 answerId，不挂 isStreaming：回复在应用后台完成时 isStreaming 会由 true 变 false，
+    // 若把它放进 key，判定协程连同停靠意图会被一起取消，回到前台就只能停在回答末尾。
+    LaunchedEffect(streamingAnswerId) {
         val answerId = streamingAnswerId ?: return@LaunchedEffect
-        if (!isStreaming || finalAnswerHandledId == answerId) return@LaunchedEffect
+        if (finalAnswerHandledId == answerId) return@LaunchedEffect
+        // 只在「这一轮确实在流式」时开始判定；判定过程中允许它结束。
+        if (!latestStreaming) return@LaunchedEffect
         // 中间过渡文本后面往往还会跟工具调用：先等一小段时间再确认它仍是本轮收尾正文。
         delay(FinalAnswerAnchorSettleMillis)
-        if (!isStreaming) return@LaunchedEffect
         if (latestTailMessage?.id != answerId) return@LaunchedEffect
         val entries = latestTimelineEntries
         val answerIndex = entries.indexOfLast { entry ->
@@ -520,7 +535,7 @@ internal fun AgentConversationMessages(
             entry is AgentTimelineEntry.Message && entry.message is UserMessageUi
         }
         val previousIndex = answerIndex - 1
-        // 停靠在本轮折叠后的工作过程卡片上：卡片整条落在顶部窗口组件下方，正文第一行紧随其后。
+        // 停靠在本轮已收起的工作过程卡片上：卡片整条落在顶部窗口组件下方，正文第一行紧随其后。
         val targetIndex = if (previousIndex > lastUserIndex &&
             entries.getOrNull(previousIndex) is AgentTimelineEntry.WorkProcess
         ) {
@@ -528,14 +543,24 @@ internal fun AgentConversationMessages(
         } else {
             answerIndex
         }
-        // 卡片收起由上游在正文开始输出时自动完成；等这段收起动画播完再停靠视口，
+        // 卡片收起由上游在正文开始输出时自动完成；等这段收起动画播完再交给停靠协程，
         // 否则卡片高度还在变化，滚动落点会偏。
         if (targetIndex == previousIndex) {
             delay(WorkProcessCollapseMillis)
         }
         finalAnswerHandledId = answerId
         finalAnswerAnchored = true
-        scrollState.animateScrollToItem(targetIndex)
+        pendingAnchorIndex = targetIndex
+    }
+
+    // 独立执行停靠：key 不随 isStreaming 变化，后台完成回复也不会丢；后台拿不到帧时动画挂起，
+    // 回到前台（resumeTick 变化）会重新执行一次。
+    LaunchedEffect(pendingAnchorIndex, resumeTick) {
+        val target = pendingAnchorIndex ?: return@LaunchedEffect
+        // 等折叠动画播完，避免卡片高度还在变化时滚动、停靠位置偏掉。
+        delay(WorkProcessCollapseMillis)
+        scrollState.animateScrollToItem(target)
+        pendingAnchorIndex = null
     }
 
     LaunchedEffect(isStreaming, latestTailMessage?.id) {
