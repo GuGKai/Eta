@@ -4,7 +4,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import android.app.Service
 import android.app.ActivityOptions
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
+import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.MainActivity
 import android.os.Build
 import android.content.Context
@@ -35,6 +39,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
@@ -99,6 +104,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var capsuleParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
     private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
+
+    /** 回复完成通知的独立渠道：用户可在系统通知设置里单独配置声音/震动。 */
+    private val replyChannelId = "eta_reply_done"
+    private val replyNotificationId = 1108
+    private val replyPreviewLimit = 60
 
     /** 浮层与执行通知共用同一份运行状态；写入只发生在主线程。 */
     private val state = object {
@@ -490,6 +500,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             activeSession = null
             runCatching {
                 if (result.ok) {
+                    notifyReplyCompleted(result.content)
                     enterFinalState(
                         state.value.copy(
                             phase = AgentOverlayPhase.FINISHED,
@@ -516,6 +527,48 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AndroidAgentLogger.warnThrottled("runtime_terminal_overlay_failed") {
                     "Agent runtime terminal overlay failed: type=${throwable.safeLogType()}"
                 }
+            }
+        }
+    }
+
+    /**
+     * 回复完成后弹出的普通通知：走独立渠道，用户可在系统通知设置里配置是否响铃/震动。
+     */
+    private fun notifyReplyCompleted(content: String) {
+        // 用户此刻就在 Eta 界面里，回复已直接可见，不再发通知打扰。
+        if (AppForegroundState.isUiVisible) return
+        runCatching {
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+            if (manager.getNotificationChannel(replyChannelId) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        replyChannelId,
+                        getString(R.string.execution_reply_done_channel),
+                        NotificationManager.IMPORTANCE_DEFAULT,
+                    ),
+                )
+            }
+            val body = MarkdownTextStripper.strip(content)
+            val open = PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val preview = body.take(replyPreviewLimit)
+                .ifBlank { getString(R.string.execution_reply_done_fallback) }
+            val notification = Notification.Builder(this, replyChannelId)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(getString(R.string.execution_reply_done_title))
+                .setContentText(preview)
+                .setStyle(Notification.BigTextStyle().bigText(body))
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build()
+            manager.notify(replyNotificationId, notification)
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_reply_notification_failed") {
+                "Agent reply notification failed: type=${throwable.safeLogType()}"
             }
         }
     }
