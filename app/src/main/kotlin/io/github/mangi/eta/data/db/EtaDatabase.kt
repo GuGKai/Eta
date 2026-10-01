@@ -26,7 +26,7 @@ import androidx.room.migration.Migration
         CharacterEntity::class,
         UserPersonaEntity::class,
     ],
-    version = 22,
+    version = 23,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -65,6 +65,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_19_20,
                         MIGRATION_20_21,
                         MIGRATION_21_22,
+                        MIGRATION_22_23,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -94,6 +95,39 @@ internal abstract class EtaDatabase : RoomDatabase() {
             HistoryPayloadMigration.migrate(database)
             createTextChunkCleanup(database)
         }
+
+        internal val MIGRATION_21_22 = Migration(21, 22) { database ->
+            database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
+        }
+
+        /**
+         * 22 → 23：conversations 补齐 pinned（本地置顶）与 model_id（上游「会话记住上次模型」）。
+         *
+         * 上游的 21→22 补 model_id，本地 fork 的 21→22 补 pinned，版本号相同而内容不同：
+         * 设备上已装的库只带 pinned。这里逐列判断后再补，兼容三种来源——本地旧库（有 pinned）、
+         * 纯上游库（有 model_id）、以及两者混合，都不会撞 duplicate column name。
+         */
+        internal val MIGRATION_22_23 = Migration(22, 23) { database ->
+            if (!database.hasColumn("conversations", "pinned")) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+            }
+            if (!database.hasColumn("conversations", "model_id")) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
+            }
+        }
+
+        private fun androidx.sqlite.db.SupportSQLiteDatabase.hasColumn(table: String, column: String): Boolean =
+            query("PRAGMA table_info($table)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                var found = false
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex) == column) {
+                        found = true
+                        break
+                    }
+                }
+                found
+            }
 
         internal val MIGRATION_20_21 = Migration(20, 21) { database ->
             database.execSQL("ALTER TABLE conversations ADD COLUMN roleplay_json TEXT NOT NULL DEFAULT ''")

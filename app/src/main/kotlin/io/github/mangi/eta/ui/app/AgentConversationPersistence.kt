@@ -24,7 +24,7 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
 
     private fun project(snapshot: AgentConversationStore.Snapshot): Map<String, Content> =
         snapshot.conversationsById.mapValues { (id, state) ->
-            Content(state, snapshot.titles[id].orEmpty(), snapshot.updatedAt[id] ?: 0L)
+            Content(state, snapshot.titles[id].orEmpty(), snapshot.updatedAt[id] ?: 0L, id in snapshot.pinned)
         }
 
     internal data class Content(
@@ -38,16 +38,20 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
         val messages: List<AgentChatMessageUi>,
         val history: List<AgentModelClient.ConversationMessage>,
         val journal: List<AgentModelClient.ConversationMessage>,
+        /** 会话是否置顶；与其余元数据一样参与增量写入判定。 */
+        val pinned: Boolean = false,
     ) {
-        constructor(state: AgentChatHomeUiState, title: String, updatedAt: Long) : this(
+        constructor(state: AgentChatHomeUiState, title: String, updatedAt: Long, pinned: Boolean = false) : this(
             title, updatedAt, state.reasoningEffort, state.appliedRuntimeRunIds,
             state.roleplay, if (state.roleplay == null) RoleplayMessageState() else state.roleplayMessages,
             state.modelId, state.messages, state.history, state.journal.ifEmpty { state.history },
+            state.messages, state.history, state.journal.ifEmpty { state.history }, pinned,
         )
 
         fun sameMetadata(other: Content): Boolean =
             title == other.title && updatedAt == other.updatedAt && reasoningEffort == other.reasoningEffort &&
                 appliedRuntimeRunIds == other.appliedRuntimeRunIds && roleplay == other.roleplay &&
                 roleplayMessages == other.roleplayMessages && modelId == other.modelId
+                roleplayMessages == other.roleplayMessages && pinned == other.pinned
     }
 }
