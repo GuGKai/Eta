@@ -59,6 +59,7 @@ internal fun validateSpeechSettings(settings: SpeechSettings, secrets: SpeechCre
                     throw SpeechFailure(SpeechErrorCode.CONFIGURATION, "MiniMax 语速须在 0.5～2 倍之间")
                 }
             }
+            TtsProvider.SYSTEM -> Unit
         }
     } else when (settings.asr) {
         AsrProvider.SYSTEM -> Unit
