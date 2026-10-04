@@ -71,6 +71,7 @@ internal fun TtsProvider.label(): String = stringResource(
         TtsProvider.NONE -> R.string.speech_tts_none
         TtsProvider.QWEN -> R.string.speech_tts_qwen
         TtsProvider.DOUBAO -> R.string.speech_tts_doubao
+        TtsProvider.SYSTEM -> R.string.speech_tts_system
     },
 )
 

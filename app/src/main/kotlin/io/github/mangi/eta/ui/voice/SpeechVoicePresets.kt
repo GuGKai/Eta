@@ -53,5 +53,6 @@ internal object SpeechVoicePresets {
         TtsProvider.QWEN -> qwen
         TtsProvider.DOUBAO -> doubao
         TtsProvider.NONE -> emptyList()
+        TtsProvider.SYSTEM -> emptyList()
     }
 }
