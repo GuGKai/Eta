@@ -57,6 +57,7 @@ internal fun TtsProvider.label(): String = stringResource(
         TtsProvider.DOUBAO -> R.string.speech_tts_doubao
         TtsProvider.GEMINI -> R.string.speech_tts_gemini
         TtsProvider.MINIMAX -> R.string.speech_tts_minimax
+        TtsProvider.SYSTEM -> R.string.speech_tts_system
     },
 )
 
