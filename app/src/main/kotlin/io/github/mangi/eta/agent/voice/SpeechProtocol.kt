@@ -42,6 +42,7 @@ internal fun validateSpeechSettings(settings: SpeechSettings, secrets: SpeechCre
                 speechBaseUrl(settings.doubaoTts.baseUrl)
                 if (settings.doubaoTts.legacyAuth) required(settings.doubaoTts.appId, "豆包 App ID")
             }
+            TtsProvider.SYSTEM -> Unit
         }
     } else when (settings.asr) {
         AsrProvider.SYSTEM -> Unit

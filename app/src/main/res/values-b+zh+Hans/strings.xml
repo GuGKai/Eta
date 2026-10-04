@@ -1209,6 +1209,14 @@
   <string name="speech_tts_none">关闭</string>
   <string name="speech_tts_qwen">千问</string>
   <string name="speech_tts_doubao">豆包</string>
+  <string name="speech_tts_system">系统 TTS</string>
+  <string name="speech_group_system_tts">系统语音引擎</string>
+  <string name="speech_system_engine">引擎</string>
+  <string name="speech_system_engine_default">跟随系统默认</string>
+  <string name="speech_system_voice">音色</string>
+  <string name="speech_system_voice_default">引擎默认音色</string>
+  <string name="speech_system_voice_loading">正在读取音色…</string>
+  <string name="speech_system_tts_note">使用设备上已安装的文字转语音引擎朗读，MultiTTS 等引擎应用里配置的音色会直接生效，无需 API Key。</string>
   <string name="speech_asr_note_system">使用设备已有的语音服务；云端服务不依赖系统识别引擎。</string>
   <string name="speech_asr_note_streaming">边说边显示文字。聊天听写点击完成；助手浮窗可在停顿后自动提交。</string>
   <string name="speech_asr_note_flash">录音完成后上传识别，适合短句输入。</string>

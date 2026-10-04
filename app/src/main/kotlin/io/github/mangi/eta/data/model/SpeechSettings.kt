@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 enum class AsrProvider { SYSTEM, QWEN_REALTIME, QWEN_FLASH, QWEN_FILE, DOUBAO }
 
 @Serializable
-enum class TtsProvider { NONE, QWEN, DOUBAO }
+enum class TtsProvider { NONE, QWEN, DOUBAO, SYSTEM }
 
 @Serializable
 enum class SpeechRegion { BEIJING, SINGAPORE }
@@ -50,6 +50,8 @@ data class SpeechSettings(
     val doubaoTts: DoubaoSpeechConfig = DoubaoSpeechConfig(),
     val qwenVoice: String = "Cherry",
     val doubaoVoice: String = "zh_female_vv_uranus_bigtts",
+    val systemTtsEngine: String = "",
+    val systemTtsVoice: String = "",
     val oss: SpeechOssConfig = SpeechOssConfig(),
     /** 助手浮窗停顿多久后自动发送；0 表示只在用户点击完成或松手时发送。 */
     val autoSendSilenceMs: Int = DEFAULT_AUTO_SEND_SILENCE_MS,

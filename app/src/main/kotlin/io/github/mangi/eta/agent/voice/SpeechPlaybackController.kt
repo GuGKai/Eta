@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.SpeechCredentials
 import io.github.mangi.eta.data.model.SpeechSettings
+import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import java.io.Closeable
 import kotlinx.coroutines.CancellationException
@@ -30,12 +31,14 @@ internal class SpeechPlaybackController(
     private val afterPlayback: () -> Unit = {},
     private val synthesize: suspend (SpeechSettings, SpeechCredentials, String, (ByteArray) -> Unit) -> Unit = ::synthesizeSpeech,
     private val createOutput: () -> SpeechAudioOutput = ::SpeechPcmOutput,
+    private val createSystemSpeaker: (SpeechSettings) -> SystemTtsSpeaker = { SystemTtsSpeaker(context, it.systemTtsEngine) },
 ) {
     private val mutableState = MutableStateFlow(SpeechPlaybackState())
     val state = mutableState.asStateFlow()
     private var job: Job? = null
     private var generation = 0L
     private var output: SpeechAudioOutput? = null
+    private var systemSpeaker: SystemTtsSpeaker? = null
     private var lease: SpeechAudioLease? = null
     private var playbackActive = false
 
@@ -53,15 +56,19 @@ internal class SpeechPlaybackController(
                 if (readable.isBlank()) throw SpeechFailure(SpeechErrorCode.NO_SPEECH, "这条消息没有可朗读的正文")
                 if (readable.length > 30_000) throw SpeechFailure(SpeechErrorCode.CONFIGURATION, "正文过长，请选择较短的回答朗读")
                 lease?.requestPlaybackFocus { beforePlayback(); playbackActive = true }
-                val player = createOutput()
-                output = player
-                playChunks(config, secrets, SpeechText.chunks(readable), player) {
-                    scope.launch(Dispatchers.Main.immediate) {
-                        if (session == generation) mutableState.value = SpeechPlaybackState(messageId)
+                if (config.tts == TtsProvider.SYSTEM) {
+                    speakWithSystemEngine(session, messageId, readable, config)
+                } else {
+                    val player = createOutput()
+                    output = player
+                    playChunks(config, secrets, SpeechText.chunks(readable), player) {
+                        scope.launch(Dispatchers.Main.immediate) {
+                            if (session == generation) mutableState.value = SpeechPlaybackState(messageId)
+                        }
                     }
+                    player.finish()
+                    withTimeout(180_000) { while (!player.drained()) delay(20) }
                 }
-                player.finish()
-                withTimeout(180_000) { while (!player.drained()) delay(20) }
                 if (session == generation) stop()
             } catch (error: Exception) {
                 if (error is CancellationException && error !is kotlinx.coroutines.TimeoutCancellationException) throw error
@@ -125,9 +132,35 @@ internal class SpeechPlaybackController(
         }
     }
 
+    /** 系统 TTS 引擎自己合成并播放，这里只负责分段喂文本并等待每段结束。 */
+    private suspend fun speakWithSystemEngine(
+        session: Long,
+        messageId: String,
+        readable: String,
+        config: SpeechSettings,
+    ) {
+        val speaker = createSystemSpeaker(config)
+        systemSpeaker = speaker
+        val announced = java.util.concurrent.atomic.AtomicBoolean(false)
+        try {
+            for (chunk in SpeechText.chunks(readable)) {
+                if (session != generation) throw CancellationException("Speech playback replaced")
+                speaker.speak(chunk, config.systemTtsVoice) {
+                    if (announced.compareAndSet(false, true)) scope.launch(Dispatchers.Main.immediate) {
+                        if (session == generation) mutableState.value = SpeechPlaybackState(messageId)
+                    }
+                }
+            }
+        } finally {
+            speaker.close()
+            if (systemSpeaker === speaker) systemSpeaker = null
+        }
+    }
+
     fun stop() {
         generation++
         output?.close(); output = null
+        systemSpeaker?.close(); systemSpeaker = null
         job?.cancel(); job = null
         lease?.close(); lease = null
         if (playbackActive) afterPlayback()

@@ -1195,6 +1195,14 @@
   <string name="speech_tts_none">關閉</string>
   <string name="speech_tts_qwen">千問</string>
   <string name="speech_tts_doubao">豆包</string>
+  <string name="speech_tts_system">系統 TTS</string>
+  <string name="speech_group_system_tts">系統語音引擎</string>
+  <string name="speech_system_engine">引擎</string>
+  <string name="speech_system_engine_default">跟隨系統預設</string>
+  <string name="speech_system_voice">音色</string>
+  <string name="speech_system_voice_default">引擎預設音色</string>
+  <string name="speech_system_voice_loading">正在讀取音色…</string>
+  <string name="speech_system_tts_note">使用裝置上已安裝的文字轉語音引擎朗讀，MultiTTS 等引擎應用裡配置的音色會直接生效，無需 API Key。</string>
   <string name="speech_asr_note_system">使用裝置已有的語音服務；雲端服務不依賴系統識別引擎。</string>
   <string name="speech_asr_note_streaming">邊說邊顯示文字。聊天聽寫點擊完成；助手浮窗可在停頓後自動提交。</string>
   <string name="speech_asr_note_flash">錄音完成後上傳識別，適合短句輸入。</string>

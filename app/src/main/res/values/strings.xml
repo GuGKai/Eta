@@ -1229,6 +1229,14 @@
   <string name="speech_tts_none">Off</string>
   <string name="speech_tts_qwen">Qwen</string>
   <string name="speech_tts_doubao">Doubao</string>
+  <string name="speech_tts_system">System TTS</string>
+  <string name="speech_group_system_tts">System speech engine</string>
+  <string name="speech_system_engine">Engine</string>
+  <string name="speech_system_engine_default">Follow system default</string>
+  <string name="speech_system_voice">Voice</string>
+  <string name="speech_system_voice_default">Engine default voice</string>
+  <string name="speech_system_voice_loading">Loading voices…</string>
+  <string name="speech_system_tts_note">Reads answers with the text-to-speech engine installed on the device, so voices configured in apps like MultiTTS apply. No API key is required.</string>
   <string name="speech_asr_note_system">Uses a speech service already on the device; cloud services do not depend on the system recognizer.</string>
   <string name="speech_asr_note_streaming">Text appears as you speak. Tap Done to finish dictation in chat; the assistant overlay can submit automatically after a pause.</string>
   <string name="speech_asr_note_flash">Audio is uploaded for recognition after you finish recording; best for short input.</string>
