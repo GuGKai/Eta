@@ -73,6 +73,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.mangi.eta.R
@@ -159,13 +160,13 @@ internal fun AgentChatBody(
     onOpenBrowser: () -> Unit,
     characterName: String? = null,
     isDrawerOpen: Boolean = false,
+    focusInputRequest: Boolean = false,
+    onFocusInputHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
-    val imeBottomPx = WindowInsets.ime.getBottom(density)
-    val isKeyboardVisible = imeBottomPx > 0
     val browserSnapshot by AgentBrowserSession.snapshots.collectAsState()
     val contextUsage = remember(messages, modelPickerState.selectedModel) {
         latestContextUsage(messages, modelPickerState.selectedModel)
@@ -229,7 +230,6 @@ internal fun AgentChatBody(
             pendingImages = pendingImages,
             pendingFileReferences = pendingFileReferences,
             messageEdit = messageEdit,
-            showEmptySuggestions = !isKeyboardVisible,
             characterName = characterName,
             keepBottomAnchored = keepBottomAnchored,
             onBottomAnchorChanged = { keepBottomAnchored = it },
@@ -260,6 +260,8 @@ internal fun AgentChatBody(
             onRunTraceClick = onRunTraceClick,
             onOpenBrowser = onOpenBrowser,
             currentBrowserMessageId = currentBrowserMessageId,
+            focusInputRequest = focusInputRequest,
+            onFocusInputHandled = onFocusInputHandled,
             modifier = modifier,
         )
     }
@@ -281,7 +283,6 @@ private fun AgentChatScaffold(
     pendingImages: List<PendingImageUi>,
     pendingFileReferences: List<PendingFileReferenceUi>,
     messageEdit: MessageEditUiState?,
-    showEmptySuggestions: Boolean,
     characterName: String?,
     keepBottomAnchored: Boolean,
     onBottomAnchorChanged: (Boolean) -> Unit,
@@ -306,6 +307,8 @@ private fun AgentChatScaffold(
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     currentBrowserMessageId: String?,
+    focusInputRequest: Boolean = false,
+    onFocusInputHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -352,15 +355,15 @@ private fun AgentChatScaffold(
                 onAttachFilePath = onAttachFilePath,
                 onRemoveFileReference = onRemoveFileReference,
                 onCancelMessageEdit = onCancelMessageEdit,
+                focusInputRequest = focusInputRequest,
+                onFocusInputHandled = onFocusInputHandled,
             )
         },
     ) { innerPadding ->
         val bottomPadding = innerPadding.calculateBottomPadding()
         if (!hasMessages) {
             EmptyChatState(
-                showSuggestions = showEmptySuggestions,
                 characterName = characterName,
-                onSuggestionClick = onSuggestionClick,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = bottomPadding),
@@ -990,6 +993,8 @@ private fun AgentChatBottomBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
+    focusInputRequest: Boolean = false,
+    onFocusInputHandled: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -1076,6 +1081,8 @@ private fun AgentChatBottomBar(
                 onAttachFilePath = onAttachFilePath,
                 onRemoveFileReference = onRemoveFileReference,
                 onCancelMessageEdit = onCancelMessageEdit,
+                focusInputRequest = focusInputRequest,
+                onFocusInputHandled = onFocusInputHandled,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -1120,35 +1127,10 @@ internal fun shouldRequestInitialBottom(
 
 @Composable
 private fun EmptyChatState(
-    showSuggestions: Boolean,
     characterName: String?,
-    onSuggestionClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isCharacterConversation = characterName != null
-    val suggestions = listOf(
-        SuggestionItem(
-            title = stringResource(R.string.ui_analyze_current_screen_ebf08f),
-            icon = Icons.Rounded.DocumentScanner,
-            prompt = stringResource(R.string.suggestion_analyze_screen_prompt),
-        ),
-        SuggestionItem(
-            title = stringResource(R.string.ui_open_wechat_6b2c28),
-            icon = Icons.Rounded.RocketLaunch,
-            prompt = stringResource(R.string.suggestion_open_wechat_prompt),
-        ),
-        SuggestionItem(
-            title = stringResource(R.string.ui_browse_the_web_da7afb),
-            icon = Icons.Rounded.Language,
-            prompt = stringResource(R.string.suggestion_browse_web_prompt),
-        ),
-        SuggestionItem(
-            title = stringResource(R.string.ui_check_memory_pressure_2d9600),
-            icon = Icons.Rounded.Terminal,
-            prompt = stringResource(R.string.suggestion_memory_pressure_prompt),
-        ),
-    )
-
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -1169,90 +1151,22 @@ private fun EmptyChatState(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
             } else {
+                val titleStyle = MiuixTheme.textStyles.headline1
                 Text(
                     text = stringResource(R.string.ui_how_can_i_help_you_e75391),
-                    style = MiuixTheme.textStyles.headline1,
+                    style = titleStyle,
+                    fontSize = titleStyle.fontSize * EmptyGreetingFontScale,
+                    lineHeight = titleStyle.lineHeight.scaleIfSpecified(EmptyGreetingFontScale),
                     color = MiuixTheme.colorScheme.onSurface,
                 )
-            }
-
-            Spacer(modifier = Modifier.height(30.dp))
-
-            AnimatedVisibility(
-                visible = showSuggestions && !isCharacterConversation,
-                enter = fadeIn(
-                    animationSpec = tween(durationMillis = 220)
-                ) + slideInVertically(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                    initialOffsetY = { it / 3 },
-                ),
-                exit = fadeOut(
-                    animationSpec = tween(durationMillis = 130)
-                ) + slideOutVertically(
-                    animationSpec = tween(durationMillis = 180),
-                    targetOffsetY = { it / 4 },
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    suggestions.chunked(2).forEach { rowItems ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            rowItems.forEach { item ->
-                                SuggestionCard(
-                                    item = item,
-                                    onClick = { onSuggestionClick(item.prompt) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
     }
 }
 
-@Composable
-private fun SuggestionCard(
-    item: SuggestionItem,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(MiuixTheme.colorScheme.surface)
-            .border(
-                width = 0.5.dp,
-                color = MiuixTheme.colorScheme.outline.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 13.dp, vertical = 12.dp),
-    ) {
-        Icon(
-            imageVector = item.icon,
-            contentDescription = null,
-            modifier = Modifier.size(17.dp),
-            tint = MiuixTheme.colorScheme.onBackground,
-        )
-        Spacer(modifier = Modifier.height(9.dp))
-        Text(
-            text = item.title,
-            style = MiuixTheme.textStyles.body2,
-            color = MiuixTheme.colorScheme.onSurface,
-            maxLines = 1,
-        )
-    }
-}
+/** 空白首页问候语的放大倍数（约两档字号）。 */
+private const val EmptyGreetingFontScale = 1.3f
 
-private data class SuggestionItem(
-    val title: String,
-    val icon: ImageVector,
-    val prompt: String,
-)
+/** TextUnit 未指定时不能参与算术，原样返回，避免行高未设置时报错。 */
+private fun TextUnit.scaleIfSpecified(factor: Float): TextUnit =
+    if (this == TextUnit.Unspecified) this else this * factor
