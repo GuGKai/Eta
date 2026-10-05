@@ -55,6 +55,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.overlay.applyEvent
+import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.ModuleConfig
@@ -418,6 +419,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             session = session,
             result = outcome.result,
             entrySurfaceGuard = outcome.entrySurfaceGuard,
+            // 助理浮窗的任务可能已经没有入口浮层（用户关窗后后台续跑）：通知直接指向这轮会话。
+            replyConversationKey = request.handoff
+                ?.takeIf { it.source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE }
+                ?.payload
+                ?.let { payload -> AgentExternalArchivePayload.from(payload)?.conversationKey }
+                ?.takeIf(String::isNotBlank),
             completedContext = outcome.response?.let { completedResponse ->
                 outcome.completedRequest?.let { completedRequest ->
                     CompletedRunContext(
@@ -493,6 +500,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         result: AgentRuntimeWire.RunResult,
         entrySurfaceGuard: EntrySurfaceGuard?,
         completedContext: CompletedRunContext? = null,
+        replyConversationKey: String? = null,
     ) {
         mainHandler.post {
             if (activeSession !== session) return@post
@@ -500,7 +508,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             activeSession = null
             runCatching {
                 if (result.ok) {
-                    notifyReplyCompleted(result.content)
+                    notifyReplyCompleted(result.content, replyConversationKey)
                     enterFinalState(
                         state.value.copy(
                             phase = AgentOverlayPhase.FINISHED,
@@ -533,8 +541,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     /**
      * 回复完成后弹出的普通通知：走独立渠道，用户可在系统通知设置里配置是否响铃/震动。
+     * 带 [conversationKey]（助理浮窗的会话）时点击直接落在对应会话上。
      */
-    private fun notifyReplyCompleted(content: String) {
+    private fun notifyReplyCompleted(content: String, conversationKey: String? = null) {
         // 用户此刻就在 Eta 界面里，回复已直接可见，不再发通知打扰。
         if (AppForegroundState.isUiVisible) return
         runCatching {
@@ -549,10 +558,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 )
             }
             val body = MarkdownTextStripper.strip(content)
+            val openIntent = Intent(this, MainActivity::class.java).apply {
+                if (!conversationKey.isNullOrBlank()) {
+                    setAction(EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION)
+                    putExtra(EtaAssistantOverlayService.EXTRA_CONVERSATION_KEY, conversationKey)
+                }
+            }
             val open = PendingIntent.getActivity(
                 this,
                 0,
-                Intent(this, MainActivity::class.java),
+                openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val preview = body.take(replyPreviewLimit)
