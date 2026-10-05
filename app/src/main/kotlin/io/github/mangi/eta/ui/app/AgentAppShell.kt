@@ -22,7 +22,6 @@ import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.rounded.AddComment
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Terminal
@@ -37,6 +36,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -228,8 +232,15 @@ private fun AgentTopBar(
     }
     val actions: @Composable RowScope.() -> Unit = {
         if (isHome) {
+            // 新建对话移到顶栏，与「更多选项」并排，省一层点击；自动朗读开关已由上游移入菜单。
+            IconButton(onClick = onNewConversation) {
+                Icon(
+                    imageVector = TopBarPlusIcon,
+                    modifier = Modifier.size(24.dp),
+                    contentDescription = stringResource(R.string.action_new_conversation),
+                )
+            }
             TopBarOverflowMenu(
-                onNewConversation = onNewConversation,
                 onOpenTerminal = onOpenTerminal,
                 onLaunchKimiWeb = onLaunchKimiWeb,
                 kimiWebLabel = kimiWebLabel,
@@ -263,6 +274,35 @@ private fun AgentTopBar(
     }
 }
 
+/**
+ * 顶栏「新建对话」自绘加号图标。
+ *
+ * 24dp 视口内两条圆头线段交叉成加号，线宽 1.8f；颜色交给 Icon 的 tint，
+ * 因此这里填任意色即可，实际显示跟随主题内容色。
+ */
+private val TopBarPlusIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "TopBarPlus",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(
+            fill = null,
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 1.8f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ) {
+            moveTo(12f, 5.5f)
+            verticalLineTo(18.5f)
+            moveTo(5.5f, 12f)
+            horizontalLineTo(18.5f)
+        }
+    }.build()
+}
+
 private val TopBarMenuIconSize = 20.dp
 
 /**
@@ -271,7 +311,6 @@ private val TopBarMenuIconSize = 20.dp
  */
 @Composable
 private fun TopBarOverflowMenu(
-    onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
     kimiWebLabel: String,
@@ -298,7 +337,6 @@ private fun TopBarOverflowMenu(
             alignment = PopupPositionProvider.Align.End,
             onDismissRequest = { showMenu = false },
         ) {
-            val newConversationText = stringResource(R.string.action_new_conversation)
             val openTerminalText = stringResource(R.string.action_open_terminal)
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
@@ -307,7 +345,6 @@ private fun TopBarOverflowMenu(
                 if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
             )
             val menuItems = remember(
-                newConversationText,
                 openTerminalText,
                 launchKimiWebText,
                 openBrowserText,
@@ -318,16 +355,6 @@ private fun TopBarOverflowMenu(
                 autoReadEnabled,
             ) {
                 listOf(
-                    DropdownItem(
-                        text = newConversationText,
-                        icon = { modifier ->
-                            Icon(
-                                imageVector = Icons.Rounded.AddComment,
-                                contentDescription = null,
-                                modifier = modifier.size(TopBarMenuIconSize),
-                            )
-                        },
-                    ),
                     DropdownItem(
                         text = openTerminalText,
                         icon = { modifier ->
@@ -405,11 +432,10 @@ private fun TopBarOverflowMenu(
                                     }
                                 }
                             } else when (index) {
-                                0 -> onNewConversation()
-                                1 -> onOpenTerminal()
-                                2 -> onLaunchKimiWeb()
-                                3 -> onOpenBrowser()
-                                4 -> onStopKimiWeb()
+                                0 -> onOpenTerminal()
+                                1 -> onLaunchKimiWeb()
+                                2 -> onOpenBrowser()
+                                3 -> onStopKimiWeb()
                             }
                         },
                     )
