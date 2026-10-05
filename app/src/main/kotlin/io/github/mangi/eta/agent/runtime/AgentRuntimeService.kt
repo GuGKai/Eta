@@ -389,6 +389,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger? = null,
     ) {
+        val automated = io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId)
+        if (automated && activeSession?.isTerminal == false) {
+            sendResultTo(replyTo, AgentRuntimeWire.RunResult(request.runId, false, "", "AUTOMATION_RUNTIME_BUSY"))
+            return
+        }
+        val reviewGeneration = AgentExperienceReview.foregroundStarted()
         activeSession?.controller?.cancel()
         val session = AgentRuntimeSession(
             runId = request.runId,
@@ -397,7 +403,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             resultSink = { result -> sendResultTo(replyTo, result) },
         )
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
-        val allowBoundFallback = RootAccess.isGranted
+        val allowBoundFallback = RootAccess.isGranted || automated
         val executionHeld = AgentExecutionService.acquire(
             this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
         ) { session.controller.cancel() }
@@ -452,7 +458,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         thread(name = "agent-runtime") {
             try {
-                executeRun(session, request)
+                executeRun(session, request, reviewGeneration)
             } finally {
                 screenOnBinding.close()
                 mainHandler.post {
@@ -467,12 +473,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun executeRun(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
+        reviewGeneration: Long,
     ) {
         val outcome = AgentRuntimeRunExecutor(
             context = this,
+            reviewGeneration = reviewGeneration,
             currentPermissions = ::currentRuntimePermissions,
             snapshotRequest = { it.withActiveSupplements() },
             onAcceptedEvent = { event, entrySurfaceGuard ->
+                AgentExecutionService.updateProgress("run:${request.runId}", event)
                 handleAcceptedRunEvent(session, event, entrySurfaceGuard)
             },
             persistArtifacts = ::persistRunArtifacts,

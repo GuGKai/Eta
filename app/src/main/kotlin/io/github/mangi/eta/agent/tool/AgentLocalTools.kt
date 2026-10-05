@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.tool
 
 import android.content.Context
 import android.graphics.Rect
+import io.github.mangi.eta.agent.automation.AgentTaskTools
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -26,6 +27,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.GestureIndicator
 import io.github.mangi.eta.agent.runtime.AgentAppContext
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
+import io.github.mangi.eta.agent.skill.SkillAuthoringService
 import io.github.mangi.eta.agent.skill.SkillIndexService
 import io.github.mangi.eta.agent.skill.SkillInstallErrorCode
 import io.github.mangi.eta.agent.skill.SkillInstallResult
@@ -100,6 +102,7 @@ internal class AgentLocalTools(
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    private val skillAuthoringService: SkillAuthoringService? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -148,6 +151,7 @@ internal class AgentLocalTools(
         ConcurrentHashMap<String, GitHubInspectionSnapshot>()
 
     override fun close() {
+        io.github.mangi.eta.agent.display.VirtualScreenSession.closeOwner(browserRunId)
         if (!closed.compareAndSet(false, true)) return
         publishedObservation.set(PublishedObservation())
         AgentBrowserSession.interruptAgentAction(browserRunId)
@@ -168,6 +172,9 @@ internal class AgentLocalTools(
             }
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
             memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
+            if (toolCall.name in AgentTaskTools.names) {
+                if (!memoryWritable) return@runCatching textResult(errorResult("TASKS_READ_ONLY", "角色会话不能管理自动任务"))
+            }
             when (val decision = beforeToolExecution(toolCall.name)) {
                 ToolExecutionDecision.Allow -> Unit
                 is ToolExecutionDecision.Reject -> {
@@ -181,6 +188,8 @@ internal class AgentLocalTools(
                 }
             }
             when (toolCall.name) {
+                "virtual_screen" -> io.github.mangi.eta.agent.display.VirtualScreenSession.execute(context, browserRunId, args, closed::get)
+                in AgentTaskTools.names -> AgentModelClient.ToolResult(AgentTaskTools(context).execute(toolCall.name, args), sensitive = true)
                 "get_current_context" -> textResult(DeviceContextTool.current(context))
                 "search_apps" -> textResult(searchApps(args))
                 "launch_app" -> textResult(launchApp(args))
@@ -224,6 +233,7 @@ internal class AgentLocalTools(
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
                 "skills_list" -> textResult(skillsList(args))
+                "skills_manage" -> textResult(skillsManage(args))
                 "skills_read" -> textResult(skillsRead(args))
                 "skills_read_resource" -> textResult(skillsReadResource(args))
                 "skills_list_curated" -> textResult(skillsListCurated())
@@ -345,6 +355,7 @@ internal class AgentLocalTools(
                 .put("revision", result.snapshot.revision)
                 .put("bytes", result.snapshot.byteSize)
                 .put("line_count", result.snapshot.lineCount)
+                .also { io.github.mangi.eta.agent.automation.AgentTaskScheduler.publish(context, "memory_updated", result.snapshot.revision) }
                 .toString()
             is AgentMemoryWriteResult.Conflict -> JSONObject()
                 .put("ok", false)
@@ -923,6 +934,16 @@ internal class AgentLocalTools(
 
     // ==================== Skills tools ====================
 
+    private fun skillsManage(args: JSONObject): String {
+        if (!memoryWritable) return errorResult("SKILL_READ_ONLY", "角色会话不能改写公共技能")
+        if (skillTreeMutationUncertain.get()) return nextTurnRequired("Skill 树")
+        val service = skillAuthoringService ?: return errorResult("SKILLS_UNAVAILABLE", "技能编写服务未初始化")
+        val result = service.manage(args) { closed.get() }
+        if (result.optBoolean("ok")) mutatedSkillIds += SkillParser.normalizeSkillLookup(result.getString("skillId"))
+        if (result.optBoolean("recoveryRequired")) skillTreeMutationUncertain.set(true)
+        return result.toString()
+    }
+
     private fun skillsList(args: JSONObject): String {
         if (skillTreeMutationUncertain.get()) return nextTurnRequired("Skill 树")
         val indexService = skillIndexService
@@ -1002,6 +1023,7 @@ internal class AgentLocalTools(
             .put("references", references)
             .put("frontmatter", frontmatter)
             .put("bodyMarkdown", body)
+            .put("revision", resolved.revision)
             .toString()
     }
 
@@ -1414,6 +1436,7 @@ internal class AgentLocalTools(
 
     private companion object {
         val DEVICE_DIRECT_TOOL_NAMES = io.github.mangi.eta.agent.model.AgentPhoneToolCatalog.direct + setOf(
+            "virtual_screen",
             "set_alarm",
             "set_timer",
             "device_status",
