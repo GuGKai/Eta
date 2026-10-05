@@ -22,6 +22,8 @@ internal fun AgentHomeScreen(
     conversationKey: String?,
     onAction: (AgentHomeAction) -> Unit,
     isDrawerOpen: Boolean = false,
+    focusInputRequest: Boolean = false,
+    onFocusInputHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     key(chatConversationCompositionKey(conversationKey)) {
@@ -60,6 +62,8 @@ internal fun AgentHomeScreen(
             onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
             onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
             isDrawerOpen = isDrawerOpen,
+            focusInputRequest = focusInputRequest,
+            onFocusInputHandled = onFocusInputHandled,
             modifier = modifier,
         )
     }

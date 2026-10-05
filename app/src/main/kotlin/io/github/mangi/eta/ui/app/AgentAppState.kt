@@ -125,6 +125,12 @@ internal class AgentAppState(
     var modelPickerState by mutableStateOf(AgentModelPickerUiState())
         private set
 
+    /**
+     * 新建对话后的一次性输入焦点信号：置位后由聊天输入框消费（聚焦 + 拉起键盘）。
+     */
+    var composerFocusPending by mutableStateOf(false)
+        private set
+
     var conversationPaneState by mutableStateOf(
         ConversationPaneUiState(
             conversations = emptyList(),
@@ -705,6 +711,12 @@ internal class AgentAppState(
             searchQuery = "",
         )
         refreshConversationSummaries()
+        composerFocusPending = true
+    }
+
+    /** 输入框已消费新建对话的焦点信号，避免返回首页时重复弹键盘。 */
+    fun consumeComposerFocusRequest() {
+        composerFocusPending = false
     }
 
     fun startCharacterConversation(binding: RoleplayBinding, greeting: String) {

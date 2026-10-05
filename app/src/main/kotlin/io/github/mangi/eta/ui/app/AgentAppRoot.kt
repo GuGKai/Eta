@@ -335,6 +335,8 @@ fun AgentAppRoot(
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
                         conversationKey = agentState.conversationPaneState.selectedConversationId,
+                        focusInputRequest = agentState.composerFocusPending,
+                        onFocusInputHandled = { agentState.consumeComposerFocusRequest() },
                         onAction = { action ->
                             when (action) {
                                 is AgentHomeAction.ReasoningEffortChanged ->

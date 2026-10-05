@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -130,6 +131,8 @@ internal fun AgentChatInputBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
+    focusInputRequest: Boolean = false,
+    onFocusInputHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -166,6 +169,17 @@ internal fun AgentChatInputBar(
             keyboard?.show()
         }
         wasEditingMessage = isEditingMessage
+    }
+
+    LaunchedEffect(focusInputRequest) {
+        // 新建对话后自动进入输入状态：聚焦输入框并拉起键盘；信号用后即清，
+        // 避免从二级页面返回首页时重复弹出键盘。
+        if (focusInputRequest) {
+            focusRequester.requestFocus()
+            withFrameNanos { }
+            keyboard?.show()
+            onFocusInputHandled()
+        }
     }
 
     LaunchedEffect(isStreaming, isCompacting) {
