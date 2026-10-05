@@ -544,8 +544,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 带 [conversationKey]（助理浮窗的会话）时点击直接落在对应会话上。
      */
     private fun notifyReplyCompleted(content: String, conversationKey: String? = null) {
-        // 用户此刻就在 Eta 界面里，回复已直接可见，不再发通知打扰。
-        if (AppForegroundState.isUiVisible) return
+        // 用户此刻能直接读到回复（Eta 本体界面，或语音唤醒的助理浮窗）时不发通知；
+        // 只有浮窗已经收起、回答落在用户看不到的地方（关窗后台续跑）才提醒。
+        if (AppForegroundState.hasVisibleSurface) return
         runCatching {
             val manager = getSystemService(NotificationManager::class.java) ?: return
             if (manager.getNotificationChannel(replyChannelId) == null) {

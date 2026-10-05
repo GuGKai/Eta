@@ -47,6 +47,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
@@ -198,6 +199,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         // 只有浮窗里的停止按钮或本体里的停止才真正终止它。
         cancelCurrentRun(abortRun = false)
         removeWindow()
+        AppForegroundState.setAssistantOverlayVisible(false)
         scope.cancel()
         cancellationExecutor.shutdown()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -385,6 +387,8 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         windowManager = wm
         windowView = view
         windowParams = params
+        // 浮窗挂上即视作"用户看得见 Eta"：语音唤醒的回答就展示在这里，不必再弹完成通知。
+        AppForegroundState.setAssistantOverlayVisible(true)
         registerSystemBackCallback(view)
         view.requestFocus()
     }
@@ -704,6 +708,8 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         speechInput.cancel()
         speechState = EtaSpeechState()
         unregisterSystemBackCallback()
+        // 窗口正在退场：从此回答问题不再"看得见"，完成通知要恢复提醒。
+        AppForegroundState.setAssistantOverlayVisible(false)
         detachingWindowView?.let { detachingView ->
             onComplete?.let(windowDetachCallbacks::add)
             if (!detachingView.isAttachedToWindow) {
