@@ -64,7 +64,9 @@ internal class SpeechInputController(
         mutableState.value = SpeechInputState(phase = EtaSpeechPhase.STARTING, progress = "正在连接")
         job = scope.launch(Dispatchers.Main.immediate) {
             try {
-                lease = SpeechAudioLease(context) { cancel() }.also { it.acquire(playback = false) }
+                // 聆听期间压掉正在播放的媒体音量，避免麦克风把音乐、视频一起收进去；识别结束随租约还原。
+                lease = SpeechAudioLease(context) { cancel() }
+                    .also { it.acquire(playback = false, muteMedia = true) }
                 val config = settings ?: SpeechSettingsRepository.settings()
                 val secrets = credentials ?: if (config.asr == AsrProvider.SYSTEM) SpeechCredentials()
                     else SpeechSettingsRepository.credentials(context)
