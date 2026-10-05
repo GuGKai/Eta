@@ -58,6 +58,9 @@ Eta 独立实现了 Agent Runtime 与 Agent Loop，统一编排模型调用、�
 - **个人上下文**：通过结构化只读工具按需获取本机与厂商 ROM 数据。普通授权下可读取时间与时区、最近位置、设备环境（锁屏、勿扰、音频输出与外接显示状态）、当前通知与最近 7 天通知历史、最近打开应用与前台使用时长，以及日历日程。Root 授权下进一步开放通讯录、通话记录、短信与验证码提取、相册图片（支持按文件名，或通过内容索引按图片 OCR 文字、画面描述与标签检索）、音频与录音、共享文件与下载记录、输入法剪贴板历史、Health Connect 健康汇总（步数、睡眠、运动、心率、体重、血氧）、已保存的 Wi‑Fi 密码及微信/QQ 聊天图片缓存。在 ColorOS 上，还可通过小布记忆进程内 Hook 桥与系统 DMP 索引直接检索小布记忆、便签、通话与普通录音摘要，以及账单与收支汇总、航班/火车/酒店行程、外卖快递订单、待办线索、生活事件和收藏地点。
 - **长期记忆**：使用本机 `MEMORY.md` 保存跨对话背景，核心内容按预算加入上下文，其余按需读取；支持编辑、清空和关闭。
 - **Skills**：按需加载任务方法、参考资料与脚本资源，支持公开 GitHub 仓库安装和本地 ZIP 导入；安装不会执行脚本或开启额外权限。
+- **经验学习**：任务完成后可自动追加持久记忆，并将已验证的操作方法生成或更新为用户技能；新任务优先，自动学习可分别关闭。见 [自动记忆与操作经验](docs/EXPERIENCE_LEARNING.md)。
+- **自动任务**：AI 辅助创建一次性、间隔、每日与事件规则，支持本地匹配、冷却、次数限制、运行记录及取消。Android 后台调度可能延迟，见 [定时与事件任务](docs/AUTOMATION.md)。
+- **Root 虚拟屏（实验性）**：在独立 display 中启动、观察和点击受支持的应用，可从通知打开查看页。需要 Android 14+、Root 和用户开关；熄屏执行另需许可，兼容与验证范围见 [虚拟屏](docs/VIRTUAL_SCREEN.md)。
 - **MCP**：通过 Streamable HTTP 连接远程工具，支持 Bearer Token；工具逐项启用，与本机工具共同参与任务。
 
 ### Agent Runtime
@@ -190,6 +193,9 @@ Eta 先从现有 Android 上的模型、上下文与工具做起。真正落地�
 - [设备支持与权限边界](docs/ROOTLESS_SUPPORT.md)：普通设备、Root、文件工作区与后台运行。
 - [技术实现](docs/TECHNICAL.md)：设备工具、数据检索、浏览器、终端与系统集成。
 - [Agent Runtime](docs/AGENT_RUNTIME.md)：Agent Loop、Provider、steering、transcript 与结果恢复。
+- [自动记忆与操作经验](docs/EXPERIENCE_LEARNING.md)：后台复盘、用户技能写入与权限边界。
+- [定时与事件任务](docs/AUTOMATION.md)：模型工具、触发器、规则和调度限制。
+- [Root 虚拟屏](docs/VIRTUAL_SCREEN.md)与 [vivo 原子通知](docs/VIVO_ATOMIC_NOTIFICATIONS.md)：实验原型及平台接入步骤。
 - [HyperOS 系统入口](docs/HYPEROS_SYSTEM_ENTRY.md)：电源键、一圈即搜的适配条件与验证边界。
 - [终端原生组件](docs/TERMINAL_NATIVE.md)：PTY、PRoot 及随包源码的构建方式。
 
@@ -207,6 +213,7 @@ Eta 先从现有 Android 上的模型、上下文与工具做起。真正落地�
 ## 参考与致谢
 
 - [Pi Coding Agent](https://github.com/earendil-works/pi)：Eta Agent Runtime 的核心参考，包括 Agent Loop、Tool Calling、steering 与 transcript 状态管理。
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent)：后台经验复盘、技能管理与任务调度的设计参考。
 - [OmniBot](https://github.com/omnimind-ai/OmniBot)：Android AI Agent 方向的参考项目。
 - [libxposed API](https://github.com/libxposed/api)：现代 Xposed API。
 - [Miuix](https://github.com/compose-miuix-ui/miuix)：UI 组件库。

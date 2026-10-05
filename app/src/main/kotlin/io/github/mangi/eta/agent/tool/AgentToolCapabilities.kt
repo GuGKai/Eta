@@ -31,8 +31,10 @@ internal data class AgentToolCapabilities(
     val nfcAvailable: Boolean = true,
     val nightLightAvailable: Boolean = true,
     val vivo: Boolean = false,
+    val virtualDisplayAvailable: Boolean = true,
 ) {
     fun unavailableCode(name: String): String? {
+        if (name == "virtual_screen" && !virtualDisplayAvailable) return "DEVICE_UNSUPPORTED"
         if (name in setOf("get_flashlight", "set_flashlight") && !flashlightAvailable) return "DEVICE_UNSUPPORTED"
         if (name in setOf("get_hotspot", "set_hotspot") && !hotspotAvailable) return "DEVICE_UNSUPPORTED"
         val requirement = AgentToolRequirements.find(name) ?: return "UNKNOWN_TOOL"
@@ -101,6 +103,7 @@ internal data class AgentToolCapabilities(
                 nfcAvailable = context.packageManager.hasSystemFeature(PackageManager.FEATURE_NFC),
                 nightLightAvailable = context.resources.getIdentifier("config_nightDisplayAvailable", "bool", "android").let { it != 0 && context.resources.getBoolean(it) },
             )
+            virtualDisplayAvailable = Build.VERSION.SDK_INT >= 34,
         }
     }
 }

@@ -31,6 +31,10 @@ internal class AgentExecutionService : Service() {
     private val owner = ownerSequence.incrementAndGet()
     private var foregroundActive = false
     @Volatile private var startRejected = false
+    private var progress: String = ""
+    private var progressOwner: String = ""
+    private var notificationSequence = 0
+    @Volatile private var atomicScene = ""
 
     /** 通知去重与节流状态，只在主线程读写。 */
     private var publishedContent: RenderedText? = null
@@ -49,6 +53,10 @@ internal class AgentExecutionService : Service() {
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
         )
         ensureForeground()
+        kotlin.concurrent.thread(name = "eta-notification-settings") {
+            atomicScene = runCatching { kotlinx.coroutines.runBlocking { io.github.mangi.eta.data.datastore.SettingsDataStore.settings().vivoAtomicScene } }.getOrDefault("")
+            mainHandler.post { if (instance === this) refreshNotification() }
+        }
     }
 
     private fun ensureForeground() {
@@ -165,7 +173,7 @@ internal class AgentExecutionService : Service() {
     private fun notification(content: RenderedText): Notification {
         val status = runStatus
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, if (io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()) io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java else MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(
@@ -278,7 +286,23 @@ internal class AgentExecutionService : Service() {
 
         fun release(id: String) {
             leases.release(id)
-            mainHandler.post { instance?.refreshNotification() }
+            mainHandler.post { instance?.let { service -> if (service.progressOwner == id) { service.progress = ""; service.progressOwner = "" }; service.refreshNotification() } }
+        }
+
+        fun updateProgress(id: String, event: AgentEvent) {
+            val tool = when (event) {
+                is AgentEvent.ToolStarted -> event.name
+                is AgentEvent.ToolFinished -> ""
+                else -> return
+            }
+            mainHandler.post { instance?.let { service ->
+                if (tool.isNotBlank() || service.progressOwner == id) {
+                    service.progressOwner = id
+                    service.progress = tool.take(80)
+                    service.notificationSequence++
+                    service.refreshNotification()
+                }
+            } }
         }
     }
 }
