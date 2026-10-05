@@ -12,7 +12,7 @@
 set -e
 cd /workspace/eta-src
 
-WORK_BRANCH=${WORK_BRANCH:-feat/system-tts}
+WORK_BRANCH=${WORK_BRANCH:-feat/local}
 STAMP=$(date +%Y%m%d-%H%M)
 
 echo "== 0/5 备份现有特性分支 =="
