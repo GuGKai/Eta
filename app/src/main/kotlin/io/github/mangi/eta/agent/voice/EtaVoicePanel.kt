@@ -165,7 +165,6 @@ internal fun EtaVoicePanel(
     handoffRunning: Boolean,
     exitRequested: Boolean,
     onInputChange: (String) -> Unit,
-    onSuggestionClick: (String) -> Unit,
     onSubmit: () -> Unit,
     onStop: () -> Unit,
     onClose: () -> Unit,
@@ -280,11 +279,7 @@ internal fun EtaVoicePanel(
                 maxContentHeightPx = maxContentHeightPx,
                 imeOverlapPx = imeOverlap,
                 onInputChange = onInputChange,
-                onSuggestionClick = { suggestion ->
-                    keyboard?.hide()
-                    onSuggestionClick(suggestion)
-                },
-                keyboardVisible = keyboardVisible,
+                keyboardVisible = imeBottom > navigationBottom,
                 onSubmit = {
                     keyboard?.hide()
                     onSubmit()
@@ -318,7 +313,6 @@ private fun BoxScope.AssistantPanel(
     maxContentHeightPx: Float,
     imeOverlapPx: Int,
     onInputChange: (String) -> Unit,
-    onSuggestionClick: (String) -> Unit,
     keyboardVisible: Boolean,
     onSubmit: () -> Unit,
     onStop: () -> Unit,
@@ -670,11 +664,6 @@ private fun BoxScope.AssistantPanel(
                 }
             }
         }
-        EtaAssistantSuggestions(
-            onSuggestionClick = onSuggestionClick,
-            colors = colors,
-            visible = !hasMessages,
-        )
         AssistantComposer(
             state = state,
             input = input,
