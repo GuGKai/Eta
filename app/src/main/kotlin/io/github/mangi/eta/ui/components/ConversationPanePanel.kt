@@ -66,6 +66,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -91,10 +93,9 @@ import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.Search
+import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Alarm
 import top.yukonga.miuix.kmp.icon.extended.Contacts
-import top.yukonga.miuix.kmp.icon.extended.Create
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
@@ -102,8 +103,8 @@ import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.GridView
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Lock
-import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Notes
+import top.yukonga.miuix.kmp.icon.extended.Recent
 import top.yukonga.miuix.kmp.icon.extended.Rename
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -159,6 +160,8 @@ internal fun ConversationPanePanel(
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenRootSettings: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
@@ -197,7 +200,8 @@ internal fun ConversationPanePanel(
                     Spacer(Modifier.height(ConversationPanelMetrics.TopInset))
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, tint = Color.Unspecified,
-                            modifier = Modifier.size(32.dp).clip(CircleShape))
+                            modifier = Modifier.size(40.dp).clip(CircleShape)
+                                .background(MiuixTheme.colorScheme.surfaceContainerHighest).padding(4.dp))
                         Row(
                             modifier = Modifier.weight(1f).padding(start = 10.dp, end = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -213,11 +217,14 @@ internal fun ConversationPanePanel(
                             PaneModeBadges(
                                 rootGranted = capabilities.root.isGranted,
                                 accessibilityAvailable = capabilities.accessibilityAvailable,
+                                onOpenRootSettings = onOpenRootSettings,
+                                onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                                onOpenSettings = onOpenSettings,
                                 modifier = Modifier.weight(1f),
                             )
                         }
                         IconButton(onClick = onNewConversation, modifier = Modifier.clip(CircleShape).background(MiuixTheme.colorScheme.surfaceContainerHighest)) {
-                            Icon(MiuixIcons.Create, contentDescription = stringResource(R.string.action_new_conversation), modifier = Modifier.size(22.dp))
+                            Icon(MiuixIcons.Add, contentDescription = stringResource(R.string.action_new_conversation), modifier = Modifier.size(22.dp))
                         }
                     }
                     Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
@@ -249,11 +256,10 @@ internal fun ConversationPanePanel(
                                 if (moreExpanded) R.string.sidebar_more_expanded else R.string.sidebar_more_collapsed,
                             )
                             PaneShortcut(
-                                icon = MiuixIcons.More,
+                                icon = if (moreExpanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,
                                 label = stringResource(R.string.action_more),
                                 onClick = { moreExpanded = !moreExpanded },
                                 modifier = Modifier.semantics { stateDescription = expansionDescription },
-                                trailingIcon = if (moreExpanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,
                             )
                             AnimatedVisibility(visible = moreExpanded) {
                                 Column(Modifier.padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -266,8 +272,17 @@ internal fun ConversationPanePanel(
                     }
                 }
                 item(key = "history-heading") {
-                    Text(stringResource(R.string.action_conversation_history), style = MiuixTheme.textStyles.body2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary, modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+                            .padding(top = 16.dp, bottom = 4.dp).semantics { heading() },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(MiuixIcons.Recent, contentDescription = null, modifier = Modifier.size(16.dp),
+                            tint = MiuixTheme.colorScheme.onSurface)
+                        Text(stringResource(R.string.action_conversation_history), style = MiuixTheme.textStyles.body2,
+                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MiuixTheme.colorScheme.onSurface)
+                    }
                 }
                 if (state.conversations.isEmpty()) {
                     item {
@@ -371,9 +386,6 @@ private fun PaneSearchAndSettings(
                     // 深色下侧栏已抬高到 surfaceContainer，搜索框需再高一档才能显出轮廓；
                     // 浅色的 surfaceContainerHigh 与 surfaceContainerHighest 相同，观感不变。
                     color = MiuixTheme.colorScheme.surfaceContainerHighest,
-                    leadingIcon = {
-                        Icon(MiuixIcons.Basic.Search, contentDescription = null, modifier = Modifier.size(20.dp))
-                    },
                 )
             },
             content = {},
@@ -453,15 +465,6 @@ private fun ConversationSectionHeader(
                 tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
             )
         }
-private fun PaneModeBadges(rootGranted: Boolean, accessibilityAvailable: Boolean, modifier: Modifier = Modifier) {
-    FlowRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (rootGranted) PaneModeBadge(stringResource(R.string.sidebar_mode_root))
-        if (accessibilityAvailable) PaneModeBadge(stringResource(R.string.sidebar_mode_accessibility))
-        if (!rootGranted && !accessibilityAvailable) PaneModeBadge(stringResource(R.string.sidebar_mode_basic), active = false)
     }
 }
 
@@ -474,21 +477,44 @@ private fun ConversationSectionDivider() {
         thickness = 0.33.dp,
         color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
     )
-private fun PaneModeBadge(label: String, active: Boolean = true) {
+}
+
+@Composable
+private fun PaneModeBadges(
+    rootGranted: Boolean,
+    accessibilityAvailable: Boolean,
+    onOpenRootSettings: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (rootGranted) PaneModeBadge(stringResource(R.string.sidebar_mode_root), onClick = onOpenRootSettings)
+        if (accessibilityAvailable) PaneModeBadge(stringResource(R.string.sidebar_mode_accessibility), onClick = onOpenAccessibilitySettings)
+        if (!rootGranted && !accessibilityAvailable) PaneModeBadge(stringResource(R.string.sidebar_mode_basic), onClick = onOpenSettings, active = false)
+    }
+}
+
+@Composable
+private fun PaneModeBadge(label: String, onClick: () -> Unit, active: Boolean = true) {
     val description = stringResource(R.string.sidebar_mode_description, label)
     val color = if (active) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary
     Text(
         text = label,
         modifier = Modifier.clip(CircleShape).background(color.copy(alpha = 0.12f))
-            .semantics { contentDescription = description }.padding(horizontal = 6.dp, vertical = 3.dp),
+            .semantics { contentDescription = description }
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.sidebar_settings), onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
         color = color,
         style = MiuixTheme.textStyles.footnote1,
         fontSize = 11.sp,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
-}
-
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -716,7 +742,6 @@ private fun PaneShortcut(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    trailingIcon: ImageVector? = null,
 ) {
     Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
         .clickable(onClickLabel = label, onClick = onClick).padding(horizontal = 12.dp, vertical = 12.dp),
@@ -724,9 +749,6 @@ private fun PaneShortcut(
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MiuixTheme.colorScheme.onSurface)
         Text(label, style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium, color = MiuixTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        trailingIcon?.let {
-            Icon(it, contentDescription = null, modifier = Modifier.size(18.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-        }
     }
 }
 
