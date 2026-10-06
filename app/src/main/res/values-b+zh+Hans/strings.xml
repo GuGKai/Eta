@@ -281,6 +281,8 @@
   <string name="conversation_regenerate_current_turn">当前轮次将由新生成的回复替换。</string>
   <string name="time_now">现在</string>
   <string name="conversation_section_pinned">置顶</string>
+  <string name="conversation_section_collapse">折叠置顶会话</string>
+  <string name="conversation_section_expand">展开置顶会话</string>
   <string name="conversation_section_today">今天</string>
   <string name="conversation_dock_models">模型</string>
   <string name="conversation_preview_reasoning">Eta 正在思考</string>

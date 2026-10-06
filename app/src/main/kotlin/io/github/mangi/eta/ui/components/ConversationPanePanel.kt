@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PushPin
@@ -43,12 +46,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -137,6 +142,10 @@ internal fun ConversationPanePanel(
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
     val groups = remember(state.conversations) { state.conversations.groupForDrawer() }
+    // 置顶分组可折叠：点击置顶分组的标题行收起/展开，只影响置顶区，日期分组照旧。
+    // 搜索期间强制展开，避免命中项被折叠藏起来。
+    var pinnedCollapsed by rememberSaveable { mutableStateOf(false) }
+    val pinnedSectionCollapsed = pinnedCollapsed && query.isEmpty()
 
     Surface(
         modifier = modifier
@@ -182,27 +191,37 @@ internal fun ConversationPanePanel(
                     }
                 } else {
                     groups.forEachIndexed { index, group ->
+                        val collapsible = group.section == ConversationDrawerSection.Pinned
+                        val collapsed = collapsible && pinnedSectionCollapsed
                         item(key = "section-${group.section}") {
-                            ConversationSectionHeader(group = group)
-                        }
-                        items(
-                            items = group.items,
-                            key = { it.id },
-                        ) { conversation ->
-                            ConversationTextRow(
-                                conversation = conversation,
-                                selected = conversation.id == state.selectedConversationId,
-                                onClick = { onConversationSelected(conversation.id) },
-                                onRename = { onConversationRename(conversation) },
-                                onTogglePinned = {
-                                    onConversationPinnedChange(conversation, !conversation.isPinned)
-                                },
-                                onExport = { onConversationExport(conversation) },
-                                onDelete = { onConversationDelete(conversation) },
+                            ConversationSectionHeader(
+                                group = group,
+                                collapsible = collapsible,
+                                collapsed = collapsed,
+                                onToggleCollapse = { pinnedCollapsed = !pinnedCollapsed },
                             )
                         }
+                        if (!collapsed) {
+                            items(
+                                items = group.items,
+                                key = { it.id },
+                            ) { conversation ->
+                                ConversationTextRow(
+                                    conversation = conversation,
+                                    selected = conversation.id == state.selectedConversationId,
+                                    onClick = { onConversationSelected(conversation.id) },
+                                    onRename = { onConversationRename(conversation) },
+                                    onTogglePinned = {
+                                        onConversationPinnedChange(conversation, !conversation.isPinned)
+                                    },
+                                    onExport = { onConversationExport(conversation) },
+                                    onDelete = { onConversationDelete(conversation) },
+                                )
+                            }
+                        }
                         // 置顶区与日期区之间补一条分割线，分组标题样式保持原有日期分隔方式。
-                        if (group.section == ConversationDrawerSection.Pinned && index < groups.lastIndex) {
+                        // 置顶区收起时不再补线，避免标题下直接跟一条悬空的分割线。
+                        if (collapsible && index < groups.lastIndex && !collapsed) {
                             item(key = "section-divider-pinned") {
                                 ConversationSectionDivider()
                             }
@@ -279,10 +298,21 @@ private fun PaneActionBar(
 @Composable
 private fun ConversationSectionHeader(
     group: ConversationDrawerGroup,
+    collapsible: Boolean = false,
+    collapsed: Boolean = false,
+    onToggleCollapse: () -> Unit = {},
 ) {
+    // 折叠时箭头朝下、展开时朝上；旋转而不是换图标，切换更连贯。
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (collapsed) 0f else 180f,
+        animationSpec = tween(durationMillis = 180),
+        label = "conversationSectionChevron",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+            .then(if (collapsible) Modifier.clickable(onClick = onToggleCollapse) else Modifier)
             .padding(
                 top = ConversationPanelMetrics.SectionTopPadding,
                 bottom = ConversationPanelMetrics.SectionBottomPadding,
@@ -313,6 +343,23 @@ private fun ConversationSectionHeader(
             style = MiuixTheme.textStyles.footnote1,
             fontWeight = FontWeight.Medium,
         )
+        if (collapsible) {
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.Rounded.ExpandMore,
+                contentDescription = stringResource(
+                    if (collapsed) {
+                        R.string.conversation_section_expand
+                    } else {
+                        R.string.conversation_section_collapse
+                    },
+                ),
+                modifier = Modifier
+                    .size(ConversationPanelMetrics.SectionIconSize)
+                    .rotate(chevronRotation),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+        }
     }
 }
 

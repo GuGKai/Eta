@@ -207,6 +207,8 @@
   <string name="time_recent">Recent</string>
   <string name="time_now">Now</string>
   <string name="conversation_section_pinned">Pinned</string>
+  <string name="conversation_section_collapse">Collapse pinned conversations</string>
+  <string name="conversation_section_expand">Expand pinned conversations</string>
   <string name="conversation_section_today">Today</string>
   <string name="conversation_dock_models">Models</string>
   <string name="conversation_preview_reasoning">Eta is reasoning</string>

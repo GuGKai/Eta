@@ -267,6 +267,8 @@
   <string name="conversation_regenerate_current_turn">目前這輪對話將由新產生的回覆取代。</string>
   <string name="time_now">現在</string>
   <string name="conversation_section_pinned">已釘選</string>
+  <string name="conversation_section_collapse">收合釘選對話</string>
+  <string name="conversation_section_expand">展開釘選對話</string>
   <string name="conversation_section_today">今天</string>
   <string name="conversation_dock_models">模型</string>
   <string name="conversation_preview_reasoning">Eta 正在思考</string>
