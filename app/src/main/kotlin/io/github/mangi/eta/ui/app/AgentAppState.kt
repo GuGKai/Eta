@@ -618,12 +618,13 @@ internal class AgentAppState(
     /** 打开外部入口按 [source] 与 [conversationKey] 归档的会话；先导入尚未入库的归档结果。 */
     suspend fun openArchivedConversation(source: String, conversationKey: String): Boolean {
         if (source.isBlank() || conversationKey.isBlank()) return false
-        importArchivedExternalRuns()
+        if (source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) importArchivedExternalRuns()
         return withContext(Dispatchers.Main.immediate) {
-            val conversationId = archiveConversationId(
-                source = source,
-                conversationKey = conversationKey,
-            )
+            val conversationId = if (source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
+                conversationKey
+            } else {
+                archiveConversationId(source = source, conversationKey = conversationKey)
+            }
             if (conversationsById[conversationId] == null) {
                 false
             } else {
