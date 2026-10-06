@@ -114,6 +114,7 @@ internal fun AgentAppShell(
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
+    conversationStatus: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     homeCharacter: RoleplayChatUi? = null,
     onOpenCharacter: () -> Unit = {},
@@ -147,6 +148,7 @@ internal fun AgentAppShell(
                             onOpenBrowser = onOpenBrowser,
                             homeCharacter = homeCharacter,
                             onOpenCharacter = onOpenCharacter,
+                            conversationStatus = conversationStatus,
                         )
                     }
                 }
@@ -209,6 +211,7 @@ private fun AgentTopBar(
     onOpenBrowser: () -> Unit,
     homeCharacter: RoleplayChatUi?,
     onOpenCharacter: () -> Unit,
+    conversationStatus: (@Composable () -> Unit)?,
 ) {
     val isHome = route is AppRoute.Home
     val navigationIcon: @Composable () -> Unit = {
@@ -262,6 +265,7 @@ private fun AgentTopBar(
             scrollBehavior = scrollBehavior,
             navigationIcon = navigationIcon,
             actions = actions,
+            bottomContent = { conversationStatus?.invoke() },
         )
     } else {
         AdaptiveTopAppBar(

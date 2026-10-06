@@ -167,6 +167,8 @@ internal class AgentRuntimeRunExecutor(
                 context = appContext,
                 logger = AndroidAgentLogger,
                 browserRunId = request.runId,
+                virtualScreenOwner = request.virtualScreenOwner,
+                isRunCancelled = { runController.isCancelled },
                 browserToolsEnabled = {
                     request.config.browserTools && currentPermissions().browserTools
                 },
@@ -311,6 +313,8 @@ internal class AgentRuntimeRunExecutor(
                 )
             }
             response = completedResponse
+            runController.throwIfCancelled()
+            executor.retainVirtualScreenOnSuccess()
             AgentRuntimeWire.RunResult(
                 runId = request.runId,
                 ok = true,

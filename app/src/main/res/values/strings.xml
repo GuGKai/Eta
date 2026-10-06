@@ -1491,6 +1491,11 @@
     <string name="virtual_screen_fallback_reason_app">the app cannot run on the virtual screen</string>
     <string name="virtual_screen_fallback_reason_device">the device cannot provide a virtual screen</string>
     <string name="virtual_screen_fallback_reason_action">this action cannot continue on the virtual screen</string>
+    <string name="virtual_screen_notification_channel">Virtual screen</string>
+    <string name="virtual_screen_notification_title">Virtual screen is active</string>
+    <string name="virtual_screen_notification_content">Tap to view and control the current screen</string>
+    <string name="conversation_context_capsule">Context</string>
+    <string name="conversation_speed_description">Last model request: %1$s output tokens per second, including time to first token.</string>
   <string name="chat_edit_character_reply">Edit character reply</string>
   <string name="chat_previous_candidate">Previous candidate reply</string>
   <string name="chat_next_candidate">Next candidate reply</string>
