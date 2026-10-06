@@ -193,8 +193,9 @@ internal class AgentRuntimeRunExecutor(
                 },
                 beforeToolExecution = { toolName ->
                     if (io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId) &&
-                        (toolName in io.github.mangi.eta.agent.automation.AgentTaskTools.names || AgentToolRequirements.requiresAccessibility(toolName) ||
-                            AgentOverlayVisibilityPolicy.isForegroundOperationTool(toolName) || toolName in setOf("terminal", "run_command", "browser_use"))) {
+                        (toolName in io.github.mangi.eta.agent.automation.AgentTaskTools.names || toolName in setOf("terminal", "run_command") ||
+                            (!session.mainScreenFallbackApproved.get() && (AgentToolRequirements.requiresAccessibility(toolName) ||
+                                AgentOverlayVisibilityPolicy.isForegroundOperationTool(toolName) || toolName == "browser_use")))) {
                         ToolExecutionDecision.Reject("AUTOMATION_ACTION_UNAVAILABLE", "自动任务暂不支持创建其他任务或操作主屏；需要独立虚拟屏执行环境")
                     } else {
                         val requiresAccessibility =
@@ -234,6 +235,7 @@ internal class AgentRuntimeRunExecutor(
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
                 skillAuthoringService = SkillAuthoringService(skillIndexService, skillPackageInstaller),
+                onMainScreenFallback = { session.mainScreenFallbackApproved.set(true) },
             )
             val routingExecutor = RoutingToolExecutor(
                 local = executor,
@@ -287,7 +289,7 @@ internal class AgentRuntimeRunExecutor(
                     AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
                     session.updateTranscript(transcript)
                 },
-                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                capabilitiesProvider = { executor.capabilitiesForRun(AgentToolCapabilities.capture(appContext)) },
                 prompt = request.prompt,
                 assistantScreenContext = request.assistantScreenContext,
                 toolExecutor = runToolExecutor,
