@@ -16,6 +16,10 @@ import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
+import io.github.mangi.eta.agent.display.VirtualScreenSession
+import io.github.mangi.eta.agent.display.VirtualScreenViewerActivity
+import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.hook.vivo.VivoHandoff
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.ui.app.AgentAppRoot
@@ -30,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private var assistantConversationKey by mutableStateOf<String?>(null)
     private var requestedConversationId by mutableStateOf<String?>(null)
     private var requestedArchivedConversation by mutableStateOf<ArchivedConversationRequest?>(null)
+    private var assistantConversationSource by mutableStateOf(AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE)
     private var appliedPredictiveBackEnabled = true
     private var speechSettingsRequested by mutableStateOf(false)
     private var terminalRequested by mutableStateOf(false)
@@ -76,13 +81,14 @@ class MainActivity : ComponentActivity() {
                         onRequestedConversationOpened = { requestedConversationId = null; intent?.action = null },
                         requestedArchivedConversation = requestedArchivedConversation,
                         onArchivedConversationOpened = { requestedArchivedConversation = null; intent?.action = null },
+                        assistantConversationSource = assistantConversationSource,
                         openSpeechSettings = speechSettingsRequested,
                         openTerminal = terminalRequested,
                         onTerminalOpened = { terminalRequested = false; intent?.action = null },
                         onSpeechSettingsOpened = { speechSettingsRequested = false; intent?.action = null },
                         onAssistantConversationOpened = { opened ->
                             assistantConversationKey = null
-                            if (opened) {
+                            if (opened && assistantConversationSource == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE) {
                                 EtaAssistantOverlayService.notifyHandoffReady(this@MainActivity)
                             }
                         },
@@ -104,6 +110,18 @@ class MainActivity : ComponentActivity() {
             terminalRequested = true
             return
         }
+        if (intent?.action == ACTION_VIEW_EXECUTION) {
+            assistantConversationSource = intent.getStringExtra(EXTRA_EXECUTION_SOURCE)
+                ?.takeIf { it == VivoHandoff.SOURCE } ?: AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE
+            assistantConversationKey = intent.getStringExtra(
+                EtaAssistantOverlayService.EXTRA_CONVERSATION_KEY,
+            )?.takeIf(String::isNotBlank)
+            intent.action = null
+            if (VirtualScreenSession.isActive()) {
+                startActivity(Intent(this, VirtualScreenViewerActivity::class.java))
+            }
+            return
+        }
         if (intent?.action == ACTION_SPEECH_SETTINGS) {
             speechSettingsRequested = true
             return
@@ -123,6 +141,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (intent?.action != EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION) return
+        assistantConversationSource = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE
         assistantConversationKey = intent.getStringExtra(
             EtaAssistantOverlayService.EXTRA_CONVERSATION_KEY,
         )?.takeIf(String::isNotBlank)
@@ -136,6 +155,11 @@ class MainActivity : ComponentActivity() {
             AppearanceThemeMode.SYSTEM -> UiModeManager.MODE_NIGHT_AUTO
         }
         getSystemService(UiModeManager::class.java).setApplicationNightMode(mode)
+    }
+
+    companion object {
+        const val ACTION_VIEW_EXECUTION = "io.github.mangi.eta.action.VIEW_EXECUTION"
+        const val EXTRA_EXECUTION_SOURCE = "io.github.mangi.eta.extra.EXECUTION_SOURCE"
     }
 
     private fun updateSystemBars(isDark: Boolean) {
