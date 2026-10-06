@@ -62,6 +62,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -70,6 +71,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
@@ -131,6 +134,7 @@ internal fun AgentChatInputBar(
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val textFieldState = rememberTextFieldState(initialText = input)
     var wasEditingMessage by remember { mutableStateOf(isEditingMessage) }
@@ -167,6 +171,12 @@ internal fun AgentChatInputBar(
             keyboard?.show()
             onFocusInputHandled()
         }
+    }
+
+    // 退到后台时丢掉输入框焦点：Android 会在窗口重新拿到焦点时把键盘按原样恢复，
+    // 从「回复完成」通知点进会话页就会莫名带着键盘。清掉焦点后，回前台要打字自己点输入框。
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        focusManager.clearFocus()
     }
 
     LaunchedEffect(isStreaming, isCompacting) {
