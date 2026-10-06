@@ -372,6 +372,8 @@ internal class AgentRuntimeRunExecutor(
                 )
             }
             response = completedResponse
+            runController.throwIfCancelled()
+            executor.retainVirtualScreenOnSuccess()
             AgentRuntimeWire.RunResult(
                 runId = request.runId,
                 ok = true,
