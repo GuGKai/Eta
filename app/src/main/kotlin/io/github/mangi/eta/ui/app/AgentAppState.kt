@@ -646,8 +646,10 @@ internal class AgentAppState(
         }
     }
 
-    suspend fun openAssistantConversation(conversationKey: String): Boolean =
-        openArchivedConversation(AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE, conversationKey)
+    suspend fun openAssistantConversation(
+        conversationKey: String,
+        source: String = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+    ): Boolean = openArchivedConversation(source, conversationKey)
 
     /** 打开外部入口按 [source] 与 [conversationKey] 归档的会话；先导入尚未入库的归档结果。 */
     suspend fun openArchivedConversation(source: String, conversationKey: String): Boolean {
