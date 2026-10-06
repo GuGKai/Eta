@@ -3,6 +3,8 @@ package io.github.mangi.eta.ui.screens.home
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.ui.components.AgentChatBody
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
@@ -21,6 +23,8 @@ internal fun AgentHomeScreen(
     modelPickerState: AgentModelPickerUiState,
     conversationKey: String?,
     onAction: (AgentHomeAction) -> Unit,
+    /** 顶栏高度：消息列表用它做顶部内容内边距，让正文能滑到顶栏毛玻璃下方。 */
+    topInset: Dp = 0.dp,
     isDrawerOpen: Boolean = false,
     focusInputRequest: Boolean = false,
     onFocusInputHandled: () -> Unit = {},
@@ -61,6 +65,7 @@ internal fun AgentHomeScreen(
             onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
             onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
             isDrawerOpen = isDrawerOpen,
+            topInset = topInset,
             focusInputRequest = focusInputRequest,
             onFocusInputHandled = onFocusInputHandled,
             modifier = modifier,

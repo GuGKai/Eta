@@ -161,6 +161,8 @@ internal fun AgentChatBody(
     isDrawerOpen: Boolean = false,
     focusInputRequest: Boolean = false,
     onFocusInputHandled: () -> Unit = {},
+    /** 顶栏高度：进入消息列表的顶部内容内边距，让正文能滑到顶栏毛玻璃下方。 */
+    topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState()
@@ -260,6 +262,7 @@ internal fun AgentChatBody(
             currentBrowserMessageId = currentBrowserMessageId,
             focusInputRequest = focusInputRequest,
             onFocusInputHandled = onFocusInputHandled,
+            topInset = topInset,
             modifier = modifier,
         )
     }
@@ -306,6 +309,7 @@ private fun AgentChatScaffold(
     currentBrowserMessageId: String?,
     focusInputRequest: Boolean = false,
     onFocusInputHandled: () -> Unit = {},
+    topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -362,7 +366,7 @@ private fun AgentChatScaffold(
                 characterName = characterName,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = bottomPadding),
+                    .padding(top = topInset, bottom = bottomPadding),
             )
         } else {
             AgentConversationMessages(
@@ -370,6 +374,7 @@ private fun AgentChatScaffold(
                 scrollState = scrollState,
                 isStreaming = isStreaming,
                 bottomInset = bottomPadding,
+                topInset = topInset,
                 keepBottomAnchored = keepBottomAnchored,
                 onBottomAnchorChanged = onBottomAnchorChanged,
                 onSuggestionClick = onSuggestionClick,
@@ -397,6 +402,7 @@ internal fun AgentConversationMessages(
     scrollState: LazyListState,
     isStreaming: Boolean,
     bottomInset: Dp,
+    topInset: Dp = 0.dp,
     keepBottomAnchored: Boolean,
     onBottomAnchorChanged: (Boolean) -> Unit,
     assistantOverlay: Boolean = false,
@@ -438,6 +444,8 @@ internal fun AgentConversationMessages(
     }
     val densityScale = LocalDensity.current.density
     val density = LocalDensity.current
+    // 顶栏高度（px）：本轮工作过程卡片停靠时要把卡片落在顶栏下方，而不是屏幕最顶端。
+    val topInsetPx = with(density) { topInset.roundToPx() }
     val coroutineScope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val imeInsets = WindowInsets.ime
@@ -574,7 +582,7 @@ internal fun AgentConversationMessages(
             // 这一轮是应用不在前台时跑完的：后台拿不到帧，动画只会挂起到回到前台才补播，
             // 用户点通知进来看到的就是那半截位移。这里直接落到停靠位置，
             // 等回到前台时画面已经是最终状态，不再动。
-            scrollState.scrollToItem(targetIndex)
+            scrollState.scrollToItem(targetIndex, -topInsetPx)
         }
     }
 
@@ -588,9 +596,9 @@ internal fun AgentConversationMessages(
         // 停靠直接到位，免得用户从通知进来时看到半截位移动画。
         val shouldAnimate = appResumed && resumeTick == anchorRequestResumeTick
         if (shouldAnimate) {
-            scrollState.animateScrollToItem(target)
+            scrollState.animateScrollToItem(target, -topInsetPx)
         } else {
-            scrollState.scrollToItem(target)
+            scrollState.scrollToItem(target, -topInsetPx)
         }
         pendingAnchorIndex = null
     }
@@ -807,7 +815,8 @@ internal fun AgentConversationMessages(
                 .scrollEndHaptic()
                 .overScrollVertical(),
             contentPadding = PaddingValues(
-                top = 14.dp,
+                // 列表视口铺满整屏，顶栏高度在这里做内边距，正文才能滑到顶栏毛玻璃下方。
+                top = topInset + 14.dp,
                 bottom = bottomInset + 14.dp,
             ),
             overscrollEffect = null,
