@@ -114,6 +114,7 @@ internal fun AgentAppShell(
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
+    onOpenTasks: () -> Unit,
     conversationStatus: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     homeCharacter: RoleplayChatUi? = null,
@@ -174,6 +175,7 @@ internal fun AgentAppShell(
                 onOpen = onOpenConversationPane,
                 onDismiss = onDismissConversationPane,
                 onSearchChange = onSearchConversations,
+                onNewConversation = onNewConversation,
                 onConversationSelected = onSelectConversation,
                 onConversationRename = onConversationRename,
                 onConversationPinnedChange = onConversationPinnedChange,
@@ -185,6 +187,7 @@ internal fun AgentAppShell(
                 onOpenSkills = onOpenSkills,
                 onOpenCharacters = onOpenCharacters,
                 onOpenPermissions = onOpenPermissions,
+                onOpenTasks = onOpenTasks,
             ) {
                 pageContent()
             }
@@ -265,7 +268,6 @@ private fun AgentTopBar(
             scrollBehavior = scrollBehavior,
             navigationIcon = navigationIcon,
             actions = actions,
-            bottomContent = { conversationStatus?.invoke() },
         )
     } else {
         AdaptiveTopAppBar(
