@@ -1260,7 +1260,11 @@ private fun AgentChatBottomBar(
                 .fillMaxWidth()
                 .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                .padding(
+                    start = ChatInputOuterMargin,
+                    end = ChatInputOuterMargin,
+                    bottom = ChatInputOuterMargin,
+                ),
         ) {
             AgentChatInputBar(
                 input = input,
