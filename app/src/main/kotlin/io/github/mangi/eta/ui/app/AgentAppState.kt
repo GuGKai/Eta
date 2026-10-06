@@ -558,18 +558,7 @@ internal class AgentAppState(
         }
     }
 
-    /**
-     * 打开助理浮窗交回的会话。
-     *
-     * 浮窗在回答途中把控制权交回本体时 run 仍在 Runtime 里执行：此时先在本体立出这轮会话，
-     * 再订阅同一个 run 的实时事件，让回答在本体里继续流式显示；接管失败也不影响后台任务，
-     * 结果最终仍由归档导入补进同一个会话。
-     */
-    suspend fun openAssistantConversation(
-        conversationKey: String,
-        liveRunId: String? = null,
-        livePrompt: String? = null,
-    ): Boolean {
+    suspend fun openAssistantConversation(conversationKey: String): Boolean {
         if (conversationKey.isBlank()) return false
         importArchivedExternalRuns()
         return withContext(Dispatchers.Main.immediate) {
@@ -577,114 +566,12 @@ internal class AgentAppState(
                 source = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
                 conversationKey = conversationKey,
             )
-            when {
-                !liveRunId.isNullOrBlank() && !livePrompt.isNullOrBlank() ->
-                    adoptLiveAssistantRun(conversationId, liveRunId, livePrompt)
-                conversationsById[conversationId] != null -> {
-                    selectConversation(conversationId)
-                    true
-                }
-                else -> false
+            if (conversationsById[conversationId] == null) {
+                false
+            } else {
+                selectConversation(conversationId)
+                true
             }
-        }
-    }
-
-    /** 接管仍在执行的助理 run；返回是否已在本体里立好这轮会话。 */
-    private fun adoptLiveAssistantRun(
-        conversationId: String,
-        runId: String,
-        prompt: String,
-    ): Boolean {
-        if (currentRunId != null) return false
-        val existing = conversationsById[conversationId]
-        if (existing != null && existing.hasAssistantMessageFor(runId)) {
-            // 这轮其实已经写完并归档：直接落到会话上即可。
-            selectConversation(conversationId)
-            return true
-        }
-        val effort = existing?.reasoningEffort ?: ReasoningEffort.fromLegacy(defaultThinkingEnabled)
-        val base = existing ?: emptyChatState(effort.enablesReasoning)
-        val seed = base.copy(
-            input = "",
-            isStreaming = true,
-            thinkingEnabled = effort.enablesReasoning,
-            reasoningEffort = effort,
-            pendingImages = emptyList(),
-            messages = base.messages +
-                UserMessageUi(id = "user-$runId", content = prompt) +
-                AgentMessageUi(
-                    id = "assistant-$runId",
-                    content = "",
-                    isStreaming = true,
-                    renderMarkdown = false,
-                ),
-        )
-        if (conversationTitles[conversationId].isNullOrBlank()) {
-            conversationTitles = conversationTitles + (conversationId to prompt.take(40))
-        }
-        conversationUpdatedAt = conversationUpdatedAt + (conversationId to System.currentTimeMillis())
-        conversationsById = conversationsById + (conversationId to seed)
-        runConversationIds[runId] = conversationId
-        currentRunId = runId
-        refreshConversationSummaries()
-        selectConversation(conversationId)
-        persistConversations()
-        currentRunJob = scope.launch(Dispatchers.IO) {
-            val outcome = AgentRuntimeClient(appContext, AndroidAgentLogger).attachRun(
-                runId = runId,
-                onReplay = { events -> restoreRunEvents(runId, events) },
-                onEvent = { event -> enqueueRunEvent(runId, event) },
-            )
-            withContext(Dispatchers.Main.immediate) {
-                when (outcome) {
-                    is AgentRuntimeClient.AttachOutcome.Completed -> applyRunResult(
-                        runId = runId,
-                        result = outcome.result,
-                        acknowledgeRuntimeResult = true,
-                    )
-                    AgentRuntimeClient.AttachOutcome.NotActive,
-                    AgentRuntimeClient.AttachOutcome.Unavailable ->
-                        dropAdoptedAssistantRun(conversationId, runId, existing)
-                }
-            }
-        }
-        return true
-    }
-
-    /**
-     * 接管失败或这轮已经结束时退回接管前的状态，再交回归档导入补上完整结果，
-     * 避免留下只有用户消息、没有回答的会话。
-     */
-    private suspend fun dropAdoptedAssistantRun(
-        conversationId: String,
-        runId: String,
-        previous: AgentChatHomeUiState?,
-    ) {
-        runEventFlushJobs.remove(runId)?.cancel()
-        runEventCoalescer.flush(runId)
-        runMessageProjector.clearRun(runId)
-        if (runConversationIds[runId] == conversationId) runConversationIds.remove(runId)
-        if (currentRunId == runId) {
-            currentRunId = null
-            currentRunJob = null
-        }
-        if (previous == null) {
-            conversationsById = conversationsById - conversationId
-            conversationUpdatedAt = conversationUpdatedAt - conversationId
-        } else {
-            conversationsById = conversationsById + (conversationId to previous)
-        }
-        if (selectedConversationId == conversationId && previous == null) {
-            selectedConversationId = null
-            homeState = emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities()
-            conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
-        }
-        refreshConversationSummaries()
-        persistConversations()
-        importArchivedExternalRuns()
-        withContext(Dispatchers.Main.immediate) {
-            conversationsById[conversationId]?.let { selectConversation(conversationId) }
-            refreshConversationSummaries()
         }
     }
 
@@ -2026,13 +1913,6 @@ private fun archiveConversationId(source: String, conversationKey: String): Stri
 }
 
 private const val ASSISTANT_CONVERSATION_PREFIX = "assistant-"
-
-/** 会话里是否已经有这轮 run 的正文；用于判断接管前这轮是否已经写完并归档。 */
-private fun AgentChatHomeUiState.hasAssistantMessageFor(runId: String): Boolean =
-    messages.any { message ->
-        message is AgentMessageUi &&
-            (message.id == "assistant-$runId" || message.id.startsWith("assistant-$runId-"))
-    }
 
 private fun stableArchiveId(value: String): String =
     java.security.MessageDigest.getInstance("SHA-256")

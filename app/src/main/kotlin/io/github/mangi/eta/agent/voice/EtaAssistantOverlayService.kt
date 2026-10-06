@@ -133,10 +133,8 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
     private var runJob: Job? = null
     private var dismissalJob: Job? = null
     private var activeRunId: String? = null
-    /** 当前 run 的用户输入：接管到本体时用它在本体立出这一轮会话。 */
-    private var activeRunPrompt: String = ""
     /**
-     * 这轮 run 已经离开入口浮窗：用户关掉浮窗，或拖把手把任务交回本体。
+     * 这轮 run 已经离开入口浮窗：用户关掉浮窗。
      * 从此任务归 Runtime 所有，浮窗销毁、新入口出现都不能再取消它。
      */
     private var runOutlivesEntrySurface = false
@@ -346,10 +344,10 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                         onSubmit = ::submitInput,
                         onStop = ::stopCurrentRun,
                         onClose = ::dismissAndStop,
-                        canOpenConversation = uiState.messages.any { message ->
-                            message is UserMessageUi ||
-                                (message is AgentMessageUi && message.content.isNotBlank())
-                        },
+                        canOpenConversation = activeRunId == null &&
+                            uiState.messages.any { message ->
+                                message is AgentMessageUi && message.content.isNotBlank()
+                            },
                         handoffRunning = handoffInProgress,
                         exitRequested = handoffExitRequested,
                         onOpenConversation = ::openConversation,
@@ -455,7 +453,6 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         val capture = entryScreenContext
         inputText = ""
         activeRunId = UUID.randomUUID().toString()
-        activeRunPrompt = normalized
         val runId = activeRunId ?: return
         uiState = uiState.copy(
             phase = EtaVoicePhase.PROCESSING,
@@ -497,7 +494,6 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                 if (activeRunId != runId) return@withContext false
                 flushPendingDelta(runId)
                 activeRunId = null
-                activeRunPrompt = ""
                 runJob = null
                 if (result.contextSnapshot != null) {
                     conversationHistory = result.contextSnapshot.messages
@@ -518,7 +514,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                         messages = finishRunMessages(runId, result),
                     )
                 }
-                // 窗口已经不在（GUI 操作隐藏，或用户关掉浮窗／把任务交回本体）时，
+                // 窗口已经不在（GUI 操作隐藏，或用户关掉浮窗）时，
                 // 这轮结束后统一收尾；结果本身由 Runtime 归档并通知。
                 val entrySurfaceGone = hiddenForForegroundOperation || runOutlivesEntrySurface
                 if (!entrySurfaceGone && windowView?.isShown == true && result.ok &&
@@ -640,7 +636,6 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         if (runId != null) {
             flushPendingDelta(runId)
             activeRunId = null
-            activeRunPrompt = ""
             requestRuntimeCancellation(runId)
             runJob?.cancel()
             runJob = null
@@ -670,8 +665,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         val runId = activeRunId ?: return
         flushPendingDelta(runId)
         activeRunId = null
-        activeRunPrompt = ""
-        // 任务已经离开入口浮窗（关窗后后台续跑 / 已交回本体）时只收回浮窗这一侧，
+        // 任务已经离开入口浮窗（关窗后后台续跑）时只收回浮窗这一侧，
         // 不能把 Runtime 里还在执行的 run 一起取消。
         if (abortRun && !runOutlivesEntrySurface) requestRuntimeCancellation(runId)
         runJob?.cancel()
@@ -803,20 +797,13 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
     }
 
     private fun openConversation() {
-        // 回答进行中同样可以接管：只要已经有一轮内容，就把把手拉到头交回本体。
-        if (handoffInProgress || uiState.messages.isEmpty()) return
+        if (handoffInProgress || activeRunId != null || uiState.messages.isEmpty()) return
         handoffInProgress = true
-        // 把仍在执行的 run 一并交回本体：接管后它归 Runtime 与本体所有，
-        // 浮窗销毁（包括超时回落）都不能再取消它。
-        val liveRunId = activeRunId
-        if (liveRunId != null) runOutlivesEntrySurface = true
         AndroidAgentLogger.info("Eta assistant handoff requested")
         updateSoftInput(visible = false)
         val intent = Intent(this, MainActivity::class.java)
             .setAction(ACTION_OPEN_CONVERSATION)
             .putExtra(EXTRA_CONVERSATION_KEY, conversationKey)
-            .putExtra(EXTRA_RUN_ID, liveRunId)
-            .putExtra(EXTRA_RUN_PROMPT, activeRunPrompt.takeIf { it.isNotBlank() })
             .addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -884,15 +871,9 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         const val ACTION_SHOW = "io.github.mangi.eta.agent.voice.SHOW"
         const val ACTION_OPEN_CONVERSATION = "io.github.mangi.eta.agent.voice.OPEN_CONVERSATION"
         const val EXTRA_CONVERSATION_KEY = "io.github.mangi.eta.agent.voice.extra.CONVERSATION_KEY"
-
-        /** 接管时仍在执行的 run；为空表示这轮已经结束，本体直接读归档。 */
-        const val EXTRA_RUN_ID = "io.github.mangi.eta.agent.voice.extra.RUN_ID"
-
-        /** 接管时这一轮的用户输入，本体用它立出会话骨架。 */
-        const val EXTRA_RUN_PROMPT = "io.github.mangi.eta.agent.voice.extra.RUN_PROMPT"
         private const val EXTRA_SCREEN_CONTEXT_ID = "assistant_screen_context_id"
         private const val ACTION_HANDOFF_READY = "io.github.mangi.eta.agent.voice.HANDOFF_READY"
-        private const val HANDOFF_TIMEOUT_MS = 8_000L
+        private const val HANDOFF_TIMEOUT_MS = 5_000L
         private const val HANDOFF_EXIT_DURATION_MS = 220L
         private const val HANDOFF_REQUEST_CODE = 0x455441
         private const val LEGACY_STOPPED_ERROR = "已停止"
