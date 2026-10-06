@@ -115,7 +115,7 @@ internal fun AgentAttachmentPickerButton(
                 imageVector = Icons.Rounded.Add,
                 contentDescription = stringResource(R.string.ui_add_attachment_dba9e8),
                 modifier = Modifier.size(ChatInputActionIconSize),
-                tint = MiuixTheme.colorScheme.onSurface,
+                tint = MiuixTheme.colorScheme.primary,
             )
         }
         WindowListPopup(

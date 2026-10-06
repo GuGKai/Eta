@@ -1,9 +1,5 @@
 package io.github.mangi.eta.ui.components
 
-import io.github.mangi.eta.ui.voice.SpeechDictationButton
-import io.github.mangi.eta.ui.voice.SpeechInputFeedback
-import io.github.mangi.eta.ui.voice.rememberSpeechInput
-import androidx.compose.ui.text.TextRange
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -132,7 +128,6 @@ internal fun AgentChatInputBar(
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
-    onModelSelected: (String) -> Unit,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit = onSubmit,
     onSteerQueuedMessage: (String) -> Unit = {},
@@ -154,16 +149,6 @@ internal fun AgentChatInputBar(
     val hapticFeedback = LocalHapticFeedback.current
     val focusRequester = remember { FocusRequester() }
     val textFieldState = rememberTextFieldState(initialText = input)
-    val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
-    val recognitionEnabled = speechSettings?.recognitionEnabled == true
-    val dictation = rememberSpeechInput { recognized ->
-        textFieldState.edit {
-            val range = selection
-            replace(range.min, range.max, recognized)
-            selection = TextRange(range.min + recognized.length)
-        }
-    }
-    LaunchedEffect(isEditingMessage, recognitionEnabled) { dictation.cancel() }
     var wasEditingMessage by remember { mutableStateOf(isEditingMessage) }
     var syncedVersion by remember { mutableIntStateOf(inputSyncVersion) }
     val canSend = textFieldState.text.isNotBlank() ||
@@ -215,21 +200,6 @@ internal fun AgentChatInputBar(
         modifier = modifier
             .fillMaxWidth(),
     ) {
-        if (recognitionEnabled) SpeechInputFeedback(dictation)
-        AnimatedVisibility(
-            visible = queuedMessages.isNotEmpty(),
-            enter = fadeIn(tween(160)),
-            exit = fadeOut(tween(100)) + shrinkVertically(tween(150)),
-        ) {
-            AgentChatQueueStrip(
-                queuedMessages = queuedMessages,
-                isStreaming = isStreaming,
-                onSteer = onSteerQueuedMessage,
-                onRecall = { id -> onRecallQueuedMessage(id, textFieldState.text.toString()) },
-                onRemove = onRemoveQueuedMessage,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
         AnimatedVisibility(
             visible = pendingFileReferences.isNotEmpty(),
             enter = fadeIn(tween(160)),
