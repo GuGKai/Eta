@@ -106,6 +106,8 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = false
+        // versionCode 采用日期编码，已发布值只能递增；上限 2100000000 足够覆盖到 2099 年。
+        disable += "HighAppVersionCode"
     }
 
     testOptions {
