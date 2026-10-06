@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.components
 
+import android.view.Display
+import android.view.RoundedCorner
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -61,9 +63,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.TextStyle
@@ -97,7 +101,56 @@ private val SendButtonVisualSize = ChatInputActionIconSize
 private val SendIconSize = 16.dp
 private val StopIconSize = 10.dp
 private val ThinkingIconSize = 21.dp
-private val InputContainerShape = RoundedCornerShape(20.dp)
+
+/** 设备不上报屏幕圆角信息时的回退圆角，保持改动前的观感。 */
+private val InputContainerFallbackRadius = 20.dp
+
+/**
+ * miuix squircle 会把传入半径乘以该系数再绘制（miuix SquirclePath.addSquircleRect 里
+ * `radius * extension`，默认值即 SquircleDefaults.Extension），所以要在传入前除回去，
+ * 才能画出指定的视觉半径。miuix 升级后若角形状有变，需要重新核对这个值。
+ */
+private const val SquircleVisualExtension = 1.1f
+
+/**
+ * 输入框圆角：与屏幕圆角同心，即角弧半径 = 屏幕圆角半径 − 输入框到屏幕的外边距。
+ *
+ * 同心同时要求水平、垂直外边距相同，这里取 AgentChatBottomBar 三边共用的
+ * [ChatInputOuterMargin]；屏幕圆角按当前旋转方向读取，设备不上报时用回退值。
+ */
+@Composable
+private fun rememberInputContainerRadius(): Dp {
+    val density = LocalDensity.current
+    val view = LocalView.current
+    val orientation = LocalConfiguration.current.orientation
+    return remember(density, view, orientation) {
+        val marginPx = with(density) { ChatInputOuterMargin.toPx() }
+        val visualPx = screenBottomCornerRadiusPx(view.display) - marginPx
+        if (visualPx <= 1f) {
+            InputContainerFallbackRadius
+        } else {
+            with(density) { (visualPx / SquircleVisualExtension).toDp() }
+        }
+    }
+}
+
+/** 屏幕下方两角的圆角半径（px）；设备不上报圆角信息时返回 0。 */
+private fun screenBottomCornerRadiusPx(display: Display?): Float {
+    if (display == null) return 0f
+
+    fun radius(position: Int): Float = runCatching {
+        display.getRoundedCorner(position)?.radius?.toFloat()
+    }.getOrNull()?.coerceAtLeast(0f) ?: 0f
+
+    val left = radius(RoundedCorner.POSITION_BOTTOM_LEFT)
+    val right = radius(RoundedCorner.POSITION_BOTTOM_RIGHT)
+    // 两角一致时随便取；不一致时取小值，避免角弧越出屏幕圆角。
+    return when {
+        left <= 0f -> right
+        right <= 0f -> left
+        else -> minOf(left, right)
+    }
+}
 
 /**
  * Agent 输入器始终保持同一空间结构，聚焦、输入和执行过程只改变状态，不搬动操作入口。
@@ -142,6 +195,10 @@ internal fun AgentChatInputBar(
         pendingImages.isNotEmpty() ||
         pendingFileReferences.isNotEmpty()
     val density = LocalDensity.current
+    val inputContainerRadius = rememberInputContainerRadius()
+    val inputContainerShape = remember(inputContainerRadius) {
+        RoundedCornerShape(inputContainerRadius)
+    }
     val statusBarTopPx = WindowInsets.statusBars.getTop(density)
     var inputContainerTopPx by remember { mutableIntStateOf(0) }
     val thinkingPopupMaxHeight = with(density) {
@@ -244,7 +301,7 @@ internal fun AgentChatInputBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .dropShadow(
-                        shape = InputContainerShape,
+                        shape = inputContainerShape,
                         shadow = Shadow(
                             radius = 8.dp,
                             color = Color.Black,
@@ -253,12 +310,12 @@ internal fun AgentChatInputBar(
                     )
                     .squircleSurface(
                         color = MiuixTheme.colorScheme.surfaceContainer,
-                        cornerRadius = 20.dp,
+                        cornerRadius = inputContainerRadius,
                     )
                     .squircleBorder(
                         width = 0.5.dp,
                         color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                        cornerRadius = 20.dp,
+                        cornerRadius = inputContainerRadius,
                     )
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
