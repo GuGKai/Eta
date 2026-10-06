@@ -1392,4 +1392,5 @@
   <string name="memory_discard">Discard</string>
   <string name="chat_character_input_hint">Say something to %1$s…</string>
   <string name="chat_character_typing">%1$s is replying…</string>
+  <string name="conversation_context_loading">Loading conversation history…</string>
 </resources>
