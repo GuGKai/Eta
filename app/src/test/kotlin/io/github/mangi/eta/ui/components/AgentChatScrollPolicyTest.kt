@@ -19,6 +19,42 @@ class AgentChatScrollPolicyTest {
     }
 
     @Test
+    fun keyboardLiftFollowsBottomWhileReaderStaysAtBottom() {
+        assertTrue(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = false,
+                keyboardLiftSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun keyboardLiftDoesNotPullReaderBackFromHistory() {
+        assertFalse(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = false,
+                isUserDragging = false,
+                keyboardLiftSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun keyboardLiftStopsWhileDragging() {
+        assertFalse(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = true,
+                keyboardLiftSettling = true,
+            )
+        )
+    }
+
+    @Test
     fun draggingInterruptsCompletionFollowing() {
         assertFalse(
             resolveBottomFollowEnabled(
