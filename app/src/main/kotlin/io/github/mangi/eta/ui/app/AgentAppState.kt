@@ -181,8 +181,7 @@ internal class AgentAppState(
     }
 
     private suspend fun loadConversationsFromDiskAndApply() {
-        val snapshot = withContext(Dispatchers.IO) { AgentConversationStore.loadFromDisk(appContext) }
-        applyConversationSnapshot(snapshot)
+        applyConversationSnapshot(AgentConversationLoader.takeForState(appContext))
     }
 
     private suspend fun applyConversationSnapshot(snapshot: AgentConversationStore.Snapshot) {
@@ -2015,7 +2014,7 @@ private const val EXTERNAL_ARCHIVE_CONVERSATION_PREFIX = "archive-"
 private fun String.isReadOnlyExternalArchiveConversation(): Boolean =
     startsWith(EXTERNAL_ARCHIVE_CONVERSATION_PREFIX)
 
-private fun archiveConversationId(source: String, conversationKey: String): String {
+internal fun archiveConversationId(source: String, conversationKey: String): String {
     val prefix = if (source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE) {
         ASSISTANT_CONVERSATION_PREFIX
     } else {

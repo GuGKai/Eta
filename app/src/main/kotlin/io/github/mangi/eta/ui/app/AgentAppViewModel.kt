@@ -24,6 +24,8 @@ internal class AgentAppViewModel(application: Application) : AndroidViewModel(ap
     val state = AgentAppState(
         context = application,
         scope = viewModelScope,
+        // 加载已在 Activity.onCreate 并行开始；这里同步取走结果，首帧即带正确会话。
+        initialConversations = AgentConversationLoader.takeIfReady(),
     )
     val skills = AgentSkillsStore(application, viewModelScope)
     val memory = AgentMemoryStore(application, viewModelScope)
