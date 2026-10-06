@@ -1347,4 +1347,5 @@
   <string name="tool_web_search_description">未使用 Provider 托管搜索时检索公开网页，返回标题、链接与摘要，无需额外 API Key。</string>
   <string name="tool_fetch_url">读取网页正文</string>
   <string name="tool_fetch_url_description">读取静态网页正文并分页续读；不执行网页脚本或共享浏览器登录状态。</string>
+  <string name="conversation_context_loading">Loading conversation history…</string>
 </resources>

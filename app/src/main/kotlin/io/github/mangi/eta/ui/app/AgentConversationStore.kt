@@ -7,6 +7,7 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
 import io.github.mangi.eta.data.db.ConversationContextCheckpointEntity
+import io.github.mangi.eta.data.db.ConversationDao
 import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.ConversationMetadata
 import io.github.mangi.eta.data.db.ConversationMessageEntity
@@ -54,6 +55,8 @@ internal object AgentConversationStore {
          */
         val unalignedConversationIds: Set<String> = emptySet(),
         val pinned: Set<String> = emptySet(),
+        /** 上下文尚未解码的会话：库里仍有 checkpoint，只是这次没有解，用到前必须补解。 */
+        val deferredContextIds: Set<String> = emptySet(),
     )
 
     private val saveMutex = Mutex()
@@ -62,6 +65,40 @@ internal object AgentConversationStore {
         runBlocking(Dispatchers.IO) {
             loadSnapshot(context.applicationContext)
         }
+
+    /** 非阻塞版本：首帧路径专用，避免在组合线程上 runBlocking 等全库加载。 */
+    suspend fun loadFromDisk(context: Context): Snapshot =
+        loadSnapshot(context.applicationContext)
+
+    /** 补解单个会话的上下文；库里没有 checkpoint 行时按消息兜底，与全量加载语义一致。 */
+    suspend fun loadConversationContext(context: Context, conversationId: String): ContextPayload {
+        val dao = EtaDatabase.get(context.applicationContext).conversationDao()
+        val checkpoint = dao.contextCheckpoint(conversationId)
+        val messages = readMessages(dao, conversationId)
+        return ContextPayload(
+            history = AgentConversationCodec.decodeTranscript(checkpoint?.historyJson)
+                .ifEmpty { messages.toLegacyHistory() },
+            journal = AgentConversationCodec.decodeTranscript(checkpoint?.journalJson),
+        )
+    }
+
+    data class ContextPayload(
+        val history: List<AgentModelClient.ConversationMessage>,
+        val journal: List<AgentModelClient.ConversationMessage>,
+    )
+
+    private suspend fun readMessages(
+        dao: ConversationDao,
+        conversationId: String,
+    ): List<ConversationMessageEntity> = buildList {
+        var offset = 0
+        while (true) {
+            val page = dao.messagesPage(conversationId, MESSAGE_LOAD_PAGE_SIZE, offset)
+            addAll(page)
+            if (page.size < MESSAGE_LOAD_PAGE_SIZE) break
+            offset += page.size
+        }
+    }
 
     suspend fun save(
         context: Context,
@@ -110,7 +147,10 @@ internal object AgentConversationStore {
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))
                             }
-                            if (old == null || state.history != old.history || state.journal != old.journal) {
+                            // 上下文尚未补解的会话：内存里只是占位空值，绝不能写回 checkpoint。
+                            if (!state.contextDeferred &&
+                                (old == null || state.history != old.history || state.journal != old.journal)
+                            ) {
                                 val missing = dao.contextCheckpointRow(id) == null
                                 phase = "encode_history"
                                 val history = if (missing || old == null || state.history != old.history) {
@@ -178,35 +218,39 @@ internal object AgentConversationStore {
         val updatedAt = mutableMapOf<String, Long>()
         val unaligned = mutableSetOf<String>()
         val pinned = mutableSetOf<String>()
+        val deferred = mutableSetOf<String>()
+        // 只解选中会话的 transcript，其余延迟到真正打开时补解：避免首帧被全库反序列化挡住。
+        val selectedConversationId = dao.state()?.selectedConversationId
+            ?.takeIf { id -> conversations.any { it.id == id } }
+            ?: conversations.first().id
 
         conversations.forEach { conversation ->
-            val messages = buildList {
-                var offset = 0
-                while (true) {
-                    val page = dao.messagesPage(conversation.id, MESSAGE_LOAD_PAGE_SIZE, offset)
-                    addAll(page)
-                    if (page.size < MESSAGE_LOAD_PAGE_SIZE) break
-                    offset += page.size
-                }
-            }
+            val messages = readMessages(dao, conversation.id)
             val restored = messages.mapNotNull { it.toMessageOrNull() }
             if (restored.size != messages.size || messages.withIndex().any { (index, row) -> row.sortIndex != index }) {
                 unaligned += conversation.id
             }
-            val checkpoint = dao.contextCheckpoint(conversation.id)
+            val isSelected = conversation.id == selectedConversationId
+            val checkpoint = if (isSelected) dao.contextCheckpoint(conversation.id) else null
+            if (!isSelected) deferred += conversation.id
             states[conversation.id] = AgentChatHomeUiState(
                 roleplay = conversation.roleplayJson.takeIf(String::isNotBlank)?.let { json.decodeFromString<RoleplayBinding>(it) },
                 roleplayMessages = conversation.revisionsJson.takeIf(String::isNotBlank)?.let {
                     json.decodeFromString<RoleplayMessageState>(it)
                 } ?: RoleplayMessageState(),
-                journal = AgentConversationCodec.decodeTranscript(checkpoint?.journalJson),
+                journal = if (isSelected) {
+                    AgentConversationCodec.decodeTranscript(checkpoint?.journalJson)
+                } else {
+                    emptyList()
+                },
                 messages = restored,
-                history = AgentConversationCodec.decodeTranscript(
-                    checkpoint?.historyJson
-                )
-                    .ifEmpty {
-                        messages.toLegacyHistory()
-                    },
+                history = if (isSelected) {
+                    AgentConversationCodec.decodeTranscript(checkpoint?.historyJson)
+                        .ifEmpty { messages.toLegacyHistory() }
+                } else {
+                    emptyList()
+                },
+                contextDeferred = !isSelected,
                 appliedRuntimeRunIds = conversation.appliedRuntimeRunIdsJson.toStringList(),
                 input = "",
                 isStreaming = false,
@@ -219,9 +263,7 @@ internal object AgentConversationStore {
             if (conversation.pinned) pinned += conversation.id
         }
 
-        val selected = dao.state()?.selectedConversationId
-            ?.takeIf { it in states }
-            ?: states.keys.first()
+        val selected = selectedConversationId
 
         return Snapshot(
             selectedConversationId = selected,
@@ -230,6 +272,7 @@ internal object AgentConversationStore {
             updatedAt = updatedAt,
             unalignedConversationIds = unaligned,
             pinned = pinned,
+            deferredContextIds = deferred,
         )
     }
 

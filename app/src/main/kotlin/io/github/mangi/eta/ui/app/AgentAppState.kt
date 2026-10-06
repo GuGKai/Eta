@@ -83,13 +83,25 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 internal class AgentAppState(
     context: Context,
     private val scope: CoroutineScope,
-    initialConversations: AgentConversationStore.Snapshot = AgentConversationStore.load(context),
+    initialConversations: AgentConversationStore.Snapshot? = null,
 ) {
+    /** 显式传入快照时视为已就绪；默认路径自己后台加载，构造线程不再等全库。 */
+    private val conversationsLoadedFromDisk = initialConversations != null
+    private val initialSnapshot = initialConversations ?: AgentConversationStore.Snapshot(
+        selectedConversationId = null,
+        conversationsById = emptyMap(),
+        titles = emptyMap(),
+        updatedAt = emptyMap(),
+        pinned = emptySet(),
+    )
+    private val loadCompletion = CompletableDeferred<Unit>()
     private val appContext = context.applicationContext
     private val runConversationIds = mutableMapOf<String, String>()
     private val runMessageProjector = AgentRunMessageProjector()
@@ -104,18 +116,22 @@ internal class AgentAppState(
     private val runtimeRecoveryInProgress = AtomicBoolean(false)
     private val defaultThinkingEnabled = agentBooleanForUi(Prefs.Keys.AGENT_THINKING_ENABLED)
     @Volatile
-    private var conversationPersistence = AgentConversationPersistence(initialConversations)
+    private var conversationPersistence = AgentConversationPersistence(initialSnapshot)
     private var currentReasoningCapabilities: ModelReasoningCapabilities? = null
     private var providers: List<ProviderSetting> = emptyList()
     private var defaultModelId: String? = null
     private var defaultProviderId: String? = null
     private var fileAttachmentOwnerVersion = 0L
 
-    private var selectedConversationId: String? = initialConversations.selectedConversationId
-    private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
-    private var conversationTitles: Map<String, String> = initialConversations.titles
-    private var conversationUpdatedAt: Map<String, Long> = initialConversations.updatedAt
-    private var conversationPinned: Set<String> = initialConversations.pinned
+    private var selectedConversationId: String? = initialSnapshot.selectedConversationId
+    private var conversationsById: Map<String, AgentChatHomeUiState> = initialSnapshot.conversationsById
+    private var conversationTitles: Map<String, String> = initialSnapshot.titles
+    private var conversationUpdatedAt: Map<String, Long> = initialSnapshot.updatedAt
+    private var conversationPinned: Set<String> = initialSnapshot.pinned
+
+    /** 上下文（history/journal）仍待补解的会话；补解前不得写回 checkpoint。 */
+    private var deferredContextIds: Set<String> = initialSnapshot.deferredContextIds
+    private val contextLoadMutex = Mutex()
 
     var homeState by mutableStateOf(
         selectedConversationId?.let(conversationsById::get) ?: emptyChatState(defaultThinkingEnabled)
@@ -143,15 +159,104 @@ internal class AgentAppState(
     init {
         refreshConversationSummaries()
         observeRuntimeSelection()
+        if (!conversationsLoadedFromDisk) {
+            scope.launch { loadConversationsFromDiskAndApply() }
+        }
         runtimeRecoveryInProgress.set(true)
         scope.launch(Dispatchers.IO) {
             try {
+                // 恢复流程要等会话列表就绪，否则会把"还没加载"误判成"会话不存在"。
+                awaitConversationsLoaded()
                 recoverRuntimeRuns()
                 importArchivedExternalRuns()
             } finally {
                 runtimeRecoveryInProgress.set(false)
             }
         }
+    }
+
+    /** 会话列表就绪前的等待点：补解、恢复、保存都排在加载之后。 */
+    private suspend fun awaitConversationsLoaded() {
+        if (!conversationsLoadedFromDisk) loadCompletion.await()
+    }
+
+    private suspend fun loadConversationsFromDiskAndApply() {
+        val snapshot = withContext(Dispatchers.IO) { AgentConversationStore.loadFromDisk(appContext) }
+        applyConversationSnapshot(snapshot)
+    }
+
+    private suspend fun applyConversationSnapshot(snapshot: AgentConversationStore.Snapshot) {
+        withContext(Dispatchers.Main.immediate) {
+            selectedConversationId = snapshot.selectedConversationId
+            conversationsById = snapshot.conversationsById
+            conversationTitles = snapshot.titles
+            conversationUpdatedAt = snapshot.updatedAt
+            conversationPinned = snapshot.pinned
+            deferredContextIds = snapshot.deferredContextIds
+            conversationPersistence = AgentConversationPersistence(snapshot)
+            fileAttachmentOwnerVersion += 1
+            homeState = selectedConversationId
+                ?.let(conversationsById::get)
+                ?.withCurrentReasoningCapabilities()
+                ?: emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities()
+            conversationPaneState = conversationPaneState.copy(
+                selectedConversationId = selectedConversationId,
+                searchQuery = "",
+            )
+            refreshConversationSummaries()
+        }
+        if (!loadCompletion.isCompleted) loadCompletion.complete(Unit)
+    }
+
+    /**
+     * 补解某个会话的上下文：只对延迟加载的会话解一次，把这段反序列化从首帧挪到真正打开它的时刻。
+     * 解码完成后同步保存基线，避免下一次保存把整段 checkpoint 重写。
+     */
+    private suspend fun ensureContextLoaded(conversationId: String): Boolean {
+        awaitConversationsLoaded()
+        if (conversationId !in deferredContextIds) return true
+        val payload = contextLoadMutex.withLock {
+            if (conversationId !in deferredContextIds) return@withLock null
+            withContext(Dispatchers.IO) {
+                AgentConversationStore.loadConversationContext(appContext, conversationId)
+            }
+        } ?: return true
+        return withContext(Dispatchers.Main.immediate) {
+            deferredContextIds = deferredContextIds - conversationId
+            val state = conversationsById[conversationId] ?: return@withContext false
+            val resolved = state.copy(
+                history = payload.history,
+                journal = payload.journal,
+                contextDeferred = false,
+            )
+            updateConversation(conversationId, resolved, updateTimestamp = false)
+            conversationPersistence.rebase(
+                conversationId,
+                AgentConversationPersistence.Content(
+                    state = resolved,
+                    title = conversationTitles[conversationId].orEmpty(),
+                    updatedAt = conversationUpdatedAt[conversationId] ?: 0L,
+                    pinned = conversationId in conversationPinned,
+                ),
+            )
+            true
+        }
+    }
+
+    /**
+     * 上下文还没补解完时不允许就地改写该会话：先排队补解并提示稍后再试，
+     * 避免把占位空历史当成真实上下文写回库。
+     */
+    private fun requireContextReady(): Boolean {
+        val conversationId = selectedConversationId ?: return true
+        if (!homeState.contextDeferred) return true
+        scope.launch { ensureContextLoaded(conversationId) }
+        Toast.makeText(
+            appContext,
+            appContext.getString(R.string.conversation_context_loading),
+            Toast.LENGTH_SHORT,
+        ).show()
+        return false
     }
 
     private fun observeRuntimeSelection() {
@@ -275,24 +380,7 @@ internal class AgentAppState(
         val snapshot = withContext(Dispatchers.IO) {
             AgentConversationStore.load(appContext)
         }
-        withContext(Dispatchers.Main.immediate) {
-            selectedConversationId = snapshot.selectedConversationId
-            conversationsById = snapshot.conversationsById
-            conversationTitles = snapshot.titles
-            conversationUpdatedAt = snapshot.updatedAt
-            conversationPersistence = AgentConversationPersistence(snapshot)
-            conversationPinned = snapshot.pinned
-            fileAttachmentOwnerVersion += 1
-            homeState = selectedConversationId
-                ?.let(conversationsById::get)
-                ?: emptyChatState(defaultThinkingEnabled)
-            refreshConversationModel()
-            conversationPaneState = conversationPaneState.copy(
-                selectedConversationId = selectedConversationId,
-                searchQuery = "",
-            )
-            refreshConversationSummaries()
-        }
+        applyConversationSnapshot(snapshot)
     }
 
     /** 用 checkpoint、终态 outbox 与 active session 一次性对账，避免用进程存活推断 run 状态。 */
@@ -358,6 +446,14 @@ internal class AgentAppState(
         ) {
             return
         }
+
+        // 恢复会直接改写会话的 history/journal：先把涉及会话的上下文补齐，
+        // 否则会拿占位空历史去合并（保存层有兜底，但内存状态会脏）。
+        (completedRuns.map { AgentUiHandoffPayload.from(it.handoff.payload).conversationId } +
+            checkpoints.map { AgentUiHandoffPayload.from(it.handoff.payload).conversationId })
+            .filter { it.isNotBlank() }
+            .distinct()
+            .forEach { ensureContextLoaded(it) }
 
         val acknowledgeAfterSave = mutableListOf<String>()
         val removeAfterSave = mutableListOf<String>()
@@ -545,6 +641,15 @@ internal class AgentAppState(
         }
         if (archivedRuns.isEmpty()) return
 
+        // 归档 run 会落回它自己的会话：延迟加载的会话先补上下文再合并。
+        archivedRuns.mapNotNull { archivedRun ->
+            AgentExternalArchivePayload.from(archivedRun.handoff.payload)?.let { payload ->
+                archiveConversationId(archivedRun.handoff.source, payload.conversationKey)
+            }
+        }
+            .distinct()
+            .forEach { ensureContextLoaded(it) }
+
         withContext(Dispatchers.Main) {
             val importedRunIds = archivedRuns.mapNotNull { archivedRun ->
                 importExternalRun(archivedRun)
@@ -698,6 +803,8 @@ internal class AgentAppState(
         }
         conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
         persistConversations()
+        // 打开会话时顺带补解上下文：解码落在真正要看它的时刻，不再挂在首帧上。
+        scope.launch { ensureContextLoaded(conversationId) }
     }
 
     fun createConversation() {
@@ -749,6 +856,7 @@ internal class AgentAppState(
 
     fun selectReplyCandidate(messageId: String, index: Int) {
         if (homeState.isStreaming || homeState.messageEdit != null) return
+        if (!requireContextReady()) return
         val updated = RoleplayConversationReducer.select(homeState, messageId, index) ?: return
         updateCurrentConversation(updated)
         refreshConversationSummaries()
@@ -839,6 +947,7 @@ internal class AgentAppState(
 
     fun sendCurrentMessage(submittedText: String? = null) {
         if (homeState.isCompacting) return
+        if (!requireContextReady()) return
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
@@ -1016,6 +1125,7 @@ internal class AgentAppState(
 
     fun deleteMessageTurn(messageId: String) {
         if (homeState.isStreaming || homeState.messageEdit != null) return
+        if (!requireContextReady()) return
         val conversationId = selectedConversationId ?: return
         if (homeState.roleplay != null && messageId.startsWith("greeting-")) {
             val originalId = homeState.roleplayMessages.links[messageId]?.transcriptMessageId ?: return
@@ -1059,6 +1169,7 @@ internal class AgentAppState(
 
     fun regenerateMessage(messageId: String) {
         if (homeState.isStreaming || homeState.messageEdit != null) return
+        if (!requireContextReady()) return
         val conversationId = selectedConversationId ?: return
         if (homeState.roleplay != null) {
             val target = homeState.messages.filterIsInstance<AgentMessageUi>().firstOrNull { it.id == messageId } ?: return
@@ -1102,6 +1213,7 @@ internal class AgentAppState(
     }
 
     fun compactCurrentContext() {
+        if (!requireContextReady()) return
         val conversationId = selectedConversationId ?: return
         if (currentRunId != null || !homeState.canCompactContext || modelPickerState.isChanging) return
         launchConversationRun(

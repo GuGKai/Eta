@@ -22,6 +22,14 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
         saved = current
     }
 
+    /**
+     * 会话上下文补解完成后把基线直接对齐到已解码值：既避免把空上下文当成变更写回，
+     * 也避免下一次保存为同一个会话重编码整段 checkpoint。
+     */
+    internal fun rebase(conversationId: String, content: Content) {
+        saved = saved + (conversationId to content)
+    }
+
     private fun project(snapshot: AgentConversationStore.Snapshot): Map<String, Content> =
         snapshot.conversationsById.mapValues { (id, state) ->
             Content(state, snapshot.titles[id].orEmpty(), snapshot.updatedAt[id] ?: 0L, id in snapshot.pinned)
@@ -40,12 +48,15 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
         val journal: List<AgentModelClient.ConversationMessage>,
         /** 会话是否置顶；与其余元数据一样参与增量写入判定。 */
         val pinned: Boolean = false,
+        /** 上下文尚未解码：history/journal 只是占位空值，不得参与比对或写回。 */
+        val contextDeferred: Boolean = false,
     ) {
         constructor(state: AgentChatHomeUiState, title: String, updatedAt: Long, pinned: Boolean = false) : this(
             title, updatedAt, state.reasoningEffort, state.appliedRuntimeRunIds,
             state.roleplay, if (state.roleplay == null) RoleplayMessageState() else state.roleplayMessages,
             state.modelId, state.messages, state.history, state.journal.ifEmpty { state.history },
             state.messages, state.history, state.journal.ifEmpty { state.history }, pinned,
+            contextDeferred = state.contextDeferred,
         )
 
         fun sameMetadata(other: Content): Boolean =
