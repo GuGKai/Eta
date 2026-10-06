@@ -27,14 +27,18 @@ import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
+import io.github.mangi.eta.data.model.MAX_CHAT_TEXT_SCALE
 import io.github.mangi.eta.data.model.MAX_INTERFACE_SCALE
+import io.github.mangi.eta.data.model.MIN_CHAT_TEXT_SCALE
 import io.github.mangi.eta.data.model.MIN_INTERFACE_SCALE
+import io.github.mangi.eta.data.model.normalizeChatTextScale
 import io.github.mangi.eta.data.model.normalizeInterfaceScale
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaOverlayDropdownPreference
+import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
@@ -58,6 +62,9 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
     var scaleDraft by remember(appearance.interfaceScale) {
         mutableFloatStateOf(appearance.interfaceScale * 100f)
     }
+    var chatTextScaleDraft by remember(appearance.chatTextScale) {
+        mutableFloatStateOf(appearance.chatTextScale * 100f)
+    }
     var showScaleDialog by remember { mutableStateOf(false) }
     var scaleInput by remember { mutableStateOf("") }
     val blurSupported = isRuntimeShaderSupported()
@@ -72,6 +79,12 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
         val scale = normalizeInterfaceScale(percent.roundToInt() / 100f)
         scaleDraft = scale * 100f
         update { current -> current.copy(interfaceScale = scale) }
+    }
+
+    fun commitChatTextScale(percent: Float) {
+        val scale = normalizeChatTextScale(percent.roundToInt() / 100f)
+        chatTextScaleDraft = scale * 100f
+        update { current -> current.copy(chatTextScale = scale) }
     }
 
     val themeModes = AppearanceThemeMode.entries
@@ -269,6 +282,34 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                         showScaleDialog = true
                     },
                     holdDownState = showScaleDialog,
+                )
+                EtaPreferenceDivider(hasLeading = false)
+                EtaPreference(
+                    title = stringResource(R.string.appearance_chat_text_scale),
+                    summary = stringResource(R.string.appearance_chat_text_scale_summary),
+                    endActions = {
+                        Text(
+                            text = "${chatTextScaleDraft.roundToInt()}%",
+                            fontSize = MiuixTheme.textStyles.body2.fontSize,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        )
+                    },
+                    bottomAction = {
+                        Slider(
+                            value = chatTextScaleDraft.coerceIn(
+                                MIN_CHAT_TEXT_SCALE * 100f,
+                                MAX_CHAT_TEXT_SCALE * 100f,
+                            ),
+                            onValueChange = { chatTextScaleDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            valueRange = (MIN_CHAT_TEXT_SCALE * 100f)..(MAX_CHAT_TEXT_SCALE * 100f),
+                            onValueChangeFinished = { commitChatTextScale(chatTextScaleDraft) },
+                            showKeyPoints = true,
+                            keyPoints = listOf(90f, 100f, 110f, 120f, 130f),
+                            magnetThreshold = 0.01f,
+                            hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                        )
+                    },
                 )
             }
         }

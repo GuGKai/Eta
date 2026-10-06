@@ -172,6 +172,8 @@
   <string name="appearance_interface_scale_dialog_title">Interface scale</string>
   <string name="appearance_interface_scale_dialog_summary">Enter an integer from 80 to 110</string>
   <string name="appearance_interface_scale_input_label">Percentage</string>
+  <string name="appearance_chat_text_scale">Chat text size</string>
+  <string name="appearance_chat_text_scale_summary" formatted="false">Adjust the size of my messages and reply text in conversations; thinking text stays unchanged (80%–140%)</string>
   <string name="conversation_unnamed">New conversation</string>
   <string name="conversation_search_hint">Search conversations</string>
   <string name="conversation_empty">No conversations yet</string>

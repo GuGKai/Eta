@@ -79,11 +79,13 @@ import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.markdown.MarkdownTone
 import io.github.mangi.eta.ui.markdown.StaticMarkdown
 import io.github.mangi.eta.ui.markdown.StreamingMarkdown
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownState
 import io.github.mangi.eta.ui.markdown.THINKING_LINE_HEIGHT_SP
+import io.github.mangi.eta.ui.markdown.scaleChatText
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.RunTraceMessageUi
@@ -296,6 +298,8 @@ private fun UserMessageBubble(
     val visiblePrompt = remember(message.content) {
         AgentFileReferencePromptCodec.parse(message.content)
     }
+    // 会话正文字号倍率：我发出的消息与助手回答共用「外观和主题」里的同一个设置。
+    val chatTextScale = LocalAppearanceSettings.current.chatTextScale
     val overlayBubbleColor = if (MiuixTheme.colorScheme.background.luminance() < 0.5f) {
         Color(0xFF37393D)
     } else {
@@ -414,7 +418,7 @@ private fun UserMessageBubble(
                     SelectionContainer {
                         Text(
                             text = visiblePrompt.request,
-                            style = MiuixTheme.textStyles.body1,
+                            style = MiuixTheme.textStyles.body1.scaleChatText(chatTextScale),
                             color = MiuixTheme.colorScheme.onSurface,
                         )
                     }

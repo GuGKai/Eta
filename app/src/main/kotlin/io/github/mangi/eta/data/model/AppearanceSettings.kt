@@ -6,6 +6,11 @@ const val MIN_INTERFACE_SCALE = 0.8f
 const val MAX_INTERFACE_SCALE = 1.1f
 const val DEFAULT_INTERFACE_SCALE = 1f
 
+/** 会话正文字号倍率：只作用于助手回答与我发出的消息，思考过程不跟随。 */
+const val MIN_CHAT_TEXT_SCALE = 0.8f
+const val MAX_CHAT_TEXT_SCALE = 1.4f
+const val DEFAULT_CHAT_TEXT_SCALE = 1f
+
 @Serializable
 data class AppearanceSettings(
     val themeMode: AppearanceThemeMode = AppearanceThemeMode.SYSTEM,
@@ -18,9 +23,11 @@ data class AppearanceSettings(
     val swipeDismissEnabled: Boolean = true,
     val predictiveBackEnabled: Boolean = true,
     val interfaceScale: Float = DEFAULT_INTERFACE_SCALE,
+    val chatTextScale: Float = DEFAULT_CHAT_TEXT_SCALE,
 ) {
     fun normalized(): AppearanceSettings = copy(
         interfaceScale = normalizeInterfaceScale(interfaceScale),
+        chatTextScale = normalizeChatTextScale(chatTextScale),
     )
 }
 
@@ -88,4 +95,11 @@ fun normalizeInterfaceScale(value: Float): Float =
         value.coerceIn(MIN_INTERFACE_SCALE, MAX_INTERFACE_SCALE)
     } else {
         DEFAULT_INTERFACE_SCALE
+    }
+
+fun normalizeChatTextScale(value: Float): Float =
+    if (value.isFinite()) {
+        value.coerceIn(MIN_CHAT_TEXT_SCALE, MAX_CHAT_TEXT_SCALE)
+    } else {
+        DEFAULT_CHAT_TEXT_SCALE
     }

@@ -167,6 +167,8 @@
   <string name="appearance_interface_scale_dialog_title">介面縮放</string>
   <string name="appearance_interface_scale_dialog_summary">請輸入 80 至 110 之間的整數</string>
   <string name="appearance_interface_scale_input_label">百分比</string>
+  <string name="appearance_chat_text_scale">會話文字大小</string>
+  <string name="appearance_chat_text_scale_summary" formatted="false">調整會話裡我發出的訊息與回覆正文的字號，思考過程不變（80%–140%）</string>
   <string name="conversation_unnamed">新對話</string>
   <string name="conversation_search_hint">搜尋對話</string>
   <string name="conversation_empty">尚無對話</string>
