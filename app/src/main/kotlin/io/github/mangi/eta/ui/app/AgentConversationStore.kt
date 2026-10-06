@@ -50,7 +50,7 @@ internal object AgentConversationStore {
         val titles: Map<String, String>,
         val updatedAt: Map<String, Long>,
         /**
-         * 加载后列表下标与库中 sort_index 不一致的会话。流式占位等未入库消息会在排序中留下空洞，
+         * 列表下标与 sort_index 不一致，或加载时修复过外部历史的会话。流式占位会留下空洞，
          * 重启后列表被压紧；增量保存按下标截断后缀，这些会话必须先整段重写一次。
          */
         val unalignedConversationIds: Set<String> = emptySet(),
@@ -141,6 +141,7 @@ internal object AgentConversationStore {
                                     appliedRuntimeRunIdsJson = json.encodeToString(state.appliedRuntimeRunIds),
                                     roleplayJson = state.roleplay?.let { json.encodeToString(it) }.orEmpty(),
                                     revisionsJson = if (state.roleplay == null) "" else json.encodeToString(state.roleplayMessages),
+                                    lastModelUsageJson = state.lastModelUsage?.let { json.encodeToString(it) }.orEmpty(),
                                     createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     modelId = state.modelId,
@@ -251,6 +252,9 @@ internal object AgentConversationStore {
                 } else {
                     emptyList()
                 },
+                lastModelUsage = conversation.lastModelUsageJson.takeIf(String::isNotBlank)?.let {
+                    runCatching { json.decodeFromString<TokenUsageUi>(it) }.getOrNull()
+                },
                 messages = restored,
                 history = if (isSelected) {
                     AgentConversationCodec.decodeTranscript(checkpoint?.historyJson)
@@ -265,7 +269,12 @@ internal object AgentConversationStore {
                 thinkingEnabled = conversation.reasoningEffortValue.enablesReasoning,
                 reasoningEffort = conversation.reasoningEffortValue,
                 modelId = conversation.modelId,
-            ).let(RoleplayConversationReducer::decorate)
+            ).let { original ->
+                ExternalConversationHistory.repair(conversation.id, original).also { repaired ->
+                    if (repaired.history != original.history || repaired.journal != original.journal) unaligned += conversation.id
+                }
+            }
+                .let(RoleplayConversationReducer::decorate)
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
             if (conversation.pinned) pinned += conversation.id
@@ -318,6 +327,7 @@ internal object AgentConversationStore {
                         outputTokens = usage?.outputTokens,
                         reasoningTokens = usage?.reasoningTokens,
                         cachedTokens = usage?.cachedTokens,
+                        requestDurationMs = usage?.requestDurationMs,
                     )
                 }
             }
@@ -387,6 +397,7 @@ internal object AgentConversationStore {
                     outputTokens = outputTokens,
                     reasoningTokens = reasoningTokens,
                     cachedTokens = cachedTokens,
+                    requestDurationMs = requestDurationMs,
                 ).takeUnless { it.isEmpty },
             )
 

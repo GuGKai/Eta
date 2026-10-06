@@ -30,6 +30,8 @@ internal data class AgentChatUiState(
     val modelId: String? = null,
     /** 上下文（history/journal）是否仍待补解；true 时该会话的 checkpoint 不得写回。 */
     val contextDeferred: Boolean = false,
+    /** 最近一次模型请求的用量与输出速度，用于顶栏胶囊。 */
+    val lastModelUsage: TokenUsageUi? = null,
 ) {
     val canCompactContext: Boolean get() = !isStreaming && messageEdit == null && history.any {
         !it.contextSummary && (it.role == "assistant" || it.role == "tool")
@@ -88,13 +90,21 @@ data class SystemNoticeMessageUi(
 ) : AgentChatMessageUi
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class TokenUsageUi(
     val contextTokens: Int? = null,
     val inputTokens: Int? = null,
     val outputTokens: Int? = null,
     val reasoningTokens: Int? = null,
     val cachedTokens: Int? = null,
+    val requestDurationMs: Long? = null,
 ) {
+    /** Request average includes time to the first token, but excludes tools and earlier retries. */
+    val averageTokensPerSecond: Double?
+        get() = outputTokens?.takeIf { it >= 0 }?.let { tokens ->
+            requestDurationMs?.takeIf { it > 0 }?.let { tokens * 1000.0 / it }
+        }
+
     val isEmpty: Boolean
         get() = contextTokens == null &&
             inputTokens == null &&

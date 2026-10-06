@@ -714,7 +714,7 @@ internal class AgentAppState(
         runConversationIds[runId] = conversationId
         updateConversation(
             conversationId,
-            existingState.copy(
+            ExternalConversationHistory.appendUser(existingState, runId, payload.userText).copy(
                 input = "",
                 isStreaming = true,
                 thinkingEnabled = archivedEffort.enablesReasoning,
@@ -992,9 +992,6 @@ internal class AgentAppState(
         val runtimePrompt = AgentFileReferencePromptCodec.format(prompt, fileReferences)
 
         val edit = homeState.messageEdit
-        if (edit == null && selectedConversationId?.isReadOnlyExternalArchiveConversation() == true) {
-            moveCurrentDraftToNewConversation()
-        }
 
         val editBoundary = edit?.let {
             AgentConversationRevisionReducer.boundary(homeState, it.targetMessageId)
@@ -1678,6 +1675,24 @@ internal class AgentAppState(
             is AgentEvent.AssistantBlockDelta -> updateMessages(runId, updateTimestamp = false) { messages ->
                 runMessageProjector.applyEvent(runId, event, messages)
             }
+            // 用量事件既写进消息统计，也记到会话上，供顶栏胶囊显示最近一次请求。
+            is AgentEvent.UsageReceived -> {
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
+                updateAssistantUsage(runId, event.usage.toUi())
+            }
+            is AgentEvent.ContextCompaction -> {
+                if (event.phase == AgentEvent.ContextCompaction.PHASE_COMPLETED) {
+                    conversationIdForRun(runId)?.let { id ->
+                        conversationsById[id]?.let { current ->
+                            updateConversation(
+                                id,
+                                current.copy(lastModelUsage = current.lastModelUsage?.copy(contextTokens = null)),
+                            )
+                        }
+                    }
+                }
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
+            }
             else -> updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
         }
     }
@@ -1765,6 +1780,16 @@ internal class AgentAppState(
         transform: (List<AgentChatMessageUi>) -> List<AgentChatMessageUi>,
     ) {
         if (updateMessages(runId, transform = transform)) refreshConversationSummaries()
+    }
+
+    /** 记录会话最近一次模型用量：顶栏胶囊显示 token 数与输出速度。 */
+    private fun updateAssistantUsage(runId: String, usage: TokenUsageUi) {
+        if (usage.isEmpty) return
+        conversationIdForRun(runId)?.let { id ->
+            conversationsById[id]?.let { current ->
+                updateConversation(id, current.copy(lastModelUsage = usage))
+            }
+        }
     }
 
     private fun insertSupplementMessage(
