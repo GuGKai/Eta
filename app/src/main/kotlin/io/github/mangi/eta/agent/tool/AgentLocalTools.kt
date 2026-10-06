@@ -118,6 +118,8 @@ internal class AgentLocalTools(
     private val virtualUiExecutor: ((String, JSONObject) -> AgentModelClient.ToolResult)? = null,
     private val fallbackApproval: ((String, String) -> MainScreenFallbackDecision)? = null,
     private val onMainScreenFallback: () -> Unit = {},
+    private val virtualScreenOwner: String = browserRunId,
+    private val isRunCancelled: () -> Boolean = { false },
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -170,7 +172,7 @@ internal class AgentLocalTools(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         MainScreenFallbackApproval.cancelOwner(browserRunId)
-        VirtualScreenSession.closeOwner(browserRunId)
+        VirtualScreenSession.releaseRun(virtualScreenOwner, browserRunId, retainVirtualScreen.get() && !isRunCancelled())
         publishedObservation.set(PublishedObservation())
         if (browserSessionRef.isInitialized()) browserSessionRef.value.interruptAgentAction(browserRunId)
         webTools.close()
@@ -257,12 +259,16 @@ internal class AgentLocalTools(
                 }
             }
             if (virtualUi) {
+                if (!VirtualScreenSession.prepareForRun(virtualScreenOwner, browserRunId)) {
+                    return@runCatching textResult(errorResult("DISPLAY_BUSY", "虚拟屏正被其他任务使用"))
+                }
                 return@runCatching handleVirtualResult(toolCall.name,
                     virtualUiExecutor?.invoke(toolCall.name, args) ?: virtualUiTools.execute(toolCall.name, args))
             }
             when (toolCall.name) {
                 "virtual_screen" -> if (virtualRouting.usesPrimary) textResult(errorResult("MAIN_SCREEN_ROUTE_ACTIVE", "本次任务已获准改用主屏，请使用普通 UI 工具并重新观察"))
-                    else VirtualScreenSession.execute(context, browserRunId, args, closed::get).let { result ->
+                    else if (!VirtualScreenSession.prepareForRun(virtualScreenOwner, browserRunId)) textResult(errorResult("DISPLAY_BUSY", "虚拟屏正被其他任务使用"))
+                    else VirtualScreenSession.execute(context, virtualScreenOwner, args, closed::get, browserRunId).let { result ->
                         if (args.optString("action") == "close") result else handleVirtualResult(toolCall.name, result)
                     }
                 in AgentTaskTools.names -> AgentModelClient.ToolResult(AgentTaskTools(context).execute(toolCall.name, args), sensitive = true)

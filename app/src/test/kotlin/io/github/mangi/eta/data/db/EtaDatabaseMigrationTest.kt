@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36])
 class EtaDatabaseMigrationTest {
     @Test
-    fun migration6To23PreservesDataAndMovesCompleteConversationContext() {
+    fun migration6To24PreservesDataAndMovesCompleteConversationContext() {
         val context = RuntimeEnvironment.getApplication() as Context
         val databaseName = "migration-${UUID.randomUUID()}.db"
         createVersion6Database(context, databaseName)
@@ -57,6 +57,7 @@ class EtaDatabaseMigrationTest {
                 EtaDatabase.MIGRATION_20_21,
                 EtaDatabase.MIGRATION_21_22,
                 EtaDatabase.MIGRATION_22_23,
+                EtaDatabase.MIGRATION_23_24,
             )
             .build()
         try {
