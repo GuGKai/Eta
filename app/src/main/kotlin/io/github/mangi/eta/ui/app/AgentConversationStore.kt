@@ -67,8 +67,10 @@ internal object AgentConversationStore {
         }
 
     /** 非阻塞版本：首帧路径专用，避免在组合线程上 runBlocking 等全库加载。 */
-    suspend fun loadFromDisk(context: Context): Snapshot =
-        loadSnapshot(context.applicationContext)
+    suspend fun loadFromDisk(
+        context: Context,
+        preferredConversationId: String? = null,
+    ): Snapshot = loadSnapshot(context.applicationContext, preferredConversationId)
 
     /** 补解单个会话的上下文；库里没有 checkpoint 行时按消息兜底，与全量加载语义一致。 */
     suspend fun loadConversationContext(context: Context, conversationId: String): ContextPayload {
@@ -200,7 +202,10 @@ internal object AgentConversationStore {
         }
     }
 
-    private suspend fun loadSnapshot(context: Context): Snapshot {
+    private suspend fun loadSnapshot(
+        context: Context,
+        preferredConversationId: String? = null,
+    ): Snapshot {
         val dao = EtaDatabase.get(context).conversationDao()
         val conversations = dao.conversations()
         if (conversations.isEmpty()) {
@@ -220,8 +225,11 @@ internal object AgentConversationStore {
         val pinned = mutableSetOf<String>()
         val deferred = mutableSetOf<String>()
         // 只解选中会话的 transcript，其余延迟到真正打开时补解：避免首帧被全库反序列化挡住。
-        val selectedConversationId = dao.state()?.selectedConversationId
+        // 通知深链带来的会话优先成为选中项，首帧直接落在目标会话上。
+        val selectedConversationId = preferredConversationId
             ?.takeIf { id -> conversations.any { it.id == id } }
+            ?: dao.state()?.selectedConversationId
+                ?.takeIf { id -> conversations.any { it.id == id } }
             ?: conversations.first().id
 
         conversations.forEach { conversation ->

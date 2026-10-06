@@ -21,6 +21,7 @@ import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.ui.app.AgentAppRoot
 import io.github.mangi.eta.ui.app.ArchivedConversationRequest
 import io.github.mangi.eta.ui.app.AgentAppTheme
+import io.github.mangi.eta.ui.app.AgentConversationLoader
 import io.github.mangi.eta.ui.app.PredictiveBackController
 import io.github.mangi.eta.ui.app.installStartupSplash
 import kotlinx.coroutines.launch
@@ -39,8 +40,12 @@ class MainActivity : ComponentActivity() {
         installStartupSplash { contentReady }
         enableEdgeToEdge()
         updateAssistantHandoff(intent)
+        AgentConversationLoader.start(applicationContext, assistantConversationKey)
         lifecycleScope.launch {
             val initialAppearance = AppearanceSettingsRepository.settings()
+            // 会话数据在 onCreate 就并行开跑：等到就绪再画第一帧，
+            // 免得先闪一个"还没有任何会话"的空页面再跳回来。
+            AgentConversationLoader.await(applicationContext)
             appliedPredictiveBackEnabled = initialAppearance.predictiveBackEnabled
             setContent {
                 val appearance by AppearanceSettingsRepository.settingsFlow()
