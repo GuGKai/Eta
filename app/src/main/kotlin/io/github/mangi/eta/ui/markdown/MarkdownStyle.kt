@@ -9,6 +9,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 正文与思考共用同一套渲染器，只在字号、颜色与留白上区分层级。 */
@@ -56,20 +57,24 @@ internal class MarkdownStyle(
 internal fun rememberMarkdownStyle(tone: MarkdownTone): MarkdownStyle {
     val colors = MiuixTheme.colorScheme
     val textStyles = MiuixTheme.textStyles
-    return remember(tone, colors, textStyles) {
+    // 会话正文与我发出的消息共用同一个字号倍率；思考过程不跟随。
+    val chatTextScale = LocalAppearanceSettings.current.chatTextScale
+    return remember(tone, colors, textStyles, chatTextScale) {
         val answer = tone == MarkdownTone.Answer
+        // 只有正文语气跟随倍率，思考语气保持原本的紧凑字号。
+        val scale = if (answer) chatTextScale else 1f
         val textColor = if (answer) colors.onSurface else colors.onSurfaceVariantSummary
         val body = (if (answer) textStyles.body1 else textStyles.body2).copy(
-            fontSize = if (answer) 16.sp else 14.sp,
-            lineHeight = if (answer) ANSWER_LINE_HEIGHT_SP.sp else THINKING_LINE_HEIGHT_SP.sp,
+            fontSize = if (answer) 16.sp * scale else 14.sp,
+            lineHeight = if (answer) ANSWER_LINE_HEIGHT_SP.sp * scale else THINKING_LINE_HEIGHT_SP.sp,
             color = textColor,
         )
         // 聊天里的标题只是段落强调，不是页面标题：字号克制，层级主要靠字重区分。
         val headings = if (answer) {
             listOf(
-                body.copy(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
-                body.copy(fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
-                body.copy(fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
+                body.copy(fontSize = 20.sp * scale, lineHeight = 28.sp * scale, fontWeight = FontWeight.Bold),
+                body.copy(fontSize = 18.sp * scale, lineHeight = 26.sp * scale, fontWeight = FontWeight.Bold),
+                body.copy(fontSize = 17.sp * scale, lineHeight = 25.sp * scale, fontWeight = FontWeight.SemiBold),
                 body.copy(fontWeight = FontWeight.SemiBold),
             )
         } else {
@@ -81,11 +86,14 @@ internal fun rememberMarkdownStyle(tone: MarkdownTone): MarkdownStyle {
             headings = headings,
             code = TextStyle(
                 fontFamily = FontFamily.Monospace,
-                fontSize = if (answer) 13.sp else 12.sp,
-                lineHeight = if (answer) 20.sp else 18.sp,
+                fontSize = if (answer) 13.sp * scale else 12.sp,
+                lineHeight = if (answer) 20.sp * scale else 18.sp,
                 color = textColor,
             ),
-            table = body.copy(fontSize = if (answer) 14.sp else 13.sp, lineHeight = if (answer) 21.sp else 19.sp),
+            table = body.copy(
+                fontSize = if (answer) 14.sp * scale else 13.sp,
+                lineHeight = if (answer) 21.sp * scale else 19.sp,
+            ),
             textColor = textColor,
             secondaryColor = colors.onSurfaceVariantSummary,
             markerColor = if (answer) colors.onSurface.copy(alpha = 0.55f) else colors.onSurfaceVariantSummary,
@@ -124,3 +132,21 @@ internal fun markdownCompactGap(previous: MarkdownBlock?, tone: MarkdownTone): T
 internal const val ANSWER_LINE_HEIGHT_SP = 26
 internal const val THINKING_LINE_HEIGHT_SP = 22
 private const val THINKING_GAP_SCALE = 0.75f
+
+/**
+ * 会话正文字号倍率：只作用于助手回答与我发出的消息（正文、标题、代码、表格），
+ * 思考过程与工具过程不跟随。
+ */
+internal fun TextStyle.scaleChatText(factor: Float): TextStyle =
+    if (factor == 1f) {
+        this
+    } else {
+        copy(
+            fontSize = fontSize.scaleIfSpecified(factor),
+            lineHeight = lineHeight.scaleIfSpecified(factor),
+        )
+    }
+
+/** TextUnit 未指定时不能参与算术，原样返回。 */
+internal fun TextUnit.scaleIfSpecified(factor: Float): TextUnit =
+    if (this == TextUnit.Unspecified) this else this * factor
