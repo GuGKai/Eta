@@ -441,7 +441,10 @@ internal fun AgentConversationMessages(
         derivedStateOf { !scrollState.canScrollForward }
     }
     val densityScale = LocalDensity.current.density
+    val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val imeInsets = WindowInsets.ime
 
     LaunchedEffect(
         isUserDragging,
@@ -471,6 +474,14 @@ internal fun AgentConversationMessages(
         }
     }
     var isBottomSettling by remember { mutableStateOf(isStreaming) }
+    // 正文末尾（列表尾部哨兵）此刻是否还在视口里 —— 等价于「视口停在底部」。
+    // 键盘把输入器顶高只改变底部内容内边距，不会挪动哨兵，所以这个判断在弹起前后一致，
+    // 可以拿来区分「本来就停在底部」和「翻在历史中间」。
+    val bottomContentVisible by remember(scrollState) {
+        derivedStateOf {
+            scrollState.layoutInfo.visibleItemsInfo.lastOrNull()?.key == ChatBottomSentinelKey
+        }
+    }
 
     // 每轮最终正式回答开始输出时，把视口停靠在「本轮工作过程卡片」顶部并停止跟底，
     // 让用户从正文第一行往下读，而不是被一路拖到最新一行。卡片的收尾折叠由上游自己完成。
@@ -581,6 +592,30 @@ internal fun AgentConversationMessages(
             wasUserDragging = false
             finalAnswerAnchored = false
         }
+    }
+
+    // 在消息列表上滑动（上翻或下翻）就自动收起键盘；键盘本来没弹着时什么也不做。
+    // 用列表自己的拖动状态判断，不拦截也不消费滚动手势。
+    LaunchedEffect(isUserDragging) {
+        if (isUserDragging && imeInsets.getBottom(density) > 0) {
+            keyboard?.hide()
+        }
+    }
+
+    // 键盘弹起会把输入器连同 IME 内边距一起顶高，列表的底部内容内边距随之变大，
+    // 但 LazyColumn 会保持原来的滚动锚点，正文最后一行就留在输入器背后被盖住
+    // （流式期间一路跟底，所以看不出这个问题）。
+    // 弹起前视口确实停在底部时重新锚到底部，让正文跟着输入器一起抬升；
+    // 翻在历史中间则什么都不做，维持原来的阅读位置。
+    var previousBottomInset by remember { mutableStateOf(bottomInset) }
+    LaunchedEffect(bottomInset) {
+        val insetGrew = bottomInset > previousBottomInset
+        previousBottomInset = bottomInset
+        if (!insetGrew || isStreaming || !bottomContentVisible) return@LaunchedEffect
+        // 等这一帧按新的底部内边距测量完，再锚到底部，否则会被旧的滚动上限夹住。
+        withFrameNanos { }
+        withFrameNanos { }
+        scrollState.scrollToItem(bottomItemIndex)
     }
 
     val shouldFollowBottom by rememberUpdatedState(
