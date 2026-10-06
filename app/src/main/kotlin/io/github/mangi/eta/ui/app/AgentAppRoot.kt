@@ -365,6 +365,7 @@ fun AgentAppRoot(
             onOpenCharacter = {
                 agentState.homeState.roleplay?.let { pushRoute(AppRoute.CharacterDetail(it.characterId)) }
             },
+            onOpenTasks = { pushRoute(AppRoute.Tasks) },
         ) { padding ->
             if (route is AppRoute.Home) {
                 // 会话页（首页）：顶栏高度不当外边距，而是交给聊天列表做顶部内容内边距，
