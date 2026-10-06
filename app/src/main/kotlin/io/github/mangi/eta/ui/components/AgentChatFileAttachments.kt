@@ -67,6 +67,14 @@ internal val ChatInputPopupMargin = 8.dp
 internal val ChatInputActionSize = 40.dp
 internal val ChatInputActionIconSize = 24.dp
 
+/**
+ * 输入框到屏幕左、右、下三边的外边距。
+ *
+ * 输入框圆角按「与屏幕圆角同心」推导（角弧半径 = 屏幕圆角半径 − 该边距），同心要求三边同值，
+ * 因此这里共用同一个常量；改动它时输入框圆角会自动跟着变。
+ */
+internal val ChatInputOuterMargin = 8.dp
+
 @Composable
 internal fun AgentAttachmentPickerButton(
     popupAnchorTopPx: Int,
