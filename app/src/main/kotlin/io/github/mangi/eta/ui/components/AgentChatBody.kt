@@ -474,6 +474,8 @@ internal fun AgentConversationMessages(
         }
     }
     var isBottomSettling by remember { mutableStateOf(isStreaming) }
+    // 键盘把输入器顶高时的一次性跟底：和 isBottomSettling 同一套跟底引擎，只是触发源不同。
+    var keyboardLiftSettling by remember { mutableStateOf(false) }
     // 正文末尾（列表尾部哨兵）此刻是否还在视口里 —— 等价于「视口停在底部」。
     // 键盘把输入器顶高只改变底部内容内边距，不会挪动哨兵，所以这个判断在弹起前后一致，
     // 可以拿来区分「本来就停在底部」和「翻在历史中间」。
@@ -492,6 +494,10 @@ internal fun AgentConversationMessages(
     var pendingAnchorIndex by remember { mutableStateOf<Int?>(null) }
     // 每次回到前台自增：后台挂起的停靠会在回到前台后重试。
     var resumeTick by remember { mutableStateOf(0) }
+    // 停靠意图产生时所在的前台会话序号，用来识别「迟到的停靠」（见独立执行停靠）。
+    var anchorRequestResumeTick by remember { mutableStateOf(0) }
+    // 应用此刻是否在前台：后台跑完的那轮回复不做位移动画，直接落到停靠位置。
+    var appResumed by remember { mutableStateOf(false) }
     val latestTailMessage by rememberUpdatedState(tailMessage)
     val latestTimelineEntries by rememberUpdatedState(timelineEntries)
     val latestStreaming by rememberUpdatedState(isStreaming)
@@ -511,7 +517,8 @@ internal fun AgentConversationMessages(
 
     LifecycleResumeEffect(Unit) {
         resumeTick++
-        onPauseOrDispose { }
+        appResumed = true
+        onPauseOrDispose { appResumed = false }
     }
 
     LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging) {
@@ -557,14 +564,22 @@ internal fun AgentConversationMessages(
         } else {
             answerIndex
         }
-        // 卡片收起由上游在正文开始输出时自动完成；等这段收起动画播完再交给停靠协程，
-        // 否则卡片高度还在变化，滚动落点会偏。
-        if (targetIndex == previousIndex) {
+        // 卡片收起由上游在正文开始输出时自动完成；前台时等这段收起动画播完再交给停靠协程，
+        // 否则卡片高度还在变化，滚动落点会偏。后台没有帧、这段动画也不会播，就不用等。
+        if (appResumed && targetIndex == previousIndex) {
             delay(WorkProcessCollapseMillis)
         }
         finalAnswerHandledId = answerId
         finalAnswerAnchored = true
-        pendingAnchorIndex = targetIndex
+        if (appResumed) {
+            anchorRequestResumeTick = resumeTick
+            pendingAnchorIndex = targetIndex
+        } else {
+            // 这一轮是应用不在前台时跑完的：后台拿不到帧，动画只会挂起到回到前台才补播，
+            // 用户点通知进来看到的就是那半截位移。这里直接落到停靠位置，
+            // 等回到前台时画面已经是最终状态，不再动。
+            scrollState.scrollToItem(targetIndex)
+        }
     }
 
     // 独立执行停靠：key 不随 isStreaming 变化，后台完成回复也不会丢；后台拿不到帧时动画挂起，
@@ -573,7 +588,14 @@ internal fun AgentConversationMessages(
         val target = pendingAnchorIndex ?: return@LaunchedEffect
         // 等折叠动画播完，避免卡片高度还在变化时滚动、停靠位置偏掉。
         delay(WorkProcessCollapseMillis)
-        scrollState.animateScrollToItem(target)
+        // 只有从产生停靠意图到执行之间一直待在前台才播动画；期间切过后台、或者回到前台才补做的
+        // 停靠直接到位，免得用户从通知进来时看到半截位移动画。
+        val shouldAnimate = appResumed && resumeTick == anchorRequestResumeTick
+        if (shouldAnimate) {
+            scrollState.animateScrollToItem(target)
+        } else {
+            scrollState.scrollToItem(target)
+        }
         pendingAnchorIndex = null
     }
 
@@ -605,17 +627,31 @@ internal fun AgentConversationMessages(
     // 键盘弹起会把输入器连同 IME 内边距一起顶高，列表的底部内容内边距随之变大，
     // 但 LazyColumn 会保持原来的滚动锚点，正文最后一行就留在输入器背后被盖住
     // （流式期间一路跟底，所以看不出这个问题）。
-    // 弹起前视口确实停在底部时重新锚到底部，让正文跟着输入器一起抬升；
+    // 弹起前视口确实停在底部时，交给现成的跟底引擎把正文平滑地顶上去 ——
+    // 和流式输出用的是同一套位移曲线，所以不是瞬移，也能跟着 IME 一起逐帧移动；
     // 翻在历史中间则什么都不做，维持原来的阅读位置。
     var previousBottomInset by remember { mutableStateOf(bottomInset) }
     LaunchedEffect(bottomInset) {
         val insetGrew = bottomInset > previousBottomInset
         previousBottomInset = bottomInset
-        if (!insetGrew || isStreaming || !bottomContentVisible) return@LaunchedEffect
-        // 等这一帧按新的底部内边距测量完，再锚到底部，否则会被旧的滚动上限夹住。
+        if (!insetGrew || isStreaming || !bottomContentVisible || !keepBottomAnchored) {
+            return@LaunchedEffect
+        }
+        keyboardLiftSettling = true
+    }
+
+    // 抬升到位就收口，别让跟底一直挂着（与流式收尾用同一套判定）。
+    LaunchedEffect(keyboardLiftSettling, keepBottomAnchored) {
+        if (!keyboardLiftSettling) return@LaunchedEffect
+        if (!keepBottomAnchored) {
+            // 用户把列表拉走了，这次抬升不再适用。
+            keyboardLiftSettling = false
+            return@LaunchedEffect
+        }
         withFrameNanos { }
         withFrameNanos { }
-        scrollState.scrollToItem(bottomItemIndex)
+        snapshotFlow { !scrollState.canScrollForward }.first { it }
+        keyboardLiftSettling = false
     }
 
     val shouldFollowBottom by rememberUpdatedState(
@@ -624,7 +660,8 @@ internal fun AgentConversationMessages(
             keepBottomAnchored = keepBottomAnchored,
             isUserDragging = isUserDragging,
             isBottomSettling = isBottomSettling,
-        ) && !finalAnswerAnchored
+            keyboardLiftSettling = keyboardLiftSettling,
+        ) && (!finalAnswerAnchored || keyboardLiftSettling)
     )
     val currentBottomItemIndex by rememberUpdatedState(bottomItemIndex)
     val bottomFollowDecisions = remember(scrollState) {
@@ -1152,7 +1189,9 @@ internal fun resolveBottomFollowEnabled(
     keepBottomAnchored: Boolean,
     isUserDragging: Boolean,
     isBottomSettling: Boolean = false,
-): Boolean = (isStreaming || isBottomSettling) && keepBottomAnchored && !isUserDragging
+    keyboardLiftSettling: Boolean = false,
+): Boolean = (isStreaming || isBottomSettling || keyboardLiftSettling) &&
+    keepBottomAnchored && !isUserDragging
 
 internal fun shouldRequestInitialBottom(
     isStreaming: Boolean,
