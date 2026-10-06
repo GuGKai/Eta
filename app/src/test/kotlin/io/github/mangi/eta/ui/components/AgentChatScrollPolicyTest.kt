@@ -19,6 +19,24 @@ class AgentChatScrollPolicyTest {
     }
 
     @Test
+    fun keyboardLiftStepIsFasterThanStreamingFollow() {
+        val streamingStep = smoothBottomFollowStep(
+            distancePx = 300f,
+            elapsedSeconds = 1f / 60f,
+            density = 3f,
+        )
+        val liftStep = smoothBottomFollowStep(
+            distancePx = 300f,
+            elapsedSeconds = 1f / 60f,
+            density = 3f,
+            responseSeconds = KEYBOARD_LIFT_RESPONSE_SECONDS,
+            maxSpeedDpPerSecond = KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND,
+        )
+        assertTrue(liftStep > streamingStep * 1.5f)
+        assertTrue(liftStep <= 300f)
+    }
+
+    @Test
     fun keyboardLiftFollowsBottomWhileReaderStaysAtBottom() {
         assertTrue(
             resolveBottomFollowEnabled(

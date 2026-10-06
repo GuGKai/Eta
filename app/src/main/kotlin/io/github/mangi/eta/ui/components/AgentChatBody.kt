@@ -663,6 +663,8 @@ internal fun AgentConversationMessages(
             keyboardLiftSettling = keyboardLiftSettling,
         ) && (!finalAnswerAnchored || keyboardLiftSettling)
     )
+    // 键盘抬升期间切到更快的位移曲线（KEYBOARD_LIFT_*）：和键盘弹起同步，而不是慢慢追。
+    val keyboardLiftActive by rememberUpdatedState(keyboardLiftSettling && !isStreaming)
     val currentBottomItemIndex by rememberUpdatedState(bottomItemIndex)
     val bottomFollowDecisions = remember(scrollState) {
         Channel<BottomFollowDecision>(Channel.CONFLATED)
@@ -765,11 +767,21 @@ internal fun AgentConversationMessages(
             }
             if (!shouldFollowBottom || requestIndex != null || remainingDistancePx <= 0f) continue
 
-            val step = smoothBottomFollowStep(
-                distancePx = remainingDistancePx,
-                elapsedSeconds = elapsedSeconds,
-                density = densityScale,
-            )
+            val step = if (keyboardLiftActive) {
+                smoothBottomFollowStep(
+                    distancePx = remainingDistancePx,
+                    elapsedSeconds = elapsedSeconds,
+                    density = densityScale,
+                    responseSeconds = KEYBOARD_LIFT_RESPONSE_SECONDS,
+                    maxSpeedDpPerSecond = KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND,
+                )
+            } else {
+                smoothBottomFollowStep(
+                    distancePx = remainingDistancePx,
+                    elapsedSeconds = elapsedSeconds,
+                    density = densityScale,
+                )
+            }
             var consumedStep = 0f
             try {
                 scrollState.scroll {
@@ -944,13 +956,15 @@ internal fun smoothBottomFollowStep(
     distancePx: Float,
     elapsedSeconds: Float,
     density: Float,
+    responseSeconds: Float = BOTTOM_FOLLOW_RESPONSE_SECONDS,
+    maxSpeedDpPerSecond: Float = BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND,
 ): Float {
     if (distancePx <= 0f || elapsedSeconds <= 0f) return 0f
     if (distancePx <= BOTTOM_FOLLOW_SNAP_DISTANCE_PX) return distancePx
 
     val frameSeconds = elapsedSeconds.coerceAtMost(BOTTOM_FOLLOW_MAX_FRAME_SECONDS)
-    val easedStep = distancePx * (1f - exp(-frameSeconds / BOTTOM_FOLLOW_RESPONSE_SECONDS))
-    val speedLimitedStep = BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND * density * frameSeconds
+    val easedStep = distancePx * (1f - exp(-frameSeconds / responseSeconds))
+    val speedLimitedStep = maxSpeedDpPerSecond * density * frameSeconds
     return min(distancePx, min(easedStep.coerceAtLeast(BOTTOM_FOLLOW_MIN_STEP_PX), speedLimitedStep))
 }
 
@@ -1167,6 +1181,10 @@ private const val ChatBottomSentinelKey = "agent-chat-bottom-sentinel"
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f
+// 键盘抬升用更快的一套位移：系统键盘弹起约 0.25s 走完全程，正文要贴着输入框一起上去，
+// 不能沿用流式跟底那套「慢慢追持续增长文字」的曲线（原地 0.5s 左右才收口，观感迟钝）。
+internal const val KEYBOARD_LIFT_RESPONSE_SECONDS = 0.06f
+internal const val KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND = 2000f
 private const val BOTTOM_FOLLOW_MIN_STEP_PX = 0.5f
 // 最终正文开始输出后先等这么久，确认它仍是本轮收尾正文再停靠视口。
 private const val FinalAnswerAnchorSettleMillis = 420L
