@@ -33,8 +33,6 @@ internal class AgentExecutionService : Service() {
     @Volatile private var startRejected = false
     private var progress: String = ""
     private var progressOwner: String = ""
-    private var notificationSequence = 0
-    @Volatile private var atomicScene = ""
 
     /** 通知去重与节流状态，只在主线程读写。 */
     private var publishedContent: RenderedText? = null
@@ -53,10 +51,6 @@ internal class AgentExecutionService : Service() {
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
         )
         ensureForeground()
-        kotlin.concurrent.thread(name = "eta-notification-settings") {
-            atomicScene = runCatching { kotlinx.coroutines.runBlocking { io.github.mangi.eta.data.datastore.SettingsDataStore.settings().vivoAtomicScene } }.getOrDefault("")
-            mainHandler.post { if (instance === this) refreshNotification() }
-        }
     }
 
     private fun ensureForeground() {
@@ -295,7 +289,6 @@ internal class AgentExecutionService : Service() {
                 if (tool.isNotBlank() || service.progressOwner == id) {
                     service.progressOwner = id
                     service.progress = tool.take(80)
-                    service.notificationSequence++
                     service.refreshNotification()
                 }
             } }
