@@ -43,6 +43,9 @@ gh secret set ETA_RELEASE_KEY_PASSWORD
 - 推送 `v*` 标签
 - 在 GitHub 的 `Actions > Eta Build` 中手动运行
 
+同一工作流会并行执行 Lint 与单元测试。检查失败不影响 APK 上传，但推送标签时不会创建
+Release 草稿。
+
 非标签构建会在版本名后追加 SemVer 构建元数据 `+<短提交号>`，例如 `Eta-v3.2.0+a1b2c3d.apk`，
 用于区分同一版本号下的不同构建；只有标签构建产出不带后缀的正式版本名。Actions Artifact
 需要登录才能下载且到期失效，仅供开发测试，面向用户的分发只使用 GitHub Releases。

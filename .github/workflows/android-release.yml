@@ -16,6 +16,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 与打包并行且不接触签名 Secrets；失败不影响 APK 上传，但会阻止发版草稿
+  verify:
+    name: Lint 与单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: 配置构建环境
+        uses: ./.github/actions/setup-build
+
+      - name: Lint 与单元测试
+        run: >-
+          ./gradlew --no-daemon --no-configuration-cache --continue
+          :app:lintDebug :app:testDebugUnitTest
+
+      - name: 上传检查报告
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verify-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
   build-apks:
     name: 构建 Debug 与 Release APK
     runs-on: ubuntu-latest
@@ -120,7 +151,7 @@ jobs:
   # 构建 job 持有签名 Secrets，写 Release 的权限单独放在这里，且只在发版标签上运行
   draft-release:
     name: 创建 Release 草稿
-    needs: build-apks
+    needs: [verify, build-apks]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 10
