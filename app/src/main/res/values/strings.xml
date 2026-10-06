@@ -619,7 +619,7 @@
   <string name="page_exceeded_the_1_mib_limit_please_delete_120a63">Exceeded the 1 MiB limit, please delete</string>
   <string name="page_the_installation_of_common_tools_has_not_been_comple_d7f7c2">The installation of common tools has not been completed, you can continue from the current progress</string>
   <string name="page_the_current_root_environment_cannot_create_an_isolat_4ca00a">The current Root environment cannot create an isolated mount namespace or chroot</string>
-  <string name="page_current_model_a0af8f">current model</string>
+  <string name="page_current_model_a0af8f">default model</string>
   <string name="page_busy_0212cc">Busy</string>
   <string name="page_retrieving_a880c9">Retrieving...</string>
   <string name="page_support_thinking_5b9e4c">Supports Reasoning</string>
@@ -645,7 +645,7 @@
   <string name="page_continue_installation_62da0c">Continue installation</string>
   <string name="page_edit_model_29e31e">Edit model</string>
   <string name="page_custom_model_25be0f">custom model</string>
-  <string name="page_set_as_current_model_183d7d">Set as current model</string>
+  <string name="page_set_as_current_model_183d7d">Set as default model</string>
   <string name="page_please_complete_the_linux_basic_tool_installation_fi_2ab81b">Please complete the Linux basic tool installation first</string>
   <string name="page_the_remote_end_did_not_return_a_usable_conversation__781487">The remote end did not return a usable conversation model, the existing model has been retained</string>
   <string name="page_select_zip_skills_package_982a44">Select ZIP skills package</string>
@@ -1097,7 +1097,7 @@
     <item quantity="other">%d models</item>
   </plurals>
   <string name="provider_selected">Selected</string>
-  <string name="provider_set_current">Set as current</string>
+  <string name="provider_set_current">Set as default</string>
   <string name="skills_checking_package">Checking skill package</string>
   <string name="skills_import_zip">Import from ZIP</string>
   <string name="skills_installing_package">Verifying and installing. Please wait</string>
@@ -1122,6 +1122,7 @@
   <string name="browser_opening">Opening webpage</string>
   <string name="browser_opening_host">Opening %1$s</string>
   <string name="model_not_selected">Not selected</string>
+  <string name="conversation_model_unavailable">Model unavailable for this conversation. Using %1$s.</string>
   <string name="model_switch_current">Switch model. Current: %1$s</string>
   <string name="model_collapse_provider">Collapse %1$s</string>
   <string name="model_expand_provider">Expand %1$s</string>

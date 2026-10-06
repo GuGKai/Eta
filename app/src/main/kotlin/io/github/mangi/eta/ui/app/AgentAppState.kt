@@ -41,7 +41,9 @@ import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
+import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.EtaBackupRepository
 import io.github.mangi.eta.data.repository.EtaBackupSummary
 import io.github.mangi.eta.data.repository.ProviderRepository
@@ -106,6 +108,9 @@ internal class AgentAppState(
     @Volatile
     private var conversationPersistence = AgentConversationPersistence(initialConversations)
     private var currentReasoningCapabilities: ModelReasoningCapabilities? = null
+    private var providers: List<ProviderSetting> = emptyList()
+    private var defaultModelId: String? = null
+    private var defaultProviderId: String? = null
     private var fileAttachmentOwnerVersion = 0L
 
     private var selectedConversationId: String? = initialConversations.selectedConversationId
@@ -155,30 +160,37 @@ internal class AgentAppState(
             }
                 .distinctUntilChanged()
                 .collectLatest { (providerId, modelId, providers) ->
-                    val pickerState = AgentModelPickerProjector.project(
-                        providers = providers,
-                        selectedProviderId = providerId,
-                        selectedModelId = modelId,
-                    )
-                    val capabilities = RuntimeConfigRepository.currentRuntimeConfig()
-                        ?.reasoningCapabilities
                     withContext(Dispatchers.Main) {
-                        modelPickerState = pickerState.copy(
-                            isChanging = modelPickerState.isChanging,
-                        )
-                        applyReasoningCapabilities(capabilities)
+                        this@AgentAppState.providers = providers
+                        defaultProviderId = providerId
+                        defaultModelId = modelId
+                        refreshConversationModel()
                     }
                 }
         }
     }
 
-    private fun applyReasoningCapabilities(capabilities: ModelReasoningCapabilities?) {
-        currentReasoningCapabilities = capabilities
-        val next = homeState.withCurrentReasoningCapabilities()
-        val changed = next.reasoningEffort != homeState.reasoningEffort ||
-            next.availableReasoningEfforts != homeState.availableReasoningEfforts
-        updateCurrentConversation(next)
-        if (changed && selectedConversationId != null) persistConversations()
+    /**
+     * 选择器、思考强度与上下文窗口统一投影自当前会话的有效模型：
+     * 会话绑定的模型仍可用时用它，否则用默认模型。回落只影响显示与发送，不改写会话绑定，
+     * 模型重新启用后会话自动回到原模型；真正发送后才把实际模型写入绑定。
+     */
+    private fun refreshConversationModel() {
+        val bound = providers.enabledModel(homeState.modelId)
+        val pickerState = if (bound != null) {
+            AgentModelPickerProjector.project(providers, bound.provider.id, bound.model.id)
+        } else {
+            AgentModelPickerProjector.project(providers, defaultProviderId, defaultModelId)
+        }
+        modelPickerState = pickerState.copy(isChanging = modelPickerState.isChanging)
+        val effective = bound ?: providers.enabledModel(pickerState.selectedModel?.id)
+        currentReasoningCapabilities = effective?.let { (provider, model) ->
+            RuntimeConfigRepository.reasoningCapabilities(provider, model)
+        }
+        val resolved = homeState.withCurrentReasoningCapabilities()
+        val conversationId = selectedConversationId
+        if (conversationId == null) homeState = resolved
+        else updateConversation(conversationId, resolved, updateTimestamp = false)
     }
 
     private fun AgentChatHomeUiState.withCurrentReasoningCapabilities(): AgentChatHomeUiState {
@@ -189,6 +201,9 @@ internal class AgentAppState(
             availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
         )
     }
+
+    private val AgentChatHomeUiState.effectiveModelId: String?
+        get() = providers.enabledModel(modelId)?.model?.id ?: modelPickerState.selectedModel?.id
 
     fun refreshRuntimeResults() {
         if (!runtimeRecoveryInProgress.compareAndSet(false, true)) return
@@ -264,8 +279,8 @@ internal class AgentAppState(
             fileAttachmentOwnerVersion += 1
             homeState = selectedConversationId
                 ?.let(conversationsById::get)
-                ?.withCurrentReasoningCapabilities()
-                ?: emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities()
+                ?: emptyChatState(defaultThinkingEnabled)
+            refreshConversationModel()
             conversationPaneState = conversationPaneState.copy(
                 selectedConversationId = selectedConversationId,
                 searchQuery = "",
@@ -623,6 +638,7 @@ internal class AgentAppState(
         if (selectedConversationId != null) persistConversations()
     }
 
+    /** 聊天内切换同时改当前会话绑定与默认模型；默认模型供新会话和系统助手入口使用。 */
     fun selectModel(modelId: String) {
         if (
             homeState.isStreaming ||
@@ -631,6 +647,9 @@ internal class AgentAppState(
         ) {
             return
         }
+        updateCurrentConversation(homeState.copy(modelId = modelId))
+        refreshConversationModel()
+        if (selectedConversationId != null) persistConversations()
         modelPickerState = modelPickerState.copy(isChanging = true)
         scope.launch(Dispatchers.IO) {
             try {
@@ -660,15 +679,17 @@ internal class AgentAppState(
         val state = conversationsById[conversationId] ?: return
         fileAttachmentOwnerVersion += 1
         selectedConversationId = conversationId
-        val normalized = currentReasoningCapabilities?.normalize(state.reasoningEffort)
-            ?: ReasoningEffort.OFF
-        val resolvedState = state.copy(
-            thinkingEnabled = normalized.enablesReasoning,
-            reasoningEffort = normalized,
-            availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
-        )
-        conversationsById = conversationsById + (conversationId to resolvedState)
-        homeState = resolvedState
+        homeState = state
+        refreshConversationModel()
+        if (state.modelId != null && providers.enabledModel(state.modelId) == null) {
+            modelPickerState.selectedModel?.let { fallback ->
+                Toast.makeText(
+                    appContext,
+                    appContext.getString(R.string.conversation_model_unavailable, fallback.displayName),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
         conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
         persistConversations()
     }
@@ -677,7 +698,8 @@ internal class AgentAppState(
         if (homeState.messageEdit != null) cancelMessageEdit()
         fileAttachmentOwnerVersion += 1
         selectedConversationId = null
-        homeState = emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities()
+        homeState = emptyChatState(defaultThinkingEnabled)
+        refreshConversationModel()
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = null,
             searchQuery = "",
@@ -731,12 +753,12 @@ internal class AgentAppState(
             val nextId = conversationsById.keys.firstOrNull()
             if (nextId != null) {
                 selectedConversationId = nextId
-                homeState = conversationsById.getValue(nextId).withCurrentReasoningCapabilities()
-                conversationsById = conversationsById + (nextId to homeState)
+                homeState = conversationsById.getValue(nextId)
             } else {
                 selectedConversationId = null
-                homeState = emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities()
+                homeState = emptyChatState(defaultThinkingEnabled)
             }
+            refreshConversationModel()
         }
         conversationPaneState = conversationPaneState.copy(selectedConversationId = selectedConversationId)
         refreshConversationSummaries()
@@ -1001,7 +1023,8 @@ internal class AgentAppState(
             conversationUpdatedAt = conversationUpdatedAt - conversationId
             fileAttachmentOwnerVersion += 1
             selectedConversationId = null
-            homeState = emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities()
+            homeState = emptyChatState(defaultThinkingEnabled)
+            refreshConversationModel()
             conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
             refreshConversationSummaries()
             persistConversations()
@@ -1087,10 +1110,13 @@ internal class AgentAppState(
         }
         runConversationIds[runId] = conversationId
         currentRunId = runId
+        // 发送即绑定：会话记住本轮实际使用的模型，回落到默认模型时也随之更新。
+        val runModelId = state.effectiveModelId
 
         updateConversation(
             conversationId,
             state.copy(
+                modelId = runModelId,
                 isStreaming = true,
                 history = if (operation == AgentRuntimeWire.OP_REWRITE_REPLY) state.history else history + listOfNotNull(userHistoryMessage),
                 journal = state.journal.ifEmpty { state.history } + listOfNotNull(userHistoryMessage),
@@ -1154,7 +1180,7 @@ internal class AgentAppState(
             } else {
                 ReasoningEffort.OFF
             }
-            val config = RuntimeConfigRepository.currentRuntimeConfig()?.copy(
+            val config = RuntimeConfigRepository.runtimeConfigFor(runModelId)?.copy(
                 terminalTools = agentBooleanForUi(Prefs.Keys.AGENT_TERMINAL_TOOLS),
                 browserTools = agentBooleanForUi(Prefs.Keys.AGENT_BROWSER_TOOLS),
                 deviceDirectTools = agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_DIRECT_TOOLS),
@@ -1908,6 +1934,7 @@ internal class AgentAppState(
             availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
             pendingImages = draft.pendingImages,
             pendingFileReferences = draft.pendingFileReferences,
+            modelId = draft.modelId,
         )
         conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
     }

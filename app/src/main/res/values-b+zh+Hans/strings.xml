@@ -600,7 +600,7 @@
   <string name="page_exceeded_the_1_mib_limit_please_delete_120a63">已超过 1 MiB 上限，请删减</string>
   <string name="page_the_installation_of_common_tools_has_not_been_comple_d7f7c2">常用工具安装尚未完成，可以从当前进度继续</string>
   <string name="page_the_current_root_environment_cannot_create_an_isolat_4ca00a">当前 Root 环境无法创建隔离 mount namespace 或 chroot</string>
-  <string name="page_current_model_a0af8f">当前模型</string>
+  <string name="page_current_model_a0af8f">默认模型</string>
   <string name="page_busy_0212cc">忙碌</string>
   <string name="page_retrieving_a880c9">拉取中...</string>
   <string name="page_support_thinking_5b9e4c">支持思考</string>
@@ -626,7 +626,7 @@
   <string name="page_continue_installation_62da0c">继续安装</string>
   <string name="page_edit_model_29e31e">编辑模型</string>
   <string name="page_custom_model_25be0f">自定义模型</string>
-  <string name="page_set_as_current_model_183d7d">设为当前模型</string>
+  <string name="page_set_as_current_model_183d7d">设为默认模型</string>
   <string name="page_please_complete_the_linux_basic_tool_installation_fi_2ab81b">请先完成 Linux 基础工具安装</string>
   <string name="page_the_remote_end_did_not_return_a_usable_conversation__781487">远端未返回可用对话模型，已保留现有模型</string>
   <string name="page_select_zip_skills_package_982a44">选择 ZIP Skill 包</string>
@@ -1076,7 +1076,7 @@
     <item quantity="other">%d 个模型</item>
   </plurals>
   <string name="provider_selected">已选中</string>
-  <string name="provider_set_current">设为当前</string>
+  <string name="provider_set_current">设为默认</string>
   <string name="skills_checking_package">正在检查 Skill 包</string>
   <string name="skills_import_zip">从 ZIP 导入</string>
   <string name="skills_installing_package">正在验证并安装，请稍候</string>
@@ -1101,6 +1101,7 @@
   <string name="browser_opening">正在打开网页</string>
   <string name="browser_opening_host">正在打开 %1$s</string>
   <string name="model_not_selected">未选择</string>
+  <string name="conversation_model_unavailable">此会话原用的模型不可用，已改用 %1$s</string>
   <string name="model_switch_current">切换模型，当前为 %1$s</string>
   <string name="model_collapse_provider">收起 %1$s</string>
   <string name="model_expand_provider">展开 %1$s</string>

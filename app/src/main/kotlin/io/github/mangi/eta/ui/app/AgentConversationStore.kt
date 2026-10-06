@@ -102,6 +102,7 @@ internal object AgentConversationStore {
                                     revisionsJson = if (state.roleplay == null) "" else json.encodeToString(state.roleplayMessages),
                                     createdAt = stored[id]?.createdAt ?: state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
                                     updatedAt = state.updatedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
+                                    modelId = state.modelId,
                                 )
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))
@@ -206,6 +207,7 @@ internal object AgentConversationStore {
                 isStreaming = false,
                 thinkingEnabled = conversation.reasoningEffortValue.enablesReasoning,
                 reasoningEffort = conversation.reasoningEffortValue,
+                modelId = conversation.modelId,
             ).let(RoleplayConversationReducer::decorate)
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt
