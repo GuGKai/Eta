@@ -241,6 +241,7 @@
   <string name="overlay_pause">Pause</string>
   <string name="overlay_resume">Resume</string>
   <string name="overlay_supplement">Add input</string>
+  <string name="overlay_capsule_toggle">%1$s. Tap to show controls</string>
   <string name="overlay_supplement_hint">Add instructions; Eta continues the current task</string>
   <string name="overlay_send">Send</string>
   <string name="overlay_stopping">Stopping</string>

@@ -270,6 +270,7 @@
   <string name="voice_model_download_failed">語音套件下載失敗</string>
   <string name="voice_request_failed">請求失敗，請重試。</string>
   <string name="overlay_supplement">補充</string>
+  <string name="overlay_capsule_toggle">%1$s，點擊展開控制</string>
   <string name="overlay_supplement_hint">補充指令，Eta 會繼續目前任務</string>
   <string name="overlay_send">傳送</string>
   <string name="overlay_stopping">停止中</string>

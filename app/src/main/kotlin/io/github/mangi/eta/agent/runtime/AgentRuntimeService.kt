@@ -15,7 +15,6 @@ import android.os.Messenger
 import android.os.Process
 import android.provider.Settings
 import android.view.Gravity
-import android.view.View
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -35,9 +34,8 @@ import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
-import io.github.mangi.eta.agent.overlay.AgentOverlayBubble
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
-import io.github.mangi.eta.agent.overlay.AgentOverlayOrb
+import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
 import io.github.mangi.eta.agent.overlay.AgentOverlayState
@@ -87,12 +85,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
-    private var orbView: ComposeView? = null
-    private var bubbleView: ComposeView? = null
+    private var capsuleView: ComposeView? = null
     private var resultCardView: ComposeView? = null
     private var glowParams: WindowManager.LayoutParams? = null
-    private var orbParams: WindowManager.LayoutParams? = null
-    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var capsuleParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
 
     /** 浮层与执行通知共用同一份运行状态；写入只发生在主线程。 */
@@ -108,7 +104,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 )
             }
     }
-    private val collapsed = mutableStateOf(true)
+    private val capsuleExpanded = mutableStateOf(false)
     private var hasExecutedForegroundTool = false
     private val supplementsLock = Any()
     private val activeSupplements = mutableListOf<AgentUiHandoffPayload.Supplement>()
@@ -167,16 +163,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        bubbleView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        orbView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         resultCardView = null
-        bubbleView = null
-        orbView = null
+        capsuleView = null
         glowView = null
         resultCardParams = null
-        bubbleParams = null
-        orbParams = null
+        capsuleParams = null
         glowParams = null
         windowManager = null
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -358,7 +351,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         mainHandler.removeCallbacksAndMessages(hideToken)
         state.value = AgentOverlayState.Initial
-        collapsed.value = true
+        capsuleExpanded.value = false
         hasExecutedForegroundTool = false
         synchronized(supplementsLock) {
             activeSupplements.clear()
@@ -437,7 +430,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             runCatching {
                 state.value = state.value.applyEvent(event)
                 if (revealsForegroundOperation && entrySurfaceReady) {
-                    if (orbView == null) {
+                    if (capsuleView == null) {
                         AgentHapticFeedback.perform(
                             this,
                             AgentHapticFeedback.Type.RUN_STARTED,
@@ -763,7 +756,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun requestSupplement(text: String) {
         val supplementText = text.trim()
         if (supplementText.isBlank()) return
-        setBubbleInputMode(focusable = false)
+        setCapsuleInputMode(focusable = false)
         activeSession?.let { session ->
             val event = session.steer(supplementText) {
                 recordSupplementEvent(supplementText)
@@ -817,7 +810,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun showOverlay() {
-        if (orbView != null) return
+        if (capsuleView != null) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return
         val wm = overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
@@ -836,64 +829,32 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowView = glow
         glowParams = glowLp
 
-        // ── 光球窗口：始终显示，右侧中下 ──────────────────────────────
-        val orb = createOverlayComposeView {
-            AgentOverlayOrb(
+        // ── 状态胶囊窗口：状态栏下方居中，收起时一句状态，点击展开控制 ─────
+        val capsule = createOverlayComposeView {
+            AgentOverlayCapsule(
                 state = state.value,
-                onToggleCollapse = ::toggleCollapse,
-            )
-        }
-        val orbLp = orbLayoutParams()
-        runCatching { wm.addView(orb, orbLp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_orb_add_view_failed") {
-                "Agent runtime orb addView failed: type=${throwable.safeLogType()}"
-            }
-            return
-        }
-        orbView = orb
-        orbParams = orbLp
-        orb.visibility = View.VISIBLE
-
-        // ── 小气泡窗口：展开态显示，跟随光球，窗口外触摸穿透 ─────────
-        if (!collapsed.value) {
-            showBubble(wm)
-        }
-    }
-
-    private fun toggleCollapse() {
-        collapsed.value = !collapsed.value
-        val wm = windowManager ?: return
-        if (collapsed.value) {
-            bubbleView?.let { view -> runCatching { wm.removeView(view) } }
-            bubbleView = null
-            bubbleParams = null
-        } else {
-            if (bubbleView == null) showBubble(wm)
-        }
-    }
-
-    private fun showBubble(wm: WindowManager) {
-        if (bubbleView != null) return
-        val bubble = createOverlayComposeView {
-            AgentOverlayBubble(
-                state = state.value,
-                onCollapse = ::toggleCollapse,
+                expanded = capsuleExpanded.value,
+                onToggleExpanded = ::toggleCapsule,
                 onPause = ::requestPause,
                 onResume = ::requestResume,
                 onStop = ::requestStop,
-                onSupplementModeChange = ::setBubbleInputMode,
+                onSupplementModeChange = ::setCapsuleInputMode,
                 onSupplement = ::requestSupplement,
             )
         }
-        val lp = bubbleLayoutParams()
-        runCatching { wm.addView(bubble, lp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_bubble_add_view_failed") {
-                "Agent runtime bubble addView failed: type=${throwable.safeLogType()}"
+        val capsuleLp = capsuleLayoutParams()
+        runCatching { wm.addView(capsule, capsuleLp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_add_view_failed") {
+                "Agent runtime capsule addView failed: type=${throwable.safeLogType()}"
             }
             return
         }
-        bubbleView = bubble
-        bubbleParams = lp
+        capsuleView = capsule
+        capsuleParams = capsuleLp
+    }
+
+    private fun toggleCapsule() {
+        capsuleExpanded.value = !capsuleExpanded.value
     }
 
     private fun showResultCard(wm: WindowManager) {
@@ -930,34 +891,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
 
-    @Suppress("unused")
-    private fun handleDrag(dx: Float, dy: Float) {
-        val lp = orbParams ?: return
-        val wm = windowManager ?: return
-        val view = orbView ?: return
-        lp.x += dx.toInt()
-        lp.y += dy.toInt()
-        runCatching { wm.updateViewLayout(view, lp) }
-    }
-
-    private fun orbLayoutParams(): WindowManager.LayoutParams =
-        WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            overlayType(),
-            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            // 右侧中下，贴近右边缘
-            gravity = Gravity.END or Gravity.TOP
-            x = dpToPx(8)
-            y = (resources.displayMetrics.heightPixels * 0.6f).toInt()
-        }
-
-    private fun bubbleLayoutParams(): WindowManager.LayoutParams =
+    private fun capsuleLayoutParams(): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -965,16 +899,24 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            // 跟随光球：右侧中下，窗口外触摸穿透
-            gravity = Gravity.END or Gravity.TOP
-            x = dpToPx(72)
-            y = (resources.displayMetrics.heightPixels * 0.6f).toInt()
+            // 贴在状态栏下方居中：远离多数应用的主要点击区，也和系统胶囊、流体云的位置习惯一致。
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = statusBarHeightPx()
             windowAnimations = 0
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
+
+    private fun statusBarHeightPx(): Int {
+        val metrics = (overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+            ?.currentWindowMetrics ?: return dpToPx(28)
+        return metrics.windowInsets
+            .getInsetsIgnoringVisibility(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.displayCutout())
+            .top
+            .takeIf { it > 0 } ?: dpToPx(28)
+    }
 
     private fun resultCardLayoutParams(): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
@@ -1033,10 +975,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
-    private fun setBubbleInputMode(focusable: Boolean) {
+    private fun setCapsuleInputMode(focusable: Boolean) {
         val wm = windowManager ?: return
-        val bubble = bubbleView ?: return
-        val lp = bubbleParams ?: return
+        val capsule = capsuleView ?: return
+        val lp = capsuleParams ?: return
         val nextFlags = if (focusable) {
             lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
         } else {
@@ -1044,9 +986,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         if (lp.flags == nextFlags) return
         lp.flags = nextFlags
-        runCatching { wm.updateViewLayout(bubble, lp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_bubble_focus_update_failed") {
-                "Agent runtime bubble focus update failed: type=${throwable.safeLogType()}"
+        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_focus_update_failed") {
+                "Agent runtime capsule focus update failed: type=${throwable.safeLogType()}"
             }
         }
     }
@@ -1061,8 +1003,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         state.value = finalState
 
         if (hasExecutedForegroundTool) {
-            // 撤掉光球和小气泡，改显半屏结果卡片，不自动关闭，用户手动关闭
-            collapsed.value = true
+            // 撤掉胶囊和边缘光，改显半屏结果卡片，不自动关闭，用户手动关闭
+            capsuleExpanded.value = false
             removeAmbientWindows()
             windowManager?.let(::showResultCard)
             mainHandler.removeCallbacksAndMessages(hideToken)
@@ -1072,29 +1014,23 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun removeAmbientWindows() {
-        orbView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        bubbleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        orbView = null
-        bubbleView = null
+        capsuleView = null
         glowView = null
-        orbParams = null
-        bubbleParams = null
+        capsuleParams = null
         glowParams = null
     }
 
     private fun dismissAndStop() {
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        bubbleView?.let { view -> runCatching { windowManager?.removeView(view) } }
-        orbView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         resultCardView = null
-        bubbleView = null
-        orbView = null
+        capsuleView = null
         glowView = null
         resultCardParams = null
-        bubbleParams = null
-        orbParams = null
+        capsuleParams = null
         glowParams = null
         windowManager = null
         stopSelf()
