@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.localizedText
@@ -31,6 +32,14 @@ internal class AgentExecutionService : Service() {
     private var foregroundActive = false
     @Volatile private var startRejected = false
 
+    /** 通知去重与节流状态，只在主线程读写。 */
+    private var publishedContent: RenderedText? = null
+    private var pendingPublish: Runnable? = null
+    private var lastPublishAt = 0L
+
+    /** 通知时间戳锚点：本次前台期开始的那一刻，避免每次更新都带新时间戳。 */
+    private var anchorAt = 0L
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -46,12 +55,15 @@ internal class AgentExecutionService : Service() {
         if (foregroundActive || startRejected) return
         leases.attachOwner(owner)
         try {
+            val content = renderedText()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                startForeground(NOTIFICATION_ID, notification(content), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
-                startForeground(NOTIFICATION_ID, notification())
+                startForeground(NOTIFICATION_ID, notification(content))
             }
             foregroundActive = true
+            lastPublishAt = SystemClock.uptimeMillis()
+            publishedContent = content
         } catch (failure: RuntimeException) {
             startRejected = true
             AndroidAgentLogger.warn("Execution service foreground failed: type=${failure.safeLogType()}")
@@ -87,15 +99,70 @@ internal class AgentExecutionService : Service() {
 
     private fun refreshNotification() {
         if (leases.closeOwnerIfIdle(owner)) {
+            cancelPendingPublish()
+            publishedContent = null
+            anchorAt = 0L
             foregroundActive = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         } else {
-            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
+            requestPublish()
         }
     }
 
-    private fun notification(): Notification {
+    /** 通知的两行文本。用于去重：内容没变就不重发。 */
+    private data class RenderedText(val title: String, val text: String)
+
+    private fun renderedText(): RenderedText {
+        val status = runStatus
+        val taskCount = if (activeRunCount > 0) activeRunCount else leases.count()
+        return RenderedText(
+            // 第一行：当前正在做的事（环节名）；没有运行中的 run 时退回通用标题。
+            title = status?.let(::currentStepLabel) ?: getString(R.string.execution_title),
+            // 第二行：任务数与当前状态（与上游 executionText 保持一致）。
+            text = executionText(this, status, taskCount),
+        )
+    }
+
+    /**
+     * 通知去重 + 节流后再发。
+     *
+     * 系统把每一次通知更新都当成一次全新的流体云"发布"交给插件重建胶囊/卡片
+     * （SystemUI 日志：`notifyLiveAlerts: PostAction` + `NotificationLiveAlertProvider-->post sbn`），
+     * 而一次工具调用会带来工具开始、工具结束、前台租约收放等多处刷新，短时间连发就会看到文字闪跳。
+     * 这里：内容没变不发；距上次发布不足 [MIN_PUBLISH_INTERVAL_MS] 的变化合并成一次尾发。
+     */
+    private fun requestPublish() {
+        val content = renderedText()
+        if (content == publishedContent) return
+        val elapsed = SystemClock.uptimeMillis() - lastPublishAt
+        if (elapsed >= MIN_PUBLISH_INTERVAL_MS) {
+            publish(content)
+            return
+        }
+        if (pendingPublish != null) return
+        val trailing = Runnable {
+            pendingPublish = null
+            val latest = renderedText()
+            if (latest != publishedContent) publish(latest)
+        }
+        pendingPublish = trailing
+        mainHandler.postDelayed(trailing, MIN_PUBLISH_INTERVAL_MS - elapsed)
+    }
+
+    private fun publish(content: RenderedText) {
+        cancelPendingPublish()
+        lastPublishAt = SystemClock.uptimeMillis()
+        publishedContent = content
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(content))
+    }
+
+    private fun cancelPendingPublish() {
+        pendingPublish?.let { mainHandler.removeCallbacks(it) }
+        pendingPublish = null
+    }
+
+    private fun notification(content: RenderedText): Notification {
         val status = runStatus
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -105,11 +172,20 @@ internal class AgentExecutionService : Service() {
             this, 1, Intent(this, AgentExecutionService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val taskCount = if (activeRunCount > 0) activeRunCount else leases.count()
+        // 通知与流体云胶囊按原样绘制这个小图标：用应用彩色图标，而不是单色通知图标。
+        val iconRes = if (Build.VERSION.SDK_INT >= 36 && applicationInfo.icon != 0) {
+            applicationInfo.icon
+        } else {
+            R.drawable.ic_notification
+        }
+        // 时间戳固定在本次任务开始那一刻并不显示：每次更新都带新 when 会让系统按"新通知"处理，加剧重建。
+        if (anchorAt == 0L) anchorAt = System.currentTimeMillis()
         val builder = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(getString(R.string.execution_title))
-            .setContentText(executionText(this, status, taskCount))
+            .setSmallIcon(Icon.createWithResource(this, iconRes))
+            .setContentTitle(content.title)
+            .setContentText(content.text)
+            .setWhen(anchorAt)
+            .setShowWhen(false)
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -118,7 +194,7 @@ internal class AgentExecutionService : Service() {
         if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
-                .setShortCriticalText(liveTextLabel(stepLabel))
+                .setShortCriticalText(liveTextLabel(content.title))
             // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
@@ -144,6 +220,9 @@ internal class AgentExecutionService : Service() {
 
         /** 状态栏胶囊右侧文字：固定 4 个中文字符宽度。 */
         private const val LIVE_TEXT_LIMIT = 4
+
+        /** 通知合并窗口：距上次发布不足该时长的新变化合并成一次尾发，避免流体云胶囊反复重建。 */
+        private const val MIN_PUBLISH_INTERVAL_MS = 400L
         private val leases = ExecutionLeaseRegistry()
         private val ownerSequence = AtomicLong()
         private val mainHandler = Handler(Looper.getMainLooper())
