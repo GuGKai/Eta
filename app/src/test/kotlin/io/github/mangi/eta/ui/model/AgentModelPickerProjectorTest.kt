@@ -125,7 +125,7 @@ class AgentModelPickerProjectorTest {
             formatContextUsage(AgentContextUsageUi(contextTokens = null, contextWindow = 100_000)),
         )
         assertEquals(
-            "Set this model's context window in Settings first",
+            "Context window unknown, so automatic compaction is off",
             formatContextUsage(AgentContextUsageUi(contextTokens = 12_000, contextWindow = null)),
         )
     }

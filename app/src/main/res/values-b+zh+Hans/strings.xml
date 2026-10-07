@@ -1106,7 +1106,7 @@
   <string name="model_collapse_provider">收起 %1$s</string>
   <string name="model_expand_provider">展开 %1$s</string>
   <string name="context_no_previous_usage">暂无上轮用量</string>
-  <string name="context_no_model_limit">请先到设置 → 模型提供商填写当前模型的上下文窗口大小。</string>
+  <string name="context_no_model_limit">未知上下文窗口，自动压缩已关闭。仍可手动压缩，也可在设置 → 模型提供商中填写窗口。</string>
   <string name="context_usage_after_response">完成首次回复后显示实测用量</string>
   <string name="context_usage_previous_response">%1$s\n上轮实测</string>
   <string name="context_compaction">上下文压缩</string>

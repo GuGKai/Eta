@@ -1094,7 +1094,7 @@
   <string name="model_collapse_provider">收合 %1$s</string>
   <string name="model_expand_provider">展開 %1$s</string>
   <string name="context_no_previous_usage">暫無上輪用量</string>
-  <string name="context_no_model_limit">請先到設定 → 模型提供商填寫目前模型的上下文視窗大小。</string>
+  <string name="context_no_model_limit">未知上下文視窗，自動壓縮已關閉。仍可手動壓縮，也可在設定 → 模型提供商中填寫視窗。</string>
   <string name="context_usage_after_response">完成首次回覆後顯示實測用量</string>
   <string name="context_usage_previous_response">%1$s\n上輪實測</string>
   <string name="context_compaction">上下文壓縮</string>
