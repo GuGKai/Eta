@@ -170,7 +170,7 @@ internal class RootShellDeviceController(
                     .put(
                         "note",
                         if (accessibility != null) {
-                            "节点来自无障碍服务，支持 tap_element、replace_text、clear_text、scroll_element 等稳定节点动作"
+                            "节点来自无障碍服务，支持 tap_element、type_text、scroll_element 等稳定节点动作"
                         } else {
                             "无障碍服务未启用，节点来自 uiautomator；坐标工具会回退到 Root Shell"
                         }

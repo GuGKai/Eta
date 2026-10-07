@@ -198,6 +198,8 @@ internal class AgentLocalTools(
                 "swipe" -> afterAction(swipe(args))
                 "scroll" -> afterAction(deviceController.scroll(args.optString("direction"), args.optString("amount")))
                 "scroll_element" -> afterAction(scrollElement(args))
+                "type_text" -> afterAction(typeText(args))
+                // 旧会话或旧入口仍可能请求这些工具名；保留执行路径，但不再出现在模型目录里。
                 "input_text" -> afterAction(inputText(args))
                 "replace_text" -> afterAction(replaceText(args))
                 "clear_text" -> afterAction(clearText(args))
@@ -538,6 +540,38 @@ internal class AgentLocalTools(
             direction = args.optString("direction"),
             amount = args.optString("amount"),
         )
+    }
+
+    /**
+     * 统一的文本输入：replace（默认）整体替换为 text，text 为空即清空；append 在光标处插入。
+     * 指定 index 时先确认节点来自最近一次观察；不指定时作用于当前输入焦点。
+     * submit=true 在写入成功后按输入法回车，用于搜索、发送等提交动作。
+     */
+    private fun typeText(args: JSONObject): String {
+        val text = args.optString("text")
+        val mode = args.optString("mode", "replace").trim().lowercase(Locale.ROOT).ifBlank { "replace" }
+        val written = when (mode) {
+            "replace" -> replaceText(args)
+            "append" -> {
+                if (text.isEmpty()) return errorResult("INVALID_ARGUMENT", "append 模式的 text 不能为空")
+                if (args.optNullableInt("index") != null) {
+                    return errorResult("INVALID_ARGUMENT", "append 只作用于当前输入焦点；要写入指定输入框请用 mode=replace")
+                }
+                // 长文本走选区插入加粘贴回退，比逐字键入更稳定。
+                if (text.length > TYPE_TEXT_INCREMENTAL_CHARS) pasteText(args) else deviceController.inputText(text)
+            }
+            else -> return errorResult("INVALID_ARGUMENT", "mode 只能是 replace 或 append")
+        }
+        val json = runCatching { JSONObject(written) }.getOrNull() ?: return written
+        json.put("tool", "type_text").put("mode", mode)
+        if (!json.optBoolean("ok") || !args.optBoolean("submit")) return json.toString()
+        val submitted = runCatching { JSONObject(deviceController.pressKey("ENTER")) }.getOrNull()
+        json.put("submitted", submitted?.optBoolean("ok") == true)
+        if (submitted?.optBoolean("ok") != true) {
+            // 文本已写入但提交失败：整体仍算成功，避免模型重复输入；由 submitted=false 提示单独补按回车或点按钮。
+            json.put("submit_error", submitted?.optString("code").orEmpty().ifBlank { "SUBMIT_FAILED" })
+        }
+        return json.toString()
     }
 
     private fun inputText(args: JSONObject): String {
@@ -1408,6 +1442,9 @@ private val AFTER_ACTION_OPTIONS = AgentScreenObservationContract.Options(
     includeUiTree = true,
     maxNodes = 30,
 )
+
+/** append 超过该长度改走粘贴路径；逐字键入的增量重建对长文本既慢又容易被输入法打断。 */
+private const val TYPE_TEXT_INCREMENTAL_CHARS = 200
 
 /** 归一化坐标上界：0–999，与主流 GUI 模型的输出习惯一致。 */
 private const val NORMALIZED_MAX = 999
