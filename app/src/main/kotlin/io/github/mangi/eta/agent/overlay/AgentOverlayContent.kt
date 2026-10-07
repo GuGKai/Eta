@@ -38,6 +38,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.Path
+import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import top.yukonga.miuix.kmp.basic.IconButton
 import androidx.compose.material.icons.rounded.ContentCopy
 import kotlinx.coroutines.launch
@@ -114,12 +118,14 @@ private val EdgeLightColors = listOf(
  * - PAUSED：静止的淡色描边，提示任务仍在、控制权暂回用户。
  * - FINISHED / FAILED：不绘制。
  */
-/** 四角圆角半径（像素），顺序为左上、右上、右下、左下。 */
+/**
+ * 屏幕圆角半径（像素）。Display 只按圆弧上报一个半径，实际面板是连续曲率的圆角；
+ * 光带用同一半径画连续曲线，转角处比圆弧更饱满，贴住屏幕边缘而不是在角上内缩一截。
+ */
 @Immutable
 internal data class ScreenCornerRadii(val topLeft: Float, val topRight: Float, val bottomRight: Float, val bottomLeft: Float) {
-    fun toArray(inset: Float): FloatArray = floatArrayOf(topLeft, topRight, bottomRight, bottomLeft)
-        .flatMap { radius -> (radius - inset).coerceAtLeast(0f).let { listOf(it, it) } }
-        .toFloatArray()
+    /** 四角在主流机型上一致；取最大值作为连续曲线的转角尺寸，不让任何一角露出直边。 */
+    val radius: Float get() = maxOf(topLeft, topRight, bottomRight, bottomLeft)
 }
 
 @Composable
@@ -146,14 +152,15 @@ internal fun AgentOverlayGlow(state: AgentOverlayState, corners: ScreenCornerRad
         modifier = Modifier.fillMaxSize().drawBehind {
             val density = this.density
             val inset = 1.5f * density
-            // 光带沿屏幕实际圆角走：路径向内收 inset，半径同步减小，保证与屏幕边缘等距。
-            val edge = android.graphics.Path().apply {
-                addRoundRect(
-                    android.graphics.RectF(inset, inset, size.width - inset, size.height - inset),
-                    corners.toArray(inset),
-                    android.graphics.Path.Direction.CW,
+            // 光带沿屏幕轮廓的连续曲线走：路径向内收 inset，转角同步减小，保证与屏幕边缘等距。
+            val edge = Path().apply {
+                addSquircleRect(
+                    width = size.width - inset * 2,
+                    height = size.height - inset * 2,
+                    cornerRadius = (corners.radius - inset).coerceAtLeast(0f),
                 )
-            }
+                translate(Offset(inset, inset))
+            }.asAndroidPath()
             drawIntoCanvas { canvas ->
                 if (!running) {
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
