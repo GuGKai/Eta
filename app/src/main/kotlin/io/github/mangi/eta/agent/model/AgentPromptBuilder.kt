@@ -85,7 +85,7 @@ internal object AgentPromptBuilder {
                     "节点为空、目标无法唯一识别、界面以 Canvas、地图、图片或二维码等视觉内容为主，或任务依赖颜色、图像、空间布局时，" +
                     "再显式设置 include_screenshot=true；补截图时保持 include_ui_tree=true，让截图、节点与新的 observation_id 来自同一次观察，" +
                     "禁止把新截图与旧节点混用；树被截断但节点语义仍有效时，优先提高 max_nodes，不要仅因截断请求截图；" +
-                    "点击可见控件优先用 tap_element/tap_area，" +
+                    "点击可见控件优先用 tap_element/tap_area；坐标工具必须写明 coordinate_space：看截图定位用 normalized（0–999），坐标来自 ui_nodes 用 screen，" +
                     "调用节点工具时必须把该节点与同一次观察的 observation_id 一起传回，过期就重新观察；" +
                     "scroll 的方向表示要显示的内容方向，例如 down 显示下方内容；" +
                     "任何工具返回 ACTION_OUTCOME_UNKNOWN 或 DIRECTION_MISMATCH 时，必须先重新观察，禁止直接重放动作；" +

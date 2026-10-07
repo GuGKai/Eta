@@ -193,6 +193,20 @@ class AgentLocalToolsPermissionTest {
     }
 
     @Test
+    fun coordinateToolsRequireExplicitCoordinateSpace() {
+        val tools = tools()
+        listOf(
+            "{\"x\":100,\"y\":200}",
+            "{\"x\":100,\"y\":200,\"coordinate_space\":\"pixel\"}",
+            "{\"x\":1000,\"y\":200,\"coordinate_space\":\"normalized\"}",
+        ).forEach { arguments ->
+            val result = tools.execute(AgentModelClient.ToolCall(id = "call-1", name = "tap", argumentsJson = arguments))
+            assertEquals(arguments, "INVALID_ARGUMENT", JSONObject(result.content).getString("code"))
+        }
+        tools.close()
+    }
+
+    @Test
     fun textInputWithoutAccessibilityDoesNotSendBlindShellKeys() {
         val tools = tools()
 

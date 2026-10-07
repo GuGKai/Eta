@@ -177,11 +177,10 @@ internal class RootShellDeviceController(
                 "coordinate_contract",
                 if (coordinateSpace == null) {
                     JSONObject()
-                        .put("default_coordinate_space", "screen")
-                        .put("note", "未附加截图，坐标工具使用真实设备屏幕坐标")
+                        .put("note", "坐标工具必须显式填写 coordinate_space：ui_nodes 的 center/bounds 用 screen；本次未附图")
                 } else {
                     JSONObject()
-                        .put("default_coordinate_space", "screenshot")
+                        .put("recommended_coordinate_space", "normalized")
                         .put(
                             "screenshot",
                             JSONObject()
@@ -200,7 +199,10 @@ internal class RootShellDeviceController(
                                 .put("x", coordinateSpace.screenWidth.toDouble() / coordinateSpace.screenshotWidth)
                                 .put("y", coordinateSpace.screenHeight.toDouble() / coordinateSpace.screenshotHeight)
                         )
-                        .put("note", "tap、tap_area、long_press、swipe 默认接收截图像素坐标；ui_nodes.center 是 screen 坐标")
+                        .put(
+                            "note",
+                            "看截图定位用 normalized（0–999，相对整屏），不受模型侧图片缩放影响；ui_nodes 的 center/bounds 用 screen",
+                        )
                 }
             )
             .put("focus", focus)

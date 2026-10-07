@@ -571,10 +571,30 @@ internal class AgentLocalTools(
             timeoutMs = args.optInt("timeout_ms", 10_000)
         )
 
+    /**
+     * 坐标系必须显式声明。旧版按"上一次观察是否带截图"隐式切换默认值，模型无从得知，
+     * 经常把截图像素当成屏幕像素；缺省时直接报参数错误，让模型在下一步改正。
+     */
     private fun convertPoint(x: Int, y: Int, coordinateSpace: String): ScreenPoint {
         val space = publishedObservation.get().coordinateSpace
         val requestedSpace = coordinateSpace.trim().lowercase(Locale.ROOT)
-        if (requestedSpace == "screen" || (requestedSpace.isBlank() && space == null)) {
+        if (requestedSpace.isBlank()) {
+            throw InvalidToolArgumentException(
+                "缺少 coordinate_space：看截图定位用 normalized（0–999），坐标来自 ui_nodes 用 screen",
+            )
+        }
+        if (requestedSpace == "normalized") {
+            if (x !in 0..NORMALIZED_MAX || y !in 0..NORMALIZED_MAX) {
+                throw InvalidToolArgumentException("normalized 坐标必须在 0–$NORMALIZED_MAX 之间：($x,$y)")
+            }
+            val (width, height) = space?.let { it.screenWidth to it.screenHeight }
+                ?: deviceController.screenDimensions()
+            return ScreenPoint(
+                x = (x.toLong() * (width - 1) / NORMALIZED_MAX).toInt(),
+                y = (y.toLong() * (height - 1) / NORMALIZED_MAX).toInt(),
+            )
+        }
+        if (requestedSpace == "screen") {
             val (width, height) = space?.let { it.screenWidth to it.screenHeight }
                 ?: deviceController.screenDimensions()
             if (x !in 0 until width || y !in 0 until height) {
@@ -584,9 +604,12 @@ internal class AgentLocalTools(
             }
             return ScreenPoint(x, y)
         }
+        if (requestedSpace != "screenshot") {
+            throw InvalidToolArgumentException("coordinate_space 只能是 normalized、screen 或 screenshot")
+        }
         if (space == null) {
             throw InvalidToolArgumentException(
-                "当前没有可用的截图坐标系；请先 observe_screen，或明确设置 coordinate_space=screen",
+                "最近一次观察没有附图，没有 screenshot 坐标系；看截图定位请用 normalized，或先带截图重新观察",
             )
         }
         val point = runCatching { space.fromScreenshot(x, y) }
@@ -1351,3 +1374,6 @@ internal class AgentLocalTools(
         val MEMORY_TOOL_NAMES = setOf("memory_get", "memory_write")
     }
 }
+
+/** 归一化坐标上界：0–999，与主流 GUI 模型的输出习惯一致。 */
+private const val NORMALIZED_MAX = 999
