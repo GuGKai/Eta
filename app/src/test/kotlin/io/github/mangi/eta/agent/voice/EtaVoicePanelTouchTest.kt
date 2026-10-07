@@ -117,7 +117,6 @@ class EtaVoicePanelTouchTest {
                             handoffRunning = false,
                             exitRequested = false,
                             onInputChange = {},
-                            onSuggestionClick = {},
                             onSubmit = {},
                             onStop = {},
                             onClose = { closed++ },
