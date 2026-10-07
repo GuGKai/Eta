@@ -195,6 +195,7 @@
   <string name="overlay_substatus_finished">已完成</string>
   <string name="overlay_substatus_failed">執行失敗</string>
   <string name="overlay_result_done">完成</string>
+  <string name="overlay_result_open_eta">回到 Eta</string>
   <string name="overlay_pause">暫停</string>
   <string name="overlay_resume">繼續</string>
   <string name="tool_observe_screen">查看畫面</string>

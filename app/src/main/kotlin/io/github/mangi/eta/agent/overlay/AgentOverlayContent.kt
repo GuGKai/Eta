@@ -38,6 +38,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.Composable
+import top.yukonga.miuix.kmp.basic.IconButton
+import androidx.compose.material.icons.rounded.ContentCopy
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.rounded.Check
@@ -279,6 +281,7 @@ internal fun OverlaySupplementInput(
 internal fun AgentResultCard(
     state: AgentOverlayState,
     onClose: () -> Unit,
+    onOpenEta: () -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -400,14 +403,14 @@ internal fun AgentResultCard(
                     }
                 }
 
-                ResultCardActions(content = content, onDone = ::close)
+                ResultCardActions(content = content, onOpenEta = onOpenEta, onDone = ::close)
             }
         }
     }
 }
 
 @Composable
-private fun ResultCardActions(content: String, onDone: () -> Unit) {
+private fun ResultCardActions(content: String, onOpenEta: () -> Unit, onDone: () -> Unit) {
     @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
@@ -421,18 +424,33 @@ private fun ResultCardActions(content: String, onDone: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        TextButton(
-            text = stringResource(if (copied) R.string.copy_copied else R.string.ui_copy_4edd1d),
+        // 复制是图标按钮，主次两个文字按钮分别是"完成"（留在当前应用）与"回到 Eta"（查看完整过程）。
+        IconButton(
             onClick = {
                 clipboard.setText(AnnotatedString(content))
                 copied = true
             },
+            backgroundColor = MiuixTheme.colorScheme.secondaryContainer,
+            minWidth = 44.dp,
+            minHeight = 44.dp,
+            cornerRadius = 22.dp,
+        ) {
+            Icon(
+                imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                contentDescription = stringResource(if (copied) R.string.copy_copied else R.string.ui_copy_4edd1d),
+                modifier = Modifier.size(18.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+        }
+        TextButton(
+            text = stringResource(R.string.overlay_result_done),
+            onClick = onDone,
             modifier = Modifier.weight(1f),
             minHeight = 44.dp,
         )
         TextButton(
-            text = stringResource(R.string.overlay_result_done),
-            onClick = onDone,
+            text = stringResource(R.string.overlay_result_open_eta),
+            onClick = onOpenEta,
             modifier = Modifier.weight(1f),
             minHeight = 44.dp,
             colors = ButtonDefaults.textButtonColorsPrimary(),

@@ -219,6 +219,7 @@
   <string name="overlay_substatus_finished">Completed</string>
   <string name="overlay_substatus_failed">Failed</string>
   <string name="overlay_result_done">Done</string>
+  <string name="overlay_result_open_eta">Open Eta</string>
   <string name="overlay_pause">Pause</string>
   <string name="overlay_resume">Resume</string>
   <string name="overlay_supplement">Add input</string>

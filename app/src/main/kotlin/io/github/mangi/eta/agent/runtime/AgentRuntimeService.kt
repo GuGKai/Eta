@@ -3,6 +3,10 @@ package io.github.mangi.eta.agent.runtime
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import android.app.Service
+import android.app.ActivityOptions
+import android.app.PendingIntent
+import io.github.mangi.eta.ui.MainActivity
+import android.os.Build
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -111,6 +115,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
     private val capsuleExpanded = mutableStateOf(false)
     private var hasExecutedForegroundTool = false
+    /** 结果卡片"回到 Eta"打开的会话；只有 App 内发起的 run 才有，系统助手入口为 null。 */
+    private var resultConversationId: String? = null
     private val supplementsLock = Any()
     private val activeSupplements = mutableListOf<AgentUiHandoffPayload.Supplement>()
     private var nextSupplementIndex = 1
@@ -360,6 +366,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         capsuleExpanded.value = false
         setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
         hasExecutedForegroundTool = false
+        resultConversationId = request.handoff
+            ?.takeIf { it.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
+            ?.let { AgentUiHandoffPayload.from(it.payload).conversationId }
+            ?.takeIf(String::isNotBlank)
         synchronized(supplementsLock) {
             activeSupplements.clear()
             nextSupplementIndex = 1
@@ -892,6 +902,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             AgentResultCard(
                 state = state.value,
                 onClose = ::dismissAndStop,
+                onOpenEta = ::openEtaFromResult,
             )
         }
         val lp = resultCardLayoutParams()
@@ -911,6 +922,42 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 结果卡片是任务结束后的停留界面，系统返回应先关闭它，而不是退回底下的应用。
      * 窗口需可获焦才能收到返回；卡片外仍是 FLAG_NOT_TOUCH_MODAL，触摸照常穿透到下层。
      */
+    /**
+     * 回到 Eta 本体并定位到本次任务的会话。卡片窗口可见时属于前台可见的用户操作，
+     * 允许从服务启动 Activity；启动失败时保留卡片，不让用户丢失结果。
+     */
+    private fun openEtaFromResult() {
+        val intent = Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .apply {
+                resultConversationId?.let { id ->
+                    action = MainActivity.ACTION_OPEN_CONVERSATION_ID
+                    putExtra(MainActivity.EXTRA_CONVERSATION_ID, id)
+                }
+            }
+        val options = ActivityOptions.makeBasic().apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                pendingIntentBackgroundActivityStartMode = if (Build.VERSION.SDK_INT >= 36) {
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE
+                } else {
+                    @Suppress("DEPRECATION")
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                }
+            }
+        }
+        val launched = runCatching {
+            PendingIntent.getActivity(
+                this, RESULT_OPEN_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ).send(this, 0, null, null, null, null, options.toBundle())
+        }
+        if (launched.isFailure) {
+            AndroidAgentLogger.warn("Agent runtime result open failed: type=${launched.exceptionOrNull()?.safeLogType()}")
+            return
+        }
+        dismissAndStop()
+    }
+
     private fun registerResultCardBack(view: View) {
         unregisterResultCardBack()
         val dispatcher = view.findOnBackInvokedDispatcher() ?: run {
@@ -1154,6 +1201,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         const val HIDE_DELAY_MS = 2_500L
         const val RESULT_REVIEW_DELAY_MS = 120_000L
         const val RESULT_CARD_HEIGHT_RATIO = 0.5f
+        private const val RESULT_OPEN_REQUEST_CODE = 1108
         private const val CAPSULE_WINDOW_WIDTH_DP = 272
         private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
