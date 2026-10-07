@@ -44,6 +44,8 @@ import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
+import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
@@ -63,6 +65,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import kotlin.concurrent.thread
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -403,14 +406,23 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             runId = request.runId,
             operation = request.operation,
             eventSink = { event ->
-                islandBridge.update(request.runId, event)
-                sendEventTo(replyTo, event)
+                val current = activeSession?.takeIf { it.runId == request.runId }
+                if (current != null && event is AgentEvent.ToolStarted &&
+                    (event.name in VirtualScreenRoutingPolicy.uiTools || event.name == "virtual_screen") &&
+                    runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled
+                ) {
+                    current.virtualUiRouted.set(true)
+                }
+                val virtualScreen = current?.let { usesVirtualUi(it) } == true
+                islandBridge.update(request.runId, event, virtualScreen)
+                sendEventTo(replyTo, event, virtualScreen)
             },
             resultSink = { result ->
                 islandBridge.finish(result)
                 sendResultTo(replyTo, result)
             },
         )
+        session.virtualUiRouted.set(VirtualScreenSession.isOwnedBy(request.virtualScreenOwner))
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
         val allowBoundFallback = RootAccess.isGranted || automated
         val executionHeld = AgentExecutionService.acquire(
@@ -434,6 +446,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         mainHandler.removeCallbacksAndMessages(hideToken)
+        if (usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)) {
+            removeOverlayWindows()
+        }
         state.value = AgentOverlayState.Initial
         capsuleExpanded.value = false
         setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
@@ -524,14 +539,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         entrySurfaceGuard: EntrySurfaceGuard?,
     ) {
         if (activeSession !== session) return
-        if (event is AgentEvent.ToolStarted &&
-            kotlinx.coroutines.runBlocking { io.github.mangi.eta.data.datastore.SettingsDataStore.settings() }.virtualScreenEnabled) {
-            session.virtualUiRouted.set(true)
-        }
-        val virtualUi = session.virtualUiRouted.get() && !session.mainScreenFallbackApproved.get()
-        val revealsForegroundOperation = !virtualUi && AgentOverlayVisibilityPolicy.shouldRevealFor(event)
-        val requiresEntrySurfaceDismissal = !virtualUi &&
-            AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
+        val revealsOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
+        val dismissesEntrySurface = AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
+        val virtualScreenEnabled = (revealsOperation || dismissesEntrySurface || event is AgentEvent.ToolStarted) &&
+            runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled
+        val virtualUi = usesVirtualUi(session, virtualScreenEnabled)
+        val revealsForegroundOperation = !virtualUi && revealsOperation
+        val requiresEntrySurfaceDismissal = !virtualUi && dismissesEntrySurface
         val entrySurfaceReady = if (requiresEntrySurfaceDismissal && entrySurfaceGuard != null) {
             runCatching { entrySurfaceGuard.dismissOnce() }.getOrDefault(false)
         } else {
@@ -539,6 +553,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         mainHandler.post {
             if (activeSession !== session) return@post
+            if (usesVirtualUi(session, virtualScreenEnabled)) removeOverlayWindows()
             if (
                 !virtualUi && AgentOverlayVisibilityPolicy.shouldRecordForegroundExecution(
                     event,
@@ -680,10 +695,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sendEventTo(
         target: Messenger?,
         event: AgentEvent,
+        virtualScreen: Boolean? = null,
     ) {
         runCatching {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_EVENT)
-            msg.data = AgentRuntimeWire.eventToBundle(event)
+            msg.data = AgentRuntimeWire.eventToBundle(event, virtualScreen)
             target?.send(msg)
         }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_event_delivery_failed") {
@@ -997,9 +1013,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         keepScreenOnState.value = enabled
         capsuleView?.keepScreenOn = enabled
     }
+    private fun usesVirtualUi(session: AgentRuntimeSession, virtualScreenEnabled: Boolean = false): Boolean =
+        (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
 
     private fun showOverlay() {
         if (capsuleView != null) return
+        // 任务跑在虚拟屏上时不在手机上显示运行叠层。
+        if (activeSession?.let { session ->
+                usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)
+            } == true) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return
         val wm = overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
@@ -1378,6 +1400,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         capsuleParams = null
         glowParams = null
         windowManager = null
+    }
+
+    private fun dismissAndStop() {
+        removeOverlayWindows()
         stopSelf()
     }
 
