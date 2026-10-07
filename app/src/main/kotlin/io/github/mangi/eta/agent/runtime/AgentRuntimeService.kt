@@ -44,6 +44,8 @@ import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
+import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
@@ -63,6 +65,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -649,10 +652,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sendEventTo(
         target: Messenger?,
         event: AgentEvent,
+        virtualScreen: Boolean? = null,
     ) {
         runCatching {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_EVENT)
-            msg.data = AgentRuntimeWire.eventToBundle(event)
+            msg.data = AgentRuntimeWire.eventToBundle(event, virtualScreen)
             target?.send(msg)
         }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_event_delivery_failed") {
@@ -992,9 +996,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         keepScreenOnState.value = enabled
         capsuleView?.keepScreenOn = enabled
     }
+    private fun usesVirtualUi(session: AgentRuntimeSession, virtualScreenEnabled: Boolean = false): Boolean =
+        (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
 
     private fun showOverlay() {
         if (capsuleView != null) return
+        // 任务跑在虚拟屏上时不在手机上显示运行叠层。
+        if (activeSession?.let { session ->
+                usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)
+            } == true) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return
         val wm = overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
