@@ -15,6 +15,11 @@ internal data class AgentOverlayState(
     val round: Int = 0,
     val status: AgentOverlayStatus = AgentOverlayStatus.Reasoning,
     val detailText: String = "",
+    /**
+     * 胶囊第二行：思考时是模型最近一句可见推理，执行工具时是参数摘要（如"点击「搜索」"）。
+     * 只保留尾部一小段，供用户扫一眼知道 Agent 在想什么；完整推理仍在会话里。
+     */
+    val thought: String = "",
 ) {
     companion object {
         val Initial = AgentOverlayState(status = AgentOverlayStatus.Reasoning)
@@ -46,15 +51,20 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
 
     is AgentEvent.AssistantBlockDelta -> when (event.kind) {
         AgentEvent.AssistantBlockKind.TEXT -> appendStreamingText(event)
-        else -> this
+        AgentEvent.AssistantBlockKind.THINKING -> copy(thought = appendThought(thought, event.delta))
+        AgentEvent.AssistantBlockKind.TOOL_CALL -> this
     }
 
+    // 新一轮思考从空白开始，避免把上一轮的尾句当成当前想法。
+    is AgentEvent.AssistantBlockStart -> if (event.kind == AgentEvent.AssistantBlockKind.THINKING) copy(thought = "") else this
+
     is AgentEvent.ToolStarted -> running(AgentOverlayStatus.RunningTool(event.name), event.round)
+        .copy(thought = event.argsPreview.trim())
     is AgentEvent.HostedToolStarted -> running(AgentOverlayStatus.HostedToolRunning(event.name), event.round)
 
     // 工具结束后模型马上开始下一轮思考；直接回到思考态，由下一次工具调用切换文字。
-    is AgentEvent.ToolFinished -> running(AgentOverlayStatus.Reasoning, event.round)
-    is AgentEvent.HostedToolFinished -> running(AgentOverlayStatus.Reasoning, event.round)
+    is AgentEvent.ToolFinished -> running(AgentOverlayStatus.Reasoning, event.round).copy(thought = "")
+    is AgentEvent.HostedToolFinished -> running(AgentOverlayStatus.Reasoning, event.round).copy(thought = "")
 
     is AgentEvent.UserSupplementReceived -> copy(
         phase = AgentOverlayPhase.RUNNING,
@@ -74,7 +84,6 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         detailText = event.reason,
     )
 
-    is AgentEvent.AssistantBlockStart,
     is AgentEvent.AssistantBlockEnd,
     is AgentEvent.AssistantReceived,
     is AgentEvent.ProviderResponseStarted,
@@ -98,6 +107,13 @@ private fun AgentOverlayState.thinkingUnlessWorking(): AgentOverlayState = when 
 }
 
 private const val MaxStreamingPreviewChars = 320
+private const val MaxThoughtChars = 96
+
+/** 合并空白并只保留尾部，胶囊里显示的是"刚刚想到哪"，不是整段推理。 */
+private fun appendThought(current: String, delta: String): String {
+    val merged = (current + delta).replace(Regex("\\s+"), " ").trimStart()
+    return if (merged.length <= MaxThoughtChars) merged else merged.takeLast(MaxThoughtChars).trimStart()
+}
 
 private fun AgentOverlayState.appendStreamingText(event: AgentEvent.AssistantBlockDelta): AgentOverlayState {
     val nextPreview = (detailText + event.delta)

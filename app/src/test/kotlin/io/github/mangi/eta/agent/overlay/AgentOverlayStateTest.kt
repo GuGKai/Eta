@@ -42,4 +42,27 @@ class AgentOverlayStateTest {
         ).forEach { assertEquals(paused, paused.applyEvent(it)) }
         assertEquals(AgentOverlayPhase.FAILED, paused.applyEvent(AgentEvent.RunFailed("已停止")).phase)
     }
+
+    @Test
+    fun thoughtKeepsLatestReasoningTailAndSwitchesToToolSummary() {
+        var state = AgentOverlayState.Initial
+            .applyEvent(AgentEvent.AssistantBlockStart(1, AgentEvent.AssistantBlockKind.THINKING, 0))
+        state = state.applyEvent(AgentEvent.AssistantBlockDelta(1, AgentEvent.AssistantBlockKind.THINKING, 0, 0, "用户想订\n  明天的"))
+        state = state.applyEvent(AgentEvent.AssistantBlockDelta(1, AgentEvent.AssistantBlockKind.THINKING, 0, 0, "高铁票"))
+        assertEquals("用户想订 明天的高铁票", state.thought)
+
+        val long = "很长的推理".repeat(40)
+        state = state.applyEvent(AgentEvent.AssistantBlockDelta(1, AgentEvent.AssistantBlockKind.THINKING, 0, 0, long))
+        assertEquals(96, state.thought.length)
+        assertEquals(true, state.thought.endsWith("很长的推理"))
+
+        state = state.applyEvent(AgentEvent.ToolStarted(1, "call-1", "tap_element", "点击元素「搜索」"))
+        assertEquals("点击元素「搜索」", state.thought)
+        state = state.applyEvent(AgentEvent.ToolFinished(1, "call-1", "tap_element", "ok", 0, 0))
+        assertEquals("", state.thought)
+
+        state = state.applyEvent(AgentEvent.AssistantBlockDelta(2, AgentEvent.AssistantBlockKind.THINKING, 0, 0, "旧想法"))
+        state = state.applyEvent(AgentEvent.AssistantBlockStart(2, AgentEvent.AssistantBlockKind.THINKING, 1))
+        assertEquals("", state.thought)
+    }
 }

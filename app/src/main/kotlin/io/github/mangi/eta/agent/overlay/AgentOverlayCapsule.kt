@@ -164,9 +164,9 @@ internal fun AgentOverlayCapsule(
                 ) {
                     PhaseIndicator(phase = state.phase, accent = accent)
                     Spacer(Modifier.width(9.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                     AnimatedContent(
                         targetState = statusText,
-                        modifier = Modifier.weight(1f),
                         transitionSpec = {
                             (slideInVertically(tween(220)) { it / 2 } + fadeIn(tween(220))) togetherWith
                                 (slideOutVertically(tween(180)) { -it / 2 } + fadeOut(tween(160))) using
@@ -182,6 +182,8 @@ internal fun AgentOverlayCapsule(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                    ThoughtLine(thought = state.thought.takeIf { state.phase == AgentOverlayPhase.RUNNING }.orEmpty())
                     }
                 }
 
@@ -297,6 +299,30 @@ private fun PhaseIndicator(phase: AgentOverlayPhase, accent: Color) {
                 )
                 drawCircle(accent.copy(alpha = breathe), radius * 0.26f, center)
             },
+    )
+}
+
+/**
+ * 思考尾句：单行、从左侧裁掉旧内容，让最新的字始终可见。
+ * 流式增量只改文字，不做逐字动画；行的出现与消失用高度不变的淡入淡出，避免胶囊上下跳动。
+ */
+@Composable
+private fun ThoughtLine(thought: String) {
+    val shown = thought.isNotBlank()
+    val alpha by animateFloatAsState(if (shown) 1f else 0f, tween(220), label = "thought_alpha")
+    var lastThought by remember { mutableStateOf("") }
+    if (shown) lastThought = thought
+    Text(
+        text = lastThought,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        maxLines = 1,
+        // 起始端省略：保留尾部最新的推理，像滚动字幕一样向前推进。
+        overflow = TextOverflow.StartEllipsis,
+        modifier = Modifier
+            .padding(top = 1.dp)
+            .graphicsLayer { this.alpha = alpha },
     )
 }
 

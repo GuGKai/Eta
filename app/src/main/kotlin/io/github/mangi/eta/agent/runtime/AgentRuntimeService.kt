@@ -16,6 +16,9 @@ import android.os.Process
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
+import android.view.View
+import android.window.OnBackInvokedDispatcher
+import android.window.OnBackInvokedCallback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +94,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var glowParams: WindowManager.LayoutParams? = null
     private var capsuleParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
+    private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
 
     /** 浮层与执行通知共用同一份运行状态；写入只发生在主线程。 */
     private val state = object {
@@ -163,6 +167,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         activeSession = null
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
+        unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -898,6 +903,29 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         resultCardView = card
         resultCardParams = lp
+        registerResultCardBack(card)
+        card.requestFocus()
+    }
+
+    /**
+     * 结果卡片是任务结束后的停留界面，系统返回应先关闭它，而不是退回底下的应用。
+     * 窗口需可获焦才能收到返回；卡片外仍是 FLAG_NOT_TOUCH_MODAL，触摸照常穿透到下层。
+     */
+    private fun registerResultCardBack(view: View) {
+        unregisterResultCardBack()
+        val dispatcher = view.findOnBackInvokedDispatcher() ?: run {
+            AndroidAgentLogger.warn("Agent runtime result card back dispatcher unavailable")
+            return
+        }
+        val callback = OnBackInvokedCallback(::dismissAndStop)
+        dispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_OVERLAY, callback)
+        resultCardBack = dispatcher to callback
+    }
+
+    private fun unregisterResultCardBack() {
+        val (dispatcher, callback) = resultCardBack ?: return
+        resultCardBack = null
+        runCatching { dispatcher.unregisterOnBackInvokedCallback(callback) }
     }
 
     private fun createOverlayComposeView(content: @Composable () -> Unit): ComposeView =
@@ -954,7 +982,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             resultCardWindowHeightPx(),
             overlayType(),
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
@@ -1076,6 +1103,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun dismissAndStop() {
+        unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -1127,9 +1155,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         const val RESULT_REVIEW_DELAY_MS = 120_000L
         const val RESULT_CARD_HEIGHT_RATIO = 0.5f
         private const val CAPSULE_WINDOW_WIDTH_DP = 272
-        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 56
-        private const val CAPSULE_CONTROLS_HEIGHT_DP = 112
-        private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 248
+        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
+        private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
+        private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260
         private const val FALLBACK_SCREEN_CORNER_DP = 28
         const val MAX_ARCHIVED_USER_IMAGE_PREVIEWS = 4
     }

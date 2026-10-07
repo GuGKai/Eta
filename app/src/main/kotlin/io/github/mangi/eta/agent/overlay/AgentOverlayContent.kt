@@ -38,6 +38,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,10 +79,7 @@ import io.github.mangi.eta.ui.markdown.StaticMarkdown
 import io.github.mangi.eta.R
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -262,8 +271,9 @@ internal fun OverlaySupplementInput(
 }
 
 /**
- * 结束时半屏结果卡片窗口：Markdown 渲染完整结果，可滚动，底部对齐。
- * 窗口本身已由 Service 定为半屏尺寸，此处填满窗口。
+ * 任务结束后的结果卡片：底部浮起的圆角面板，顶部抓手提示可下滑关闭。
+ * 关闭途径有三条：下滑、系统返回（由 Service 注册）、底部"完成"按钮；
+ * 次要操作"复制"放在同一行，正文可滚动，过长时底部渐隐提示还有内容。
  */
 @Composable
 internal fun AgentResultCard(
@@ -271,98 +281,164 @@ internal fun AgentResultCard(
     onClose: () -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        visible = true
+    LaunchedEffect(Unit) { visible = true }
+    val scope = rememberCoroutineScope()
+    fun close() {
+        if (!visible) return
+        visible = false
+        // 等退场动画结束再移除窗口，避免卡片被瞬间抽走。
+        scope.launch {
+            delay(ResultCardExitMs.toLong())
+            onClose()
+        }
     }
 
     val isFailed = state.phase == AgentOverlayPhase.FAILED
-    val dotColor = overlayPhaseAccent(state.phase)
-    val statusText = state.status.localizedText()
+    val accent = overlayPhaseAccent(state.phase)
     val statusLabel = stringResource(
         if (isFailed) R.string.overlay_substatus_failed else R.string.overlay_substatus_finished,
     )
-    val content = state.detailText.ifBlank { statusText }
+    val content = state.detailText.ifBlank { state.status.localizedText() }
+    val density = LocalDensity.current
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val settledOffset by animateFloatAsState(
+        targetValue = dragOffset,
+        animationSpec = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium),
+        label = "result_drag",
+    )
+    val dismissThreshold = with(density) { 96.dp.toPx() }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .navigationBarsPadding()
-            .padding(start = 12.dp, end = 12.dp, bottom = 20.dp),
+            .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
     ) {
         AnimatedVisibility(
             visible = visible,
-            enter = slideInVertically(
-                initialOffsetY = { it },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
-                )
-            ) + fadeIn(animationSpec = tween(durationMillis = 200)),
-            exit = slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = tween(durationMillis = 180),
-            ) + fadeOut(animationSpec = tween(durationMillis = 180)),
+            enter = slideInVertically(spring(Spring.DampingRatioLowBouncy, Spring.StiffnessMediumLow)) { it } +
+                fadeIn(tween(200)),
+            exit = slideOutVertically(tween(ResultCardExitMs)) { it } + fadeOut(tween(ResultCardExitMs)),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            Card(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 360.dp)
-                    .shadow(8.dp, RoundedCornerShape(CardDefaults.CornerRadius)),
-                insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    // 状态行降级为圆点 + 灰色小字，关闭用幽灵图标，视觉重心留给内容
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(dotColor),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = statusLabel,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            fontSize = 13.sp,
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        // 关闭直接交给 Service，不经 Compose 协程延迟
-                        IconButton(
-                            onClick = onClose,
-                            backgroundColor = Color.Transparent,
-                            minWidth = 32.dp,
-                            minHeight = 32.dp,
-                            cornerRadius = 16.dp,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = stringResource(R.string.action_close),
-                                modifier = Modifier.size(16.dp),
-                                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                            )
+                    .heightIn(max = 420.dp)
+                    .graphicsLayer { translationY = settledOffset }
+                    .shadow(16.dp, RoundedCornerShape(ResultCardCorner), ambientColor = Color.Black.copy(alpha = 0.18f))
+                    .clip(RoundedCornerShape(ResultCardCorner))
+                    .background(MiuixTheme.colorScheme.surface)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragEnd = { if (dragOffset > dismissThreshold) close() else dragOffset = 0f },
+                            onDragCancel = { dragOffset = 0f },
+                        ) { change, amount ->
+                            change.consume()
+                            // 只允许向下拖；向上带阻尼，避免卡片被拖离底边。
+                            dragOffset = (dragOffset + amount).coerceAtLeast(0f)
                         }
+                    },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .size(width = 36.dp, height = 4.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f)),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(accent.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (isFailed) Icons.Rounded.Close else Icons.Rounded.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp),
+                            tint = accent,
+                        )
                     }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = statusLabel,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Markdown 结果，可滚动
+                Box(modifier = Modifier.weight(1f, fill = false)) {
+                    val scroll = rememberScrollState()
                     StaticMarkdown(
                         content = content,
                         tone = MarkdownTone.Answer,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 280.dp)
-                            .verticalScroll(rememberScrollState()),
+                            .verticalScroll(scroll)
+                            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 12.dp),
                     )
+                    if (scroll.canScrollForward) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(28.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, MiuixTheme.colorScheme.surface),
+                                    ),
+                                ),
+                        )
+                    }
                 }
+
+                ResultCardActions(content = content, onDone = ::close)
             }
         }
     }
 }
+
+@Composable
+private fun ResultCardActions(content: String, onDone: () -> Unit) {
+    @Suppress("DEPRECATION")
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_400)
+            copied = false
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        TextButton(
+            text = stringResource(if (copied) R.string.copy_copied else R.string.ui_copy_4edd1d),
+            onClick = {
+                clipboard.setText(AnnotatedString(content))
+                copied = true
+            },
+            modifier = Modifier.weight(1f),
+            minHeight = 44.dp,
+        )
+        TextButton(
+            text = stringResource(R.string.overlay_result_done),
+            onClick = onDone,
+            modifier = Modifier.weight(1f),
+            minHeight = 44.dp,
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+        )
+    }
+}
+
+private val ResultCardCorner = 28.dp
+private const val ResultCardExitMs = 200
