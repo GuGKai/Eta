@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.phone
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Process
 import android.media.AudioManager
 import android.net.TetheringInterface
 import android.net.TetheringManager
@@ -34,7 +35,13 @@ internal class NativeSystemOperations(
     // 权限被拒时由 PhoneOperations 统一映射为 PHONE_ACCESS_DENIED。
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
+    @SuppressLint("MissingPermission")
     private fun mobileData(tool: String, args: JSONObject): JSONObject {
+        if (Process.myUid() != 0) PhoneOperation.error("ROOT_REQUIRED", "移动数据操作需要 Root 身份")
+        PhoneOperation.allowed(
+            args,
+            if (tool == "set_mobile_data") setOf("enabled") else emptySet(),
+        )
         val subscription = android.telephony.SubscriptionManager.getDefaultDataSubscriptionId()
         if (!android.telephony.SubscriptionManager.isValidSubscriptionId(subscription))
             PhoneOperation.error("MOBILE_DATA_UNAVAILABLE", "没有可用的默认数据 SIM 卡")
