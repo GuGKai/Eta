@@ -1,11 +1,10 @@
 package io.github.mangi.eta.agent.overlay
 
+import android.content.res.Resources
 import android.icu.text.ListFormatter
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalResources
 import io.github.mangi.eta.R
 
 /** 浮窗只保存语义状态，文案在渲染时根据当前系统语言解析。 */
@@ -38,50 +37,50 @@ internal sealed interface AgentOverlayStatus {
 }
 
 @Composable
-internal fun AgentOverlayStatus.localizedText(): String = when (this) {
-    AgentOverlayStatus.Preparing -> stringResource(R.string.overlay_preparing)
-    AgentOverlayStatus.Received -> stringResource(R.string.overlay_received)
-    is AgentOverlayStatus.PreparingTools -> pluralStringResource(
-        R.plurals.overlay_preparing_tools,
-        count,
-        count,
+internal fun AgentOverlayStatus.localizedText(): String = localizedText(LocalResources.current)
+
+/** 通知等非 Compose 表面与浮层共用同一套状态文案。 */
+internal fun AgentOverlayStatus.localizedText(resources: Resources): String = when (this) {
+    AgentOverlayStatus.Preparing -> resources.getString(R.string.overlay_preparing)
+    AgentOverlayStatus.Received -> resources.getString(R.string.overlay_received)
+    is AgentOverlayStatus.PreparingTools -> resources.getQuantityString(R.plurals.overlay_preparing_tools, count, count)
+    is AgentOverlayStatus.ReasoningRound -> resources.getString(R.string.overlay_reasoning_round, round)
+    AgentOverlayStatus.RequestingModel -> resources.getString(R.string.overlay_requesting_model)
+    AgentOverlayStatus.ModelResponded -> resources.getString(R.string.overlay_model_responded)
+    AgentOverlayStatus.GeneratingToolArguments -> resources.getString(R.string.overlay_generating_tool_arguments)
+    AgentOverlayStatus.Reasoning -> resources.getString(R.string.overlay_reasoning)
+    AgentOverlayStatus.PreparingAnswer -> resources.getString(R.string.overlay_preparing_answer)
+    is AgentOverlayStatus.PlanningTools -> resources.getString(
+        R.string.overlay_planning_tools,
+        ListFormatter.getInstance(resources.configuration.locales[0]).format(names.map { toolDisplayName(resources, it) }),
     )
-    is AgentOverlayStatus.ReasoningRound -> stringResource(R.string.overlay_reasoning_round, round)
-    AgentOverlayStatus.RequestingModel -> stringResource(R.string.overlay_requesting_model)
-    AgentOverlayStatus.ModelResponded -> stringResource(R.string.overlay_model_responded)
-    AgentOverlayStatus.GeneratingToolArguments -> stringResource(R.string.overlay_generating_tool_arguments)
-    AgentOverlayStatus.Reasoning -> stringResource(R.string.overlay_reasoning)
-    AgentOverlayStatus.PreparingAnswer -> stringResource(R.string.overlay_preparing_answer)
-    is AgentOverlayStatus.PlanningTools -> {
-        val locale = LocalConfiguration.current.locales[0]
-        val labels = names.map { toolDisplayName(it) }
-        stringResource(R.string.overlay_planning_tools, ListFormatter.getInstance(locale).format(labels))
-    }
-    AgentOverlayStatus.SupplementReceived -> stringResource(R.string.overlay_supplement_received)
-    is AgentOverlayStatus.RunningTool -> stringResource(R.string.overlay_running_tool, toolDisplayName(name))
-    is AgentOverlayStatus.ToolCompleted -> stringResource(R.string.overlay_tool_completed, toolDisplayName(name))
-    is AgentOverlayStatus.HostedToolRunning -> stringResource(R.string.overlay_hosted_tool_running, name)
-    is AgentOverlayStatus.HostedToolFinished -> stringResource(
+    AgentOverlayStatus.SupplementReceived -> resources.getString(R.string.overlay_supplement_received)
+    is AgentOverlayStatus.RunningTool -> resources.getString(R.string.overlay_running_tool, toolDisplayName(resources, name))
+    is AgentOverlayStatus.ToolCompleted -> resources.getString(R.string.overlay_tool_completed, toolDisplayName(resources, name))
+    is AgentOverlayStatus.HostedToolRunning -> resources.getString(R.string.overlay_hosted_tool_running, name)
+    is AgentOverlayStatus.HostedToolFinished -> resources.getString(
         if (success) R.string.overlay_hosted_tool_completed else R.string.overlay_hosted_tool_failed,
         name,
     )
-    is AgentOverlayStatus.ImagesRead -> pluralStringResource(R.plurals.overlay_images_read, count, count)
-    AgentOverlayStatus.ResultReady -> stringResource(R.string.overlay_result_ready)
-    AgentOverlayStatus.RunFailed -> stringResource(R.string.overlay_run_failed)
-    AgentOverlayStatus.GeneratingAnswer -> stringResource(R.string.overlay_generating_answer)
-    AgentOverlayStatus.Stopping -> stringResource(R.string.overlay_stopping)
-    AgentOverlayStatus.Paused -> stringResource(R.string.overlay_paused)
-    AgentOverlayStatus.Continuing -> stringResource(R.string.overlay_continuing)
-    AgentOverlayStatus.Finishing -> stringResource(R.string.overlay_finishing)
-    AgentOverlayStatus.ContinuationUnavailable -> stringResource(R.string.overlay_continuation_unavailable)
-    AgentOverlayStatus.Stopped -> stringResource(R.string.overlay_stopped)
+    is AgentOverlayStatus.ImagesRead -> resources.getQuantityString(R.plurals.overlay_images_read, count, count)
+    AgentOverlayStatus.ResultReady -> resources.getString(R.string.overlay_result_ready)
+    AgentOverlayStatus.RunFailed -> resources.getString(R.string.overlay_run_failed)
+    AgentOverlayStatus.GeneratingAnswer -> resources.getString(R.string.overlay_generating_answer)
+    AgentOverlayStatus.Stopping -> resources.getString(R.string.overlay_stopping)
+    AgentOverlayStatus.Paused -> resources.getString(R.string.overlay_paused)
+    AgentOverlayStatus.Continuing -> resources.getString(R.string.overlay_continuing)
+    AgentOverlayStatus.Finishing -> resources.getString(R.string.overlay_finishing)
+    AgentOverlayStatus.ContinuationUnavailable -> resources.getString(R.string.overlay_continuation_unavailable)
+    AgentOverlayStatus.Stopped -> resources.getString(R.string.overlay_stopped)
 }
 
 @Composable
-internal fun toolDisplayName(name: String): String {
+internal fun toolDisplayName(name: String): String = toolDisplayName(LocalResources.current, name)
+
+internal fun toolDisplayName(resources: Resources, name: String): String {
     val resource = toolDisplayNameResource(name) ?: return io.github.mangi.eta.agent.model.AgentPhoneToolCatalog.entries.firstOrNull { it.name == name }?.title
         ?: io.github.mangi.eta.agent.context.PersonalSearchTools.searches.firstOrNull { it.name == name }?.title ?: name
-    return stringResource(resource)
+    return resources.getString(resource)
 }
 
 @StringRes

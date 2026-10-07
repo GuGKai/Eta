@@ -95,7 +95,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
 
-    private val state = mutableStateOf(AgentOverlayState.Initial)
+    /** 浮层与执行通知共用同一份运行状态；写入只发生在主线程。 */
+    private val state = object {
+        private val holder = mutableStateOf(AgentOverlayState.Initial)
+        var value: AgentOverlayState
+            get() = holder.value
+            set(next) {
+                holder.value = next
+                AgentExecutionService.updateRunStatus(
+                    this@AgentRuntimeService,
+                    next.status.takeIf { activeSession?.isTerminal == false },
+                )
+            }
+    }
     private val collapsed = mutableStateOf(true)
     private var hasExecutedForegroundTool = false
     private val supplementsLock = Any()
@@ -362,6 +374,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             try {
                 executeRun(session, request)
             } finally {
+                AgentExecutionService.updateRunStatus(this, null)
                 AgentExecutionService.release("run:${request.runId}")
             }
         }
