@@ -48,8 +48,8 @@ internal class WebHttpTransport(baseClient: OkHttpClient) : Closeable {
         if (closed.get() || Thread.currentThread().isInterrupted) throw WebRequestException("WEB_CANCELLED", "网页请求已取消")
     }
 
-    fun get(rawUrl: String, maxBytes: Int = MAX_RESPONSE_BYTES): WebHttpResponse =
-        request(rawUrl = rawUrl, method = "GET", maxBytes = maxBytes)
+    fun get(rawUrl: String, maxBytes: Int = MAX_RESPONSE_BYTES, timeoutSeconds: Long = 30): WebHttpResponse =
+        request(rawUrl = rawUrl, method = "GET", maxBytes = maxBytes, timeoutSeconds = timeoutSeconds)
 
     fun request(
         rawUrl: String,
@@ -58,8 +58,10 @@ internal class WebHttpTransport(baseClient: OkHttpClient) : Closeable {
         body: ByteArray? = null,
         contentType: String? = null,
         maxBytes: Int = MAX_RESPONSE_BYTES,
+        timeoutSeconds: Long = 30,
     ): WebHttpResponse {
         require(maxBytes in 1..MAX_RESPONSE_BYTES)
+        require(timeoutSeconds in 1..30)
         val normalizedMethod = method.trim().uppercase(Locale.ROOT)
         if (normalizedMethod != "GET" && normalizedMethod != "POST") {
             throw WebRequestException("INVALID_ARGUMENT", "仅支持 GET 或 POST 请求方式")
@@ -69,7 +71,7 @@ internal class WebHttpTransport(baseClient: OkHttpClient) : Closeable {
         var currentMethod = normalizedMethod
         var currentBody = if (normalizedMethod == "POST") body ?: byteArrayOf() else null
         val visited = hashSetOf<String>()
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
         repeat(MAX_REDIRECTS + 1) { redirectCount ->
             ensureActive()
             if (!visited.add("$currentMethod:${url}")) throw WebRequestException("WEB_REDIRECT_LOOP", "网页重定向形成循环")
