@@ -74,6 +74,7 @@
 | 26 | 同步脚本入库 | `chore(scripts): 纳入上游同步脚本与实时活动补丁脚本` | `sync-upstream.sh`、`patch_v12.py` 纳入仓库，rebase 时不再是未跟踪文件 |
 | 27 | 流体云门槛放宽 | `fix(notification): 流体云/Live Update 门槛从 36.1 放宽到 36.0` | 上游用 `SDK_INT_FULL >= VERSION_CODES_FULL.BAKLAVA_1`（3600001）判断，本机 `ro.build.version.sdk_full=36.0`（3600000）恒假 → 永不申请 promoted。收紧到 `BAKLAVA`（3600000） |
 | 28 | 执行通知恢复 fork 旧样式 | `feat(notification): 执行通知恢复「当前环节 + 已完成 N 个步骤」样式` | 上游 3.3.0 覆盖后重做：`AgentOverlayState` 增加 `completedSteps`（`ToolFinished`/`HostedToolFinished` +1、`RunStarted` 归零）；`AgentExecutionService` 标题改为当前环节名（工具本地化名，其余状态用各自文案，不再加 `ETA 👉` 前缀）、正文改为 `work_completed_steps`（已完成 N 个步骤）、小图标改回应用彩色图标、去掉 `ProgressStyle` 进度条、`setShortCriticalText` 取环节名限 4 字；`updateRunStatus` 多带步数，按「状态+步数」变化刷新 |
+| 29 | 通知去重 + 节流 + 固定时间戳 | `fix(notification): 执行通知去重与节流，缓解流体云胶囊闪跳` | 实测 SystemUI 把每次通知更新都当一次流体云"发布"交给插件重建（`notifyLiveAlerts: PostAction` + `NotificationLiveAlertProvider-->post sbn`），而一次工具调用会产生 3–4 次刷新。改为 `renderedText()` 比对去重、距上次发布 <400ms 合并成尾发（`MIN_PUBLISH_INTERVAL_MS`），`when` 固定为前台期起点并 `setShowWhen(false)`，停止按钮文案改「停止任务」 |
 | 27 | 工作分支统一 | `chore(sync): 工作分支统一为 feat/system-tts` | `feat/raise-backup-limit`、`fix/agent-overlay-glow-corner` 改名 `archive/*` 归档，脚本不再重放 |
 | 28 | 工作分支更名 | `chore(sync): 工作分支更名为 feat/local` | `feat/system-tts` → `feat/local`，脚本 `WORK_BRANCH` 默认值同步更新 |
 | 29 | 改动清单 | `docs: 新增本地改动清单` | 即本文件 |
