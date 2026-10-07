@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -15,6 +16,7 @@ import android.os.Looper
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.localizedText
+import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.ui.MainActivity
@@ -116,26 +118,32 @@ internal class AgentExecutionService : Service() {
         if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
-                .setShortCriticalText(status.shortText())
+                .setShortCriticalText(liveTextLabel(stepLabel))
             // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
         return builder.build()
     }
 
-    /** 状态栏胶囊约 7 个字符可完整显示；更长时只取动作，工具名留在展开态。 */
-    private fun AgentOverlayStatus.shortText(): String = when (this) {
-        is AgentOverlayStatus.RunningTool, is AgentOverlayStatus.HostedToolRunning -> getString(R.string.execution_chip_running)
-        AgentOverlayStatus.Paused -> getString(R.string.overlay_paused)
-        AgentOverlayStatus.Stopping -> getString(R.string.overlay_stopping)
-        AgentOverlayStatus.GeneratingAnswer -> getString(R.string.execution_chip_answering)
-        else -> getString(R.string.overlay_reasoning)
+    /** 第一行「当前正在做的事」：执行工具时用本地化工具名，其余阶段用状态文案。 */
+    private fun currentStepLabel(status: AgentOverlayStatus?): String = when (status) {
+        null -> getString(R.string.overlay_reasoning)
+        is AgentOverlayStatus.RunningTool -> toolDisplayName(resources, status.name)
+        is AgentOverlayStatus.HostedToolRunning -> toolDisplayName(resources, status.name)
+        else -> status.localizedText(resources)
     }
+
+    /** 状态栏胶囊右侧文字：固定 4 个中文字符宽度，超出直接截断，不做补齐、省略号或翻页。 */
+    private fun liveTextLabel(label: String): String =
+        if (label.length <= LIVE_TEXT_LIMIT) label else label.take(LIVE_TEXT_LIMIT)
 
     companion object {
         private const val CHANNEL = "eta_execution"
         private const val NOTIFICATION_ID = 1107
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
+
+        /** 状态栏胶囊右侧文字：固定 4 个中文字符宽度。 */
+        private const val LIVE_TEXT_LIMIT = 4
         private val leases = ExecutionLeaseRegistry()
         private val ownerSequence = AtomicLong()
         private val mainHandler = Handler(Looper.getMainLooper())
@@ -145,8 +153,8 @@ internal class AgentExecutionService : Service() {
         private var publishedStatusText: String? = null
 
         /**
-         * Agent run 的当前状态，供通知与状态栏胶囊展示；null 表示没有 Agent run 在跑。
-         * 只在显示文字变化时刷新通知，避免流式事件把通知更新频率推到系统限流。
+         * Agent run 的当前状态与已完成步骤数，供通知与状态栏胶囊展示；status 为 null 表示没有 Agent run 在跑。
+         * 只在标题或正文变化时刷新通知，避免流式事件把通知更新频率推到系统限流。
          */
         fun updateRunStatus(context: Context, status: AgentOverlayStatus?, activeRunCount: Int) {
             mainHandler.post {
