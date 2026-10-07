@@ -190,21 +190,21 @@ internal class AgentLocalTools(
                     else textResult(webTools.execute(toolCall.name, args))
                 }
                 "observe_screen" -> observeScreen(args)
-                "tap" -> textResult(tap(args))
-                "tap_area" -> textResult(tapArea(args))
-                "tap_element" -> textResult(tapElement(args))
-                "long_press" -> textResult(longPress(args))
-                "long_press_element" -> textResult(longPressElement(args))
-                "swipe" -> textResult(swipe(args))
-                "scroll" -> textResult(deviceController.scroll(args.optString("direction")))
-                "scroll_element" -> textResult(scrollElement(args))
-                "input_text" -> textResult(inputText(args))
-                "replace_text" -> textResult(replaceText(args))
-                "clear_text" -> textResult(clearText(args))
+                "tap" -> afterAction(tap(args))
+                "tap_area" -> afterAction(tapArea(args))
+                "tap_element" -> afterAction(tapElement(args))
+                "long_press" -> afterAction(longPress(args))
+                "long_press_element" -> afterAction(longPressElement(args))
+                "swipe" -> afterAction(swipe(args))
+                "scroll" -> afterAction(deviceController.scroll(args.optString("direction")))
+                "scroll_element" -> afterAction(scrollElement(args))
+                "input_text" -> afterAction(inputText(args))
+                "replace_text" -> afterAction(replaceText(args))
+                "clear_text" -> afterAction(clearText(args))
                 "set_clipboard" -> textResult(setClipboard(args))
                 "get_clipboard" -> textResult(getClipboard())
-                "paste_text" -> textResult(pasteText(args))
-                "press_key" -> textResult(deviceController.pressKey(args.optString("button")))
+                "paste_text" -> afterAction(pasteText(args))
+                "press_key" -> afterAction(deviceController.pressKey(args.optString("button")))
                 "wait" -> textResult(deviceController.waitMs(args.optInt("duration_ms", 1_000)))
                 "wait_for_text" -> textResult(waitForText(args))
                 "wait_for_package" -> textResult(waitForPackage(args))
@@ -407,6 +407,33 @@ internal class AgentLocalTools(
             content = observation.content,
             images = listOfNotNull(observation.image)
         )
+    }
+
+    /**
+     * 成功的 GUI 动作附带一次轻量观察：只读 UI 树、不截图，节点数减半。
+     * 模型据此确认动作生效并直接用新的 observation_id 继续操作，不必再单独 observe_screen；
+     * 失败或结果未知的动作不附带，保持"先重新观察"的既有约束。
+     */
+    private fun afterAction(raw: String): AgentModelClient.ToolResult {
+        val result = runCatching { JSONObject(raw) }.getOrNull()
+        if (result == null || !result.optBoolean("ok")) return textResult(raw)
+        val before = publishedObservation.get().elements
+        val after = runCatching {
+            screenObservationProvider?.invoke(AFTER_ACTION_OPTIONS)
+                ?: deviceController.observe(
+                    includeScreenshot = false,
+                    includeUiTree = true,
+                    maxNodes = AFTER_ACTION_OPTIONS.maxNodes,
+                )
+        }.getOrElse { throwable ->
+            logger.debug { "Agent local tool after-action observation failed: type=${throwable.javaClass.simpleName}" }
+            return textResult(raw)
+        }
+        val elements = after.elementObservation ?: return textResult(raw)
+        // 新快照取代动作前的快照：旧 index 在界面变化后本就不可靠，继续保留只会让模型误用。
+        publishedObservation.set(publishedObservation.get().copy(elements = elements))
+        result.put("after", AgentAfterActionSummary.build(before, elements))
+        return textResult(result.toString())
     }
 
     private fun tap(args: JSONObject): String {
@@ -1374,6 +1401,12 @@ internal class AgentLocalTools(
         val MEMORY_TOOL_NAMES = setOf("memory_get", "memory_write")
     }
 }
+
+private val AFTER_ACTION_OPTIONS = AgentScreenObservationContract.Options(
+    includeScreenshot = false,
+    includeUiTree = true,
+    maxNodes = 30,
+)
 
 /** 归一化坐标上界：0–999，与主流 GUI 模型的输出习惯一致。 */
 private const val NORMALIZED_MAX = 999
