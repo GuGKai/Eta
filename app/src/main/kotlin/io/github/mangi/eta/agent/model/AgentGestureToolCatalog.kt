@@ -146,7 +146,7 @@ internal object AgentGestureToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "scroll",
-                    description = "按内容浏览方向滚动当前屏幕：down 显示下方内容，up 显示上方内容，left 显示左侧内容，right 显示右侧内容。",
+                    description = "按内容浏览方向滚动当前屏幕的主列表：down 显示下方内容，up 显示上方内容，left/right 同理。结果里 moved=false 且 at_boundary=true 表示已到底，换方向或结束；页面有多个列表时用 scroll_element 指定目标。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -157,6 +157,13 @@ internal object AgentGestureToolCatalog {
                                     JSONObject()
                                         .put("type", "string")
                                         .put("enum", JSONArray().put("up").put("down").put("left").put("right"))
+                                )
+                                .put(
+                                    "amount",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("enum", JSONArray().put("page").put("small"))
+                                        .put("description", "page 约翻一屏（默认），small 只露出少量新内容，用于把目标项微调进视野。"),
                                 )
                         )
                         .put("required", JSONArray().put("direction"))
@@ -189,6 +196,13 @@ internal object AgentGestureToolCatalog {
                                         .put("type", "string")
                                         .put("enum", JSONArray().put("up").put("down").put("left").put("right"))
                                         .put("description", "内容浏览方向；down 显示下方内容，up 显示上方内容。")
+                                )
+                                .put(
+                                    "amount",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("enum", JSONArray().put("page").put("small"))
+                                        .put("description", "page 约翻一屏（默认），small 只露出少量新内容，用于把目标项微调进视野。"),
                                 )
                         )
                         .put("required", JSONArray().put("index").put("observation_id").put("direction"))

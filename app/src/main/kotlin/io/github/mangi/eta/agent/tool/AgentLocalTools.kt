@@ -196,7 +196,7 @@ internal class AgentLocalTools(
                 "long_press" -> afterAction(longPress(args))
                 "long_press_element" -> afterAction(longPressElement(args))
                 "swipe" -> afterAction(swipe(args))
-                "scroll" -> afterAction(deviceController.scroll(args.optString("direction")))
+                "scroll" -> afterAction(deviceController.scroll(args.optString("direction"), args.optString("amount")))
                 "scroll_element" -> afterAction(scrollElement(args))
                 "input_text" -> afterAction(inputText(args))
                 "replace_text" -> afterAction(replaceText(args))
@@ -535,7 +535,8 @@ internal class AgentLocalTools(
         return deviceController.scrollElement(
             observation = observation,
             index = args.optInt("index", -1),
-            direction = args.optString("direction")
+            direction = args.optString("direction"),
+            amount = args.optString("amount"),
         )
     }
 

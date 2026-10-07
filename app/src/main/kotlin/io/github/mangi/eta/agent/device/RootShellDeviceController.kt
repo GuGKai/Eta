@@ -291,7 +291,7 @@ internal class RootShellDeviceController(
         return inputCommand("input swipe $x1 $y1 $x2 $y2 $duration", "swipe")
     }
 
-    fun scroll(direction: String): String {
+    fun scroll(direction: String, amount: String = ""): String {
         val parsed = ScrollDirection.parse(direction)
             ?: return scrollErrorJson(
                 "scroll",
@@ -299,8 +299,10 @@ internal class RootShellDeviceController(
                 "INVALID_ARGUMENT",
                 "direction 仅支持 up/down/left/right",
             )
+        val parsedAmount = ScrollAmount.parse(amount)
+            ?: return scrollErrorJson("scroll", parsed, "INVALID_ARGUMENT", "amount 仅支持 small/page")
         AgentAccessibilityService.current()?.let { service ->
-            return scrollActionJson("scroll", service.scrollCurrent(parsed))
+            return scrollActionJson("scroll", service.scrollCurrent(parsed, parsedAmount))
         }
         if (!rootAvailable()) return accessibilityUnavailable()
         val beforeNodes = dumpUiNodes(120)
@@ -317,6 +319,7 @@ internal class RootShellDeviceController(
             beforeNodes = beforeNodes,
             maxNodes = 120,
             targetIndex = null,
+            amount = parsedAmount,
         )
     }
 
@@ -411,6 +414,7 @@ internal class RootShellDeviceController(
         observation: ElementObservation,
         index: Int,
         direction: String,
+        amount: String = "",
     ): String {
         val parsed = ScrollDirection.parse(direction)
             ?: return scrollErrorJson(
@@ -419,6 +423,8 @@ internal class RootShellDeviceController(
                 "INVALID_ARGUMENT",
                 "direction 仅支持 up/down/left/right",
             )
+        val parsedAmount = ScrollAmount.parse(amount)
+            ?: return scrollErrorJson("scroll_element", parsed, "INVALID_ARGUMENT", "amount 仅支持 small/page")
         val snapshot = observation.accessibilitySnapshot
         if (snapshot != null) {
             val service = AgentAccessibilityService.current()
@@ -430,7 +436,7 @@ internal class RootShellDeviceController(
                 )
             return scrollActionJson(
                 tool = "scroll_element",
-                result = service.scrollNode(snapshot, index, parsed),
+                result = service.scrollNode(snapshot, index, parsed, parsedAmount),
             )
         }
         if (!rootAvailable()) return rootRequired()
@@ -457,6 +463,7 @@ internal class RootShellDeviceController(
             beforeNodes = resolved.currentNodes,
             maxNodes = observation.maxNodes,
             targetIndex = index,
+            amount = parsedAmount,
         )
     }
 
@@ -926,9 +933,10 @@ internal class RootShellDeviceController(
         beforeNodes: List<UiNode>,
         maxNodes: Int,
         targetIndex: Int?,
+        amount: ScrollAmount = ScrollAmount.PAGE,
     ): String {
         val startedAt = SystemClock.elapsedRealtime()
-        val gesture = direction.gestureWithin(bounds)
+        val gesture = direction.gestureWithin(bounds, amount)
             ?: return scrollErrorJson(
                 tool,
                 direction,
