@@ -125,6 +125,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AgentExecutionService.updateRunStatus(
                     this@AgentRuntimeService,
                     next.status.takeIf { activeSession?.isTerminal == false },
+                    next.completedSteps,
                 )
             }
     }
