@@ -270,9 +270,10 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             if (result.messageStop) sawMessageStop = true
             result.finishReason?.let { finishReason = it }
             result.stopDetails?.let { stopDetails = it }
-            result.usage?.let {
-                usage = it
-                onEvent(ProviderEvent.Usage(it, result.contextInputTokens ?: it.inputTokens))
+            result.usage?.let { delta ->
+                val merged = usage?.mergedWith(delta) ?: delta
+                usage = merged
+                onEvent(ProviderEvent.Usage(merged, merged.contextTokens))
             }
             !sawMessageStop
         }
@@ -355,14 +356,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                 "Anthropic SSE 返回错误",
             )
             "message_start" -> {
-                val rawUsage = json.optJSONObject("message")?.optJSONObject("usage")
-                EventResult(
-                    usage = parseUsage(rawUsage),
-                    contextInputTokens = rawUsage?.firstInt("input_tokens")?.let { input ->
-                        input + (rawUsage.firstInt("cache_read_input_tokens") ?: 0) +
-                            (rawUsage.firstInt("cache_creation_input_tokens") ?: 0)
-                    },
-                )
+                EventResult(usage = parseUsage(json.optJSONObject("message")?.optJSONObject("usage")))
             }
             "content_block_start" -> {
                 val index = json.optInt("index")
@@ -518,19 +512,37 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         val finishReason: String? = null,
         val stopDetails: JSONObject? = null,
         val usage: AgentTokenUsage? = null,
-        val contextInputTokens: Int? = null,
     )
 
+    /**
+     * Anthropic 不返回 total_tokens；本次请求实际占用的上下文是未缓存输入与缓存读写之和，
+     * 自动压缩与输入框用量都以它为准。
+     */
     private fun parseUsage(usage: JSONObject?): AgentTokenUsage? {
         usage ?: return null
         return AgentTokenUsage(
-            contextTokens = null,
+            contextTokens = usage.firstInt("input_tokens")?.let { input ->
+                input + (usage.firstInt("cache_read_input_tokens") ?: 0) +
+                    (usage.firstInt("cache_creation_input_tokens") ?: 0)
+            },
             inputTokens = usage.firstInt("input_tokens"),
             outputTokens = usage.firstInt("output_tokens"),
             reasoningTokens = usage.firstInt("thinking_output_tokens"),
             cachedTokens = usage.firstInt("cache_read_input_tokens")
         ).takeUnless { it.isEmpty }
     }
+
+    /**
+     * message_start 给出输入用量，message_delta 给出累计输出，部分兼容端点只在 delta 中补发部分字段；
+     * 后到的非空字段覆盖先到的，避免输出用量把输入与上下文占用清空。
+     */
+    private fun AgentTokenUsage.mergedWith(later: AgentTokenUsage) = AgentTokenUsage(
+        contextTokens = later.contextTokens ?: contextTokens,
+        inputTokens = later.inputTokens ?: inputTokens,
+        outputTokens = later.outputTokens ?: outputTokens,
+        reasoningTokens = later.reasoningTokens ?: reasoningTokens,
+        cachedTokens = later.cachedTokens ?: cachedTokens,
+    )
 
     private fun parseJsonObject(raw: String): JSONObject =
         runCatching { JSONObject(raw.ifBlank { "{}" }) }.getOrDefault(JSONObject())

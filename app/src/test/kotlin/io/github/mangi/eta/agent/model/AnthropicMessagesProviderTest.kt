@@ -183,6 +183,27 @@ class AnthropicMessagesProviderTest {
     }
 
     @Test
+    fun usageReportsContextOccupancyAndKeepsInputWhenDeltaOnlyCarriesOutput() {
+        val body = event("message_start", JSONObject().put("message", JSONObject().put("usage", JSONObject()
+            .put("input_tokens", 100).put("cache_read_input_tokens", 900).put("cache_creation_input_tokens", 50)
+            .put("output_tokens", 1)))) +
+            blockStart(0, JSONObject().put("type", "text").put("text", "好")) + blockStop(0) +
+            event("message_delta", JSONObject().put("delta", JSONObject().put("stop_reason", "end_turn"))
+                .put("usage", JSONObject().put("output_tokens", 42))) +
+            event("message_stop", JSONObject())
+        withAnthropicServer(body) { baseUrl ->
+            val events = mutableListOf<ProviderEvent>()
+            AnthropicMessagesProvider.complete(providerRequest(baseUrl), AgentRunController(), events::add)
+            val last = events.filterIsInstance<ProviderEvent.Usage>().last()
+            assertEquals(1_050, last.usage.contextTokens)
+            assertEquals(1_050, last.contextInputTokens)
+            assertEquals(100, last.usage.inputTokens)
+            assertEquals(900, last.usage.cachedTokens)
+            assertEquals(42, last.usage.outputTokens)
+        }
+    }
+
+    @Test
     fun refusalStopDetailsReachAssistantMessage() {
         val body = blockStart(0, JSONObject().put("type", "text").put("text", "部分")) + blockStop(0) +
             event("message_delta", JSONObject().put("delta", JSONObject()
