@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                     )
+                    io.github.mangi.eta.agent.display.VirtualScreenAppConflictDialog()
                 }
             }
             contentReady = true
