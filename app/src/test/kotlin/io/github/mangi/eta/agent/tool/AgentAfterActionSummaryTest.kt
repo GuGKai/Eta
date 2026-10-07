@@ -38,6 +38,17 @@ class AgentAfterActionSummaryTest {
         assertFalse(compact.has("password"))
     }
 
+    @Test
+    fun toggleStateAndHintAreVisibleToTheModel() {
+        val toggle = node(0, "蓝牙").copy(checked = false)
+        val field = node(1, "").copy(editable = true, hint = "搜索联系人")
+        val nodes = AgentAfterActionSummary.build(null, observation("o1", "app", listOf(toggle, field)))
+            .getJSONArray("ui_nodes")
+        assertFalse(nodes.getJSONObject(0).getBoolean("checked"))
+        assertEquals("搜索联系人", nodes.getJSONObject(1).getString("hint"))
+        assertFalse(nodes.getJSONObject(1).has("checked"))
+    }
+
     private fun observation(id: String, pkg: String, nodes: List<UiNode>) = ElementObservation(
         id = id, source = ElementSource.ACCESSIBILITY, packageName = pkg, windowId = 1,
         nodes = nodes, maxNodes = 30, truncated = false,

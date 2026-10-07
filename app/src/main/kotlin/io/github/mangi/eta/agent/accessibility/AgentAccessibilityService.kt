@@ -1735,6 +1735,9 @@ class AgentAccessibilityService : AccessibilityService() {
                     editable = editable,
                     password = password,
                     enabled = enabled,
+                    checked = node.isCheckable.takeIf { it }?.let { node.isChecked },
+                    selected = node.isSelected,
+                    hint = hint,
                     clickTarget = clickTarget,
                     longClickTarget = longClickTarget,
                     scrollTarget = scrollTarget,
@@ -2117,7 +2120,12 @@ class AgentAccessibilityService : AccessibilityService() {
         val focused: Boolean,
         val editable: Boolean,
         val password: Boolean,
-        val enabled: Boolean
+        val enabled: Boolean,
+        /** 开关、勾选框等的状态；null 表示节点不可勾选。 */
+        val checked: Boolean? = null,
+        val selected: Boolean = false,
+        /** 输入框提示语，只在内容为空时有意义，用于识别"这是哪个输入框"。 */
+        val hint: String = "",
     )
 
     internal data class IndexedNode(
@@ -2138,6 +2146,9 @@ class AgentAccessibilityService : AccessibilityService() {
         val editable: Boolean,
         val password: Boolean,
         val enabled: Boolean,
+        val checked: Boolean?,
+        val selected: Boolean,
+        val hint: String,
         val clickTarget: NodeActionTarget?,
         val longClickTarget: NodeActionTarget?,
         val scrollTarget: NodeActionTarget?,
@@ -2193,7 +2204,10 @@ class AgentAccessibilityService : AccessibilityService() {
                 focused = focused,
                 editable = editable,
                 password = password,
-                enabled = enabled
+                enabled = enabled,
+                checked = checked,
+                selected = selected,
+                hint = hint,
             )
     }
 

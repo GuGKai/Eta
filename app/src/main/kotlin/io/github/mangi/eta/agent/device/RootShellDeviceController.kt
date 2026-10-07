@@ -88,7 +88,10 @@ internal class RootShellDeviceController(
         val focused: Boolean,
         val editable: Boolean,
         val password: Boolean,
-        val enabled: Boolean
+        val enabled: Boolean,
+        val checked: Boolean? = null,
+        val selected: Boolean = false,
+        val hint: String = "",
     ) {
         val centerX: Int get() = bounds.centerX()
         val centerY: Int get() = bounds.centerY()
@@ -875,7 +878,10 @@ internal class RootShellDeviceController(
                             focused = focused,
                             editable = parser.attr("class").contains("EditText", ignoreCase = true),
                             password = parser.attr("password").toBoolean(),
-                            enabled = enabled
+                            enabled = enabled,
+                            checked = parser.attr("checked").toBoolean()
+                                .takeIf { parser.attr("checkable").toBoolean() },
+                            selected = parser.attr("selected").toBoolean(),
                         )
                     }
                 }
@@ -1130,6 +1136,11 @@ internal class RootShellDeviceController(
             .put("editable", editable)
             .put("password", password)
             .put("enabled", enabled)
+            .apply {
+                checked?.let { put("checked", it) }
+                if (selected) put("selected", true)
+                if (hint.isNotBlank()) put("hint", hint)
+            }
 
     private fun XmlPullParser.attr(name: String): String =
         getAttributeValue(null, name).orEmpty()
@@ -1315,7 +1326,10 @@ internal class RootShellDeviceController(
             focused = focused,
             editable = editable,
             password = password,
-            enabled = enabled
+            enabled = enabled,
+            checked = checked,
+            selected = selected,
+            hint = hint,
         )
 
     private data class ShellTextResult(val exitCode: Int, val output: String)

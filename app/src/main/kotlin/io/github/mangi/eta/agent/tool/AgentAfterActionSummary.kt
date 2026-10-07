@@ -46,5 +46,8 @@ internal object AgentAfterActionSummary {
             if (focused) put("focused", true)
             if (password) put("password", true)
             if (!enabled) put("enabled", false)
+            checked?.let { put("checked", it) }
+            if (selected) put("selected", true)
+            if (hint.isNotBlank()) put("hint", hint)
         }
 }
