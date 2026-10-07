@@ -198,27 +198,9 @@
   <string name="conversation_export_default_name">对话</string>
   <string name="time_yesterday">昨天</string>
   <string name="time_recent">最近</string>
-  <string name="overlay_received">收到指令，准备模型</string>
-  <string name="overlay_preparing">准备中…</string>
-  <plurals name="overlay_preparing_tools">
-    <item quantity="other">准备工具：%d 个</item>
-  </plurals>
-  <string name="overlay_reasoning_round">第 %1$d 轮思考</string>
-  <string name="overlay_requesting_model">请求模型中</string>
-  <string name="overlay_model_responded">模型已响应</string>
-  <string name="overlay_generating_tool_arguments">生成工具参数中</string>
   <string name="overlay_reasoning">思考中</string>
-  <string name="overlay_preparing_answer">整理回答中</string>
-  <string name="overlay_planning_tools">计划执行：%1$s</string>
   <string name="overlay_supplement_received">收到补充，继续执行</string>
-  <string name="overlay_running_tool">执行：%1$s</string>
-  <string name="overlay_tool_completed">完成：%1$s</string>
   <string name="overlay_hosted_tool_running">%1$s中</string>
-  <string name="overlay_hosted_tool_completed">%1$s完成</string>
-  <string name="overlay_hosted_tool_failed">%1$s失败</string>
-  <plurals name="overlay_images_read">
-    <item quantity="other">已读取图片：%d 张</item>
-  </plurals>
   <string name="overlay_result_ready">已返回结果</string>
   <string name="overlay_run_failed">调用失败</string>
   <string name="overlay_generating_answer">生成回答中</string>

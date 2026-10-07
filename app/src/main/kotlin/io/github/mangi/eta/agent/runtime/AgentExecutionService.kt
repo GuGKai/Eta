@@ -130,7 +130,7 @@ internal class AgentExecutionService : Service() {
         is AgentOverlayStatus.RunningTool, is AgentOverlayStatus.HostedToolRunning -> getString(R.string.execution_chip_running)
         AgentOverlayStatus.Paused -> getString(R.string.overlay_paused)
         AgentOverlayStatus.Stopping -> getString(R.string.overlay_stopping)
-        AgentOverlayStatus.GeneratingAnswer, AgentOverlayStatus.PreparingAnswer -> getString(R.string.execution_chip_answering)
+        AgentOverlayStatus.GeneratingAnswer -> getString(R.string.execution_chip_answering)
         else -> getString(R.string.overlay_reasoning)
     }
 

@@ -186,27 +186,9 @@
   </plurals>
   <string name="time_yesterday">昨日</string>
   <string name="time_recent">最近</string>
-  <string name="overlay_received">收到指令，準備模型</string>
-  <string name="overlay_preparing">準備中…</string>
-  <plurals name="overlay_preparing_tools">
-    <item quantity="other">準備工具：%d 個</item>
-  </plurals>
-  <string name="overlay_reasoning_round">第 %1$d 輪思考</string>
-  <string name="overlay_requesting_model">請求模型中</string>
-  <string name="overlay_model_responded">模型已回應</string>
-  <string name="overlay_generating_tool_arguments">產生工具參數中</string>
   <string name="overlay_reasoning">思考中</string>
-  <string name="overlay_preparing_answer">整理回答中</string>
-  <string name="overlay_planning_tools">預計執行：%1$s</string>
   <string name="overlay_supplement_received">收到補充，繼續執行</string>
-  <string name="overlay_running_tool">執行：%1$s</string>
-  <string name="overlay_tool_completed">已完成：%1$s</string>
   <string name="overlay_hosted_tool_running">%1$s中</string>
-  <string name="overlay_hosted_tool_completed">%1$s 已完成</string>
-  <string name="overlay_hosted_tool_failed">%1$s 失敗</string>
-  <plurals name="overlay_images_read">
-    <item quantity="other">已讀取 %d 張圖片</item>
-  </plurals>
   <string name="overlay_result_ready">結果已就緒</string>
   <string name="overlay_run_failed">請求失敗</string>
   <string name="overlay_generating_answer">產生回答中</string>

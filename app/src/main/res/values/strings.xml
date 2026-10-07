@@ -210,29 +210,9 @@
   <string name="conversation_preview_reasoning">Eta is reasoning</string>
   <string name="conversation_preview_tool_call">Tool call: %1$s</string>
   <string name="conversation_preview_empty">Ask anything. Eta can operate your device when needed</string>
-  <string name="overlay_received">Request received. Preparing the model</string>
-  <string name="overlay_preparing">Preparing…</string>
-  <plurals name="overlay_preparing_tools">
-    <item quantity="one">Preparing %d tool</item>
-    <item quantity="other">Preparing %d tools</item>
-  </plurals>
-  <string name="overlay_reasoning_round">Reasoning · round %1$d</string>
-  <string name="overlay_requesting_model">Requesting model</string>
-  <string name="overlay_model_responded">Model responded</string>
-  <string name="overlay_generating_tool_arguments">Generating tool arguments</string>
   <string name="overlay_reasoning">Reasoning</string>
-  <string name="overlay_preparing_answer">Preparing answer</string>
-  <string name="overlay_planning_tools">Planning: %1$s</string>
   <string name="overlay_supplement_received">Additional input received. Continuing</string>
-  <string name="overlay_running_tool">Running: %1$s</string>
-  <string name="overlay_tool_completed">Completed: %1$s</string>
   <string name="overlay_hosted_tool_running">Running %1$s</string>
-  <string name="overlay_hosted_tool_completed">%1$s completed</string>
-  <string name="overlay_hosted_tool_failed">%1$s failed</string>
-  <plurals name="overlay_images_read">
-    <item quantity="one">Read %d image</item>
-    <item quantity="other">Read %d images</item>
-  </plurals>
   <string name="overlay_result_ready">Result ready</string>
   <string name="overlay_run_failed">Request failed</string>
   <string name="overlay_generating_answer">Generating answer</string>

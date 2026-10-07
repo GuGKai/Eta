@@ -35,6 +35,7 @@ import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
+import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
 import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
@@ -352,6 +353,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.removeCallbacksAndMessages(hideToken)
         state.value = AgentOverlayState.Initial
         capsuleExpanded.value = false
+        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
         hasExecutedForegroundTool = false
         synchronized(supplementsLock) {
             activeSupplements.clear()
@@ -818,7 +820,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         // ── 氛围光窗口：全屏触摸穿透，彩虹光圈，截图时被 takeScreenshotOfWindow 过滤 ─
         val glow = createOverlayComposeView {
-            AgentOverlayGlow(state = state.value)
+            AgentOverlayGlow(state = state.value, corners = screenCornerRadii())
         }
         val glowLp = glowLayoutParams()
         runCatching { wm.addView(glow, glowLp) }.onFailure { throwable ->
@@ -835,6 +837,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 state = state.value,
                 expanded = capsuleExpanded.value,
                 onToggleExpanded = ::toggleCapsule,
+                onCollapsedSettled = ::onCapsuleCollapsedSettled,
                 onPause = ::requestPause,
                 onResume = ::requestResume,
                 onStop = ::requestStop,
@@ -854,7 +857,28 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun toggleCapsule() {
-        capsuleExpanded.value = !capsuleExpanded.value
+        val expand = !capsuleExpanded.value
+        // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
+        if (expand) setCapsuleWindowHeight(CAPSULE_CONTROLS_HEIGHT_DP)
+        capsuleExpanded.value = expand
+    }
+
+    private fun onCapsuleCollapsedSettled() {
+        if (!capsuleExpanded.value) setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+    }
+
+    private fun setCapsuleWindowHeight(heightDp: Int) {
+        val wm = windowManager ?: return
+        val capsule = capsuleView ?: return
+        val lp = capsuleParams ?: return
+        val height = dpToPx(heightDp)
+        if (lp.height == height) return
+        lp.height = height
+        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_resize_failed") {
+                "Agent runtime capsule resize failed: type=${throwable.safeLogType()}"
+            }
+        }
     }
 
     private fun showResultCard(wm: WindowManager) {
@@ -891,10 +915,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
 
+    /**
+     * 胶囊窗口使用固定宽度与分档高度，动画只在窗口内进行。
+     * WRAP_CONTENT 会让每一帧的尺寸变化都触发 WindowManager 重新布局整个窗口，这是卡顿的来源；
+     * 但窗口内透明区域同样会吞掉触摸（包括 Agent 自己注入的点击），所以高度只在需要时扩大：
+     * 展开前先扩到目标档，收起动画结束后再缩回，见 [setCapsuleWindowHeight]。
+     */
     private fun capsuleLayoutParams(): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            dpToPx(CAPSULE_WINDOW_WIDTH_DP),
+            dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP),
             overlayType(),
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -975,7 +1005,30 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
+    /**
+     * 屏幕四角的物理圆角半径。光效窗口覆盖整屏，直接取 Display 上报的值；
+     * 部分 ROM 不上报时用 0，兜底按常见大圆角机型估一个保守值，宁可略小也不让光带越出屏幕。
+     */
+    private fun screenCornerRadii(): ScreenCornerRadii {
+        val display = (overlayContext().getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager)
+            ?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        val fallback = dpToPx(FALLBACK_SCREEN_CORNER_DP).toFloat()
+        fun radius(position: Int): Float =
+            display?.getRoundedCorner(position)?.radius?.takeIf { it > 0 }?.toFloat() ?: fallback
+        return ScreenCornerRadii(
+            topLeft = radius(android.view.RoundedCorner.POSITION_TOP_LEFT),
+            topRight = radius(android.view.RoundedCorner.POSITION_TOP_RIGHT),
+            bottomRight = radius(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT),
+            bottomLeft = radius(android.view.RoundedCorner.POSITION_BOTTOM_LEFT),
+        )
+    }
+
     private fun setCapsuleInputMode(focusable: Boolean) {
+        setCapsuleWindowHeight(
+            if (focusable) CAPSULE_SUPPLEMENT_HEIGHT_DP
+            else if (capsuleExpanded.value) CAPSULE_CONTROLS_HEIGHT_DP
+            else CAPSULE_COLLAPSED_HEIGHT_DP,
+        )
         val wm = windowManager ?: return
         val capsule = capsuleView ?: return
         val lp = capsuleParams ?: return
@@ -1073,6 +1126,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         const val HIDE_DELAY_MS = 2_500L
         const val RESULT_REVIEW_DELAY_MS = 120_000L
         const val RESULT_CARD_HEIGHT_RATIO = 0.5f
+        private const val CAPSULE_WINDOW_WIDTH_DP = 272
+        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 56
+        private const val CAPSULE_CONTROLS_HEIGHT_DP = 112
+        private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 248
+        private const val FALLBACK_SCREEN_CORNER_DP = 28
         const val MAX_ARCHIVED_USER_IMAGE_PREVIEWS = 4
     }
 

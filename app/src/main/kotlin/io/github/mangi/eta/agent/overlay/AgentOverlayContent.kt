@@ -38,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -102,8 +103,16 @@ private val EdgeLightColors = listOf(
  * - PAUSED：静止的淡色描边，提示任务仍在、控制权暂回用户。
  * - FINISHED / FAILED：不绘制。
  */
+/** 四角圆角半径（像素），顺序为左上、右上、右下、左下。 */
+@Immutable
+internal data class ScreenCornerRadii(val topLeft: Float, val topRight: Float, val bottomRight: Float, val bottomLeft: Float) {
+    fun toArray(inset: Float): FloatArray = floatArrayOf(topLeft, topRight, bottomRight, bottomLeft)
+        .flatMap { radius -> (radius - inset).coerceAtLeast(0f).let { listOf(it, it) } }
+        .toFloatArray()
+}
+
 @Composable
-internal fun AgentOverlayGlow(state: AgentOverlayState) {
+internal fun AgentOverlayGlow(state: AgentOverlayState, corners: ScreenCornerRadii) {
     val phase = state.phase
     if (phase != AgentOverlayPhase.RUNNING && phase != AgentOverlayPhase.PAUSED) return
     val running = phase == AgentOverlayPhase.RUNNING
@@ -125,9 +134,15 @@ internal fun AgentOverlayGlow(state: AgentOverlayState) {
     Box(
         modifier = Modifier.fillMaxSize().drawBehind {
             val density = this.density
-            val corner = 34f * density
             val inset = 1.5f * density
-            val rect = android.graphics.RectF(inset, inset, size.width - inset, size.height - inset)
+            // 光带沿屏幕实际圆角走：路径向内收 inset，半径同步减小，保证与屏幕边缘等距。
+            val edge = android.graphics.Path().apply {
+                addRoundRect(
+                    android.graphics.RectF(inset, inset, size.width - inset, size.height - inset),
+                    corners.toArray(inset),
+                    android.graphics.Path.Direction.CW,
+                )
+            }
             drawIntoCanvas { canvas ->
                 if (!running) {
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -135,7 +150,7 @@ internal fun AgentOverlayGlow(state: AgentOverlayState) {
                         strokeWidth = 3f * density
                         color = pausedAccent.copy(alpha = 0.55f * reveal).toArgb()
                     }
-                    canvas.nativeCanvas.drawRoundRect(rect, corner, corner, paint)
+                    canvas.nativeCanvas.drawPath(edge, paint)
                     return@drawIntoCanvas
                 }
                 val shader = android.graphics.SweepGradient(
@@ -157,8 +172,8 @@ internal fun AgentOverlayGlow(state: AgentOverlayState) {
                     this.shader = shader
                     alpha = (0.95f * reveal * 255).toInt()
                 }
-                canvas.nativeCanvas.drawRoundRect(rect, corner, corner, halo)
-                canvas.nativeCanvas.drawRoundRect(rect, corner, corner, line)
+                canvas.nativeCanvas.drawPath(edge, halo)
+                canvas.nativeCanvas.drawPath(edge, line)
             }
         }
     )
