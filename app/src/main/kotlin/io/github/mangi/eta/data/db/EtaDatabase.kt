@@ -143,10 +143,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
             createTextChunkCleanup(database)
         }
 
-        internal val MIGRATION_21_22 = Migration(21, 22) { database ->
-            database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
-        }
-
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",
                 "runtime_inflight_runs" to "run_id", "conversation_context_checkpoints" to "conversation_id",

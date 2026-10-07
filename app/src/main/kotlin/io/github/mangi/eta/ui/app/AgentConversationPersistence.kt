@@ -54,15 +54,14 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
         constructor(state: AgentChatHomeUiState, title: String, updatedAt: Long, pinned: Boolean = false) : this(
             title, updatedAt, state.reasoningEffort, state.appliedRuntimeRunIds,
             state.roleplay, if (state.roleplay == null) RoleplayMessageState() else state.roleplayMessages,
-            state.modelId, state.messages, state.history, state.journal.ifEmpty { state.history },
-            state.messages, state.history, state.journal.ifEmpty { state.history }, pinned,
+            state.modelId, state.messages, state.history, state.journal.ifEmpty { state.history }, pinned,
             contextDeferred = state.contextDeferred,
         )
 
         fun sameMetadata(other: Content): Boolean =
             title == other.title && updatedAt == other.updatedAt && reasoningEffort == other.reasoningEffort &&
                 appliedRuntimeRunIds == other.appliedRuntimeRunIds && roleplay == other.roleplay &&
-                roleplayMessages == other.roleplayMessages && modelId == other.modelId
-                roleplayMessages == other.roleplayMessages && pinned == other.pinned
+                roleplayMessages == other.roleplayMessages && modelId == other.modelId &&
+                pinned == other.pinned
     }
 }
