@@ -21,6 +21,8 @@ internal data class AgentOverlayState(
      * 只保留尾部一小段，供用户扫一眼知道 Agent 在想什么；完整推理仍在会话里。
      */
     val thought: String = "",
+    /** 本轮已完成的操作次数，供执行通知第二行「已完成 N 个步骤」使用。 */
+    val completedSteps: Int = 0,
 ) {
     companion object {
         val Initial = AgentOverlayState(status = AgentOverlayStatus.Reasoning)
@@ -70,8 +72,11 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
     is AgentEvent.HostedToolStarted -> running(AgentOverlayStatus.HostedToolRunning(event.name), event.round)
 
     // 工具结束后模型马上开始下一轮思考；直接回到思考态，由下一次工具调用切换文字。
-    is AgentEvent.ToolFinished -> running(AgentOverlayStatus.Reasoning, event.round).copy(thought = "")
-    is AgentEvent.HostedToolFinished -> running(AgentOverlayStatus.Reasoning, event.round).copy(thought = "")
+    // 每完成一次工具调用计一步，执行通知的第二行据此正向累计。
+    is AgentEvent.ToolFinished -> running(AgentOverlayStatus.Reasoning, event.round)
+        .copy(thought = "", completedSteps = completedSteps + 1)
+    is AgentEvent.HostedToolFinished -> running(AgentOverlayStatus.Reasoning, event.round)
+        .copy(thought = "", completedSteps = completedSteps + 1)
 
     is AgentEvent.UserSupplementReceived -> copy(
         phase = AgentOverlayPhase.RUNNING,
