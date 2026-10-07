@@ -116,7 +116,10 @@ internal class AgentExecutionService : Service() {
             .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
-        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+        // 上游用 SDK_INT_FULL >= BAKLAVA_1(36.1) 判断；本机 ColorOS 16.1 上报 ro.build.version.sdk_full=36.0
+        // （SDK_INT_FULL = 3600000 < 3600001），条件恒假 → 永不申请，流体云/实时活动不出现。
+        // 收紧到 BAKLAVA(36.0)，已在本机实测系统接受 promoted 请求（dumpsys 出现 PROMOTED_ONGOING）。
+        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
                 .setShortCriticalText(status.shortText())
