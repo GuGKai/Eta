@@ -1076,6 +1076,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
+            // 非应用窗口默认按系统栏与挖孔收缩窗口框，光带画出的圆角就会整体下移，和物理屏幕角错位。
+            // 显式不避让任何 inset，窗口原点才与屏幕原点重合，Display 上报的圆角半径才对得上。
+            setFitInsetsTypes(0)
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
     }
 
