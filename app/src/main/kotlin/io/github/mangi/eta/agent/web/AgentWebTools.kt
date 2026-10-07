@@ -53,8 +53,10 @@ internal class AgentWebTools(
         val limit = args.optInt("max_results", 5)
         val query = args.getString("query")
         val config = runtimeConfig()
+        if (config.searchBackend == WebToolBackend.BUILTIN) {
+            return searchBuiltInWithFallback(query, limit)
+        }
         val page = when (config.searchBackend) {
-            WebToolBackend.BUILTIN -> searchBuiltIn(query, limit)
             WebToolBackend.DEEPSEEK -> ConfigurableWebBackends.searchDeepSeek(
                 transport = transport,
                 baseUrl = config.deepSeekBaseUrl,
@@ -71,7 +73,48 @@ internal class AgentWebTools(
                 maxResults = limit,
                 ensureActive = ::ensureActive,
             )
+            else -> searchBuiltInWithFallback(query, limit)
         }
+        return searchResult(page)
+    }
+
+    /** 内置搜索：DuckDuckGo 失败时回退 Bing RSS；单次请求 8 秒超时，失败原因随结果返回。 */
+    private fun searchBuiltInWithFallback(query: String, limit: Int): JSONObject {
+        val attempts = JSONArray()
+        for (provider in PublicWebSearch.providers) {
+            ensureActive()
+            try {
+                val page = searchPage(query, limit, provider)
+                return searchResult(page).put("attempts", attempts)
+            } catch (error: WebRequestException) {
+                if (error.code == "WEB_CANCELLED") throw error
+                attempts.put(JSONObject().put("provider", provider).put("code", error.code)
+                    .put("http_status", error.status ?: JSONObject.NULL))
+            } catch (error: WebSearchException) {
+                attempts.put(JSONObject().put("provider", provider).put("code", error.code))
+            } catch (error: WebPageContentException) {
+                attempts.put(JSONObject().put("provider", provider).put("code", error.code))
+            }
+        }
+        ensureActive()
+        return failure("web_search", "SEARCH_PROVIDERS_FAILED", "所有搜索来源均未返回有效结果，请稍后重试或使用浏览器搜索")
+            .put("attempts", attempts)
+    }
+
+    private fun searchPage(query: String, limit: Int, provider: String): SearchPage {
+        val response = transport.get(PublicWebSearch.searchUrl(query, limit, provider), timeoutSeconds = 8)
+        if (response.status == 202) throw WebRequestException("SEARCH_CHALLENGE", "搜索站点要求人工验证，未取得搜索结果", 202)
+        if (response.status == 429) throw WebRequestException("SEARCH_RATE_LIMITED", "搜索站点限制了请求，请稍后重试", 429)
+        requireSuccess(response)
+        if (response.truncated) throw WebRequestException("SEARCH_RESPONSE_TOO_LARGE", "搜索响应超过大小限制，请缩小查询范围")
+        val decoded = WebResponseDecoder.decode(response, if (provider == PublicWebSearch.BING_PROVIDER)
+            setOf("application/rss+xml", "application/xml") else emptySet())
+        if (decoded.lossy) throw WebRequestException("SEARCH_ENCODING_ERROR", "搜索页面包含无法可靠解码的内容")
+        return if (provider == PublicWebSearch.BING_PROVIDER) PublicWebSearch.parseRss(decoded.text, response.finalUrl, limit, ::ensureActive)
+        else PublicWebSearch.parse(decoded.text, response.finalUrl, limit, ::ensureActive)
+    }
+
+    private fun searchResult(page: SearchPage): JSONObject {
         val results = JSONArray()
         page.results.forEachIndexed { index, item ->
             val entry = JSONObject()
