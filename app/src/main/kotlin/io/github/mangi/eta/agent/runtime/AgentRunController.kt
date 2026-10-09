@@ -40,16 +40,16 @@ internal class AgentRunController {
         }
     }
 
-    /**
-     * 将补充指令排入下一个 turn。steering 不取消当前模型请求或工具批次。
-     */
+    /** Interrupt model generation; active tools finish before the next planning checkpoint. */
     fun steer(text: String): Boolean {
         val prompt = text.trim()
         if (prompt.isBlank()) return false
-        lock.withLock {
+        val requests = lock.withLock {
             if (cancelled || !acceptingSteering) return false
             steeringMessages.addLast(prompt)
+            resources.filter { it.interruptible }
         }
+        requests.forEach { resource -> runCatching { resource.cancel() } }
         return true
     }
 
@@ -107,10 +107,24 @@ internal class AgentRunController {
         if (cancelled) throw AgentRunCancelledException()
     }
 
-    fun awaitRetryDelay(delayMs: Long) {
+    fun throwIfModelInterrupted() {
+        throwIfCancelled()
+        if (hasPendingSteering) throw AgentModelInterruptedException()
+    }
+
+    /** Admission is the start of an action; a later interjection waits for this action to finish. */
+    fun admitTool(): Boolean {
+        throwIfCancelled()
+        return lock.withLock {
+            if (cancelled) throw AgentRunCancelledException()
+            steeringMessages.isEmpty()
+        }
+    }
+
+    fun awaitRetryDelay(delayMs: Long, interruptible: Boolean = false) {
         throwIfCancelled()
         val cancelledLatch = CountDownLatch(1)
-        val binding = register { cancelledLatch.countDown() }
+        val binding = registerResource(interruptible) { cancelledLatch.countDown() }
         try {
             cancelledLatch.await(delayMs, TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {
@@ -120,12 +134,21 @@ internal class AgentRunController {
             binding.close()
         }
         throwIfCancelled()
+        if (interruptible) throwIfModelInterrupted()
     }
 
-    fun register(cancel: () -> Unit): ResourceBinding {
-        val resource = CancellableResource(cancel)
-        resources.add(resource)
-        if (cancelled) resource.cancel()
+    fun register(cancel: () -> Unit): ResourceBinding = registerResource(false, cancel)
+
+    fun registerModelRequest(interruptible: Boolean, cancel: () -> Unit): ResourceBinding =
+        registerResource(interruptible, cancel)
+
+    private fun registerResource(interruptible: Boolean, cancel: () -> Unit): ResourceBinding {
+        val resource = CancellableResource(interruptible, cancel)
+        val mustCancel = lock.withLock {
+            resources.add(resource)
+            cancelled || interruptible && steeringMessages.isNotEmpty()
+        }
+        if (mustCancel) resource.cancel()
         return ResourceBinding { resources.remove(resource) }
     }
 
@@ -135,7 +158,7 @@ internal class AgentRunController {
         }
     }
 
-    private class CancellableResource(private val cancelBlock: () -> Unit) {
+    private class CancellableResource(val interruptible: Boolean, private val cancelBlock: () -> Unit) {
         private val cancelled = AtomicBoolean(false)
 
         fun cancel() {
@@ -145,3 +168,6 @@ internal class AgentRunController {
 }
 
 internal class AgentRunCancelledException : RuntimeException("Agent run cancelled")
+
+/** Control flow only: preserves the run, tools, completed transcript and virtual display. */
+internal class AgentModelInterruptedException : RuntimeException("Agent model request interrupted")
