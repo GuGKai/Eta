@@ -1086,6 +1086,7 @@ internal class AgentAppState(
                 noticeModelRetry = noticeText(SystemNoticeCode.ModelRetry),
                 noticeContextCompaction = noticeText(SystemNoticeCode.ContextCompaction),
                 noticeRuntimeFailed = noticeText(SystemNoticeCode.RuntimeFailed),
+                noticeUiPaused = noticeText(SystemNoticeCode.UiPaused),
                 noticeInterrupted = noticeText(SystemNoticeCode.Interrupted),
             ),
         ) }
@@ -1098,6 +1099,7 @@ internal class AgentAppState(
             SystemNoticeCode.ContextCompaction -> R.string.context_compaction
             SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
             SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
+            SystemNoticeCode.UiPaused -> R.string.virtual_screen_paused
             SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
         },
     )
@@ -2045,6 +2047,7 @@ internal class AgentAppState(
                 val notice = when {
                     result.ok && result.content.isNotBlank() -> null
                     result.ok -> SystemNoticeCode.EmptyResult
+                    result.errorCode == "UI_EXECUTION_PAUSED" -> SystemNoticeCode.UiPaused
                     result.error == LEGACY_STOPPED_ERROR || result.error == SYNTHETIC_STATUS_STOPPED ->
                         SystemNoticeCode.Stopped
                     else -> SystemNoticeCode.RuntimeFailed
@@ -2052,7 +2055,9 @@ internal class AgentAppState(
                 updateMessages(runId) { messages ->
                     AgentRunMessageProjector.applyResult(
                         runId, messages, result.content, notice,
-                        detail = result.error.takeIf { notice == SystemNoticeCode.RuntimeFailed },
+                        detail = result.error.takeIf {
+                            notice == SystemNoticeCode.RuntimeFailed || notice == SystemNoticeCode.UiPaused
+                        },
                     )
                 }
             }
