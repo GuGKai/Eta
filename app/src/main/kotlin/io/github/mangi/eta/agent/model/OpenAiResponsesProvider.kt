@@ -56,24 +56,31 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             .build()
         runController.throwIfCancelled()
         onEvent(ProviderEvent.RequestStarted)
-        return AuthorizedProviderHttp.execute(
-            client = AgentHttpClient.modelClient(request.purpose),
-            providerId = config.providerId,
-            authMode = config.authMode,
-            request = httpRequest,
-            controller = runController,
-        ) { response ->
-            onEvent(ProviderEvent.ResponseHeaders(response.code))
-            if (!response.isSuccessful) {
-                throw AgentModelFailure.http(response.code, response.peekBody(16_384).string())
+        try {
+            return AuthorizedProviderHttp.execute(
+                client = AgentHttpClient.modelClient(request.purpose),
+                providerId = config.providerId,
+                authMode = config.authMode,
+                request = httpRequest,
+                controller = runController,
+            ) { response ->
+                onEvent(ProviderEvent.ResponseHeaders(response.code))
+                if (!response.isSuccessful) {
+                    throw AgentModelFailure.http(response.code, response.peekBody(16_384).string())
+                }
+                val assistant = readStreamingResponse(
+                    stream = response.body.byteStream(),
+                    runController = runController,
+                    onEvent = onEvent,
+                )
+                onEvent(ProviderEvent.Completed(assistant.optString("finish_reason").ifBlank { null }))
+                ProviderResponse(assistant)
             }
-            val assistant = readStreamingResponse(
-                stream = response.body.byteStream(),
-                runController = runController,
-                onEvent = onEvent,
-            )
-            onEvent(ProviderEvent.Completed(assistant.optString("finish_reason").ifBlank { null }))
-            ProviderResponse(assistant)
+        } catch (throwable: Throwable) {
+            // 插话会取消当前模型请求；这里把取消转成正常的“本轮中断”，交给运行时拼接补充文本。
+            if (request.purpose == ProviderRequestPurpose.CHAT) runController.throwIfModelInterrupted()
+            else runController.throwIfCancelled()
+            throw throwable
         }
     }
 
