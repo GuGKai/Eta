@@ -26,7 +26,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33, 36])
+// Wire/image transport does not need EtaApp's background database/automation workers.
+@Config(sdk = [33, 36], application = android.app.Application::class)
 class AgentRuntimeWireTest {
     @Test
     fun oauthWireCarriesOnlyAuthenticationModeAndDropsLegacySecrets() {
@@ -50,6 +51,15 @@ class AgentRuntimeWireTest {
         val legacy = AgentRuntimeWire.runRequestFromBundle(bundle)
         assertEquals(ProviderAuthModes.API_KEY, legacy.config.authMode)
         assertEquals("fixture-untrusted-bundle-secret", legacy.config.apiKey)
+    }
+
+
+
+    @Test
+    fun modelInterjectionSurvivesIpcAndArchiveReplay() {
+        val event = AgentEvent.ModelRequestInterrupted(3)
+        assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
+        assertEquals(event, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(event)))
     }
 
 
