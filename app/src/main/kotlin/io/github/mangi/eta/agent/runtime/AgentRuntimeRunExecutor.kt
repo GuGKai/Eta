@@ -255,6 +255,10 @@ internal class AgentRuntimeRunExecutor(
                 pendingSkillConflict = pendingSkillConflict,
                 virtualDisplayEnabled = { currentPermissions().virtualDisplay },
                 skillAuthoringService = SkillAuthoringService(skillIndexService, skillPackageInstaller),
+                learningProposalWriter = { tool, args -> runBlocking {
+                    io.github.mangi.eta.data.repository.LearningProposalRepository(appContext).stage(
+                        tool, args, request.virtualScreenOwner, request.runId, isCancelled = { runController.isCancelled })
+                } },
                 onMainScreenFallback = { session.mainScreenFallbackApproved.set(true) },
                 onVirtualTaskCancelled = { session.cancel("用户取消虚拟屏任务") },
             )

@@ -253,6 +253,9 @@ internal fun AgentChatInputBar(
     // 从「回复完成」通知点进会话页就会莫名带着键盘。清掉焦点后，回前台要打字自己点输入框。
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         focusManager.clearFocus()
+    LaunchedEffect(input) {
+        // A delayed rejected interjection must not overwrite a newer draft typed while awaiting its ACK.
+        if (!isEditingMessage && textFieldState.text.isBlank()) textFieldState.setTextAndPlaceCursorAtEnd(input)
     }
 
     LaunchedEffect(isStreaming, isCompacting) {
