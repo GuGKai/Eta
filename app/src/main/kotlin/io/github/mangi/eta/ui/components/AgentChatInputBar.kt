@@ -211,6 +211,8 @@ internal fun AgentChatInputBar(
     val canSend = textFieldState.text.isNotBlank() ||
         pendingImages.isNotEmpty() ||
         pendingFileReferences.isNotEmpty()
+    val canInterject = isStreaming && !isCompacting && textFieldState.text.isNotBlank() &&
+        pendingImages.isEmpty() && pendingFileReferences.isEmpty()
     val density = LocalDensity.current
     val inputContainerRadius = rememberInputContainerRadius()
     val inputContainerShape = remember(inputContainerRadius) {
@@ -360,6 +362,7 @@ internal fun AgentChatInputBar(
                                 character != null && isStreaming ->
                                     stringResource(R.string.chat_character_typing, character.characterName)
                                 character != null -> stringResource(R.string.chat_character_input_hint, character.characterName)
+                                canInterject -> stringResource(R.string.chat_interject_hint)
                                 isStreaming -> stringResource(R.string.chat_eta_working)
                                 else -> stringResource(R.string.chat_input_hint)
                             },
@@ -431,18 +434,6 @@ internal fun AgentChatInputBar(
                             Spacer(modifier = Modifier.width(2.dp))
                         }
 
-                        if (recognitionEnabled) {
-                            SpeechDictationButton(dictation, enabled = !isCompacting)
-                            Spacer(modifier = Modifier.width(2.dp))
-                        }
-
-                        AgentModelPickerButton(
-                            state = modelPickerState,
-                            isStreaming = isStreaming,
-                            popupAnchorTopPx = inputContainerTopPx,
-                            popupMaxHeight = thinkingPopupMaxHeight,
-                            onModelSelected = onModelSelected,
-                        )
 
                         val showStreamingSend = isStreaming && !isCompacting && canSend
                         val submitCurrentDraft: (Boolean) -> Unit = { interrupt ->

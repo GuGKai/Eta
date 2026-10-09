@@ -1162,7 +1162,26 @@ internal class AgentAppState(
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
-        if (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) {
+        if (homeState.isStreaming) {
+            val conversationId = selectedConversationId ?: return
+            if (prompt.isBlank() || pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()) return
+            val runId = currentRunId?.takeIf { runConversationIds[it] == conversationId }
+            if (runId == null) {
+                restoreInterjectionDraft(conversationId, prompt)
+                return
+            }
+            scope.launch(Dispatchers.IO) {
+                val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(runId, prompt)
+                if (!accepted) withContext(Dispatchers.Main) {
+                    // The task may finish while submitting. Keep the draft instead of starting another run.
+                    restoreInterjectionDraft(conversationId, prompt)
+                }
+            }
+            return
+        }
+        if (
+            prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()
+        ) {
             return
         }
         if (!homeState.isStreaming) {
@@ -1342,6 +1361,12 @@ internal class AgentAppState(
             },
             reasoningEffort = state.reasoningEffort,
         )
+    }
+
+    private fun restoreInterjectionDraft(conversationId: String, text: String) {
+        val current = conversationsById[conversationId] ?: return
+        if (current.input.isBlank()) updateConversation(conversationId, current.copy(input = text))
+        Toast.makeText(appContext, appContext.getString(R.string.chat_interject_unavailable), Toast.LENGTH_SHORT).show()
     }
 
     fun beginMessageEdit(messageId: String) {
