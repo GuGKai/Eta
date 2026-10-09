@@ -248,6 +248,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     if (runId.isNotBlank()) cancelRun(runId)
                 }
 
+                AgentRuntimeWire.MSG_STEER_RUN -> {
+                    val runId = AgentRuntimeWire.runIdFromBundle(msg.data)
+                    val text = msg.data.getString("supplement_text").orEmpty()
+                    val valid = runCatching { AgentRuntimeWire.steerBundle(runId, text) }.isSuccess
+                    val accepted = valid && requestSupplement(text, expectedRunId = runId)
+                    runCatching {
+                        msg.replyTo?.send(Message.obtain(null, AgentRuntimeWire.MSG_STEER_RESPONSE).apply {
+                            data = AgentRuntimeWire.ackBundle(runId).apply { putBoolean("accepted", accepted) }
+                        })
+                    }
+                }
+
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
                     val runId = AgentRuntimeWire.runIdFromBundle(msg.data ?: return)
                     dispatchResultIo { AgentRuntimeResultStore.remove(this@AgentRuntimeService, runId) }
@@ -903,7 +915,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     state.value = state.value.copy(
                         status = AgentOverlayStatus.Finishing,
                     )
-                    return
+                    return false
                 }
             } else {
                 AndroidAgentLogger.info(
@@ -919,7 +931,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         if (completed.request.operation != AgentRuntimeWire.OP_CHAT ||
             completed.request.handoff?.source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
             state.value = state.value.copy(status = AgentOverlayStatus.ContinuationUnavailable)
-            return
+            return false
         }
         val continuationRequest = AgentContinuationBuilder.build(
             request = completed.request,
@@ -927,6 +939,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             supplement = supplementText,
         )
         startRun(continuationRequest)
+        return true
     }
 
     private fun ensureOverlayVisible() {
