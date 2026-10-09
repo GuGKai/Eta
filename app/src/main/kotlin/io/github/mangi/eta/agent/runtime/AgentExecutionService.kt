@@ -33,6 +33,7 @@ internal class AgentExecutionService : Service() {
     @Volatile private var startRejected = false
     private var progress: String = ""
     private var progressOwner: String = ""
+    private var floatingPreview: io.github.mangi.eta.agent.display.VirtualScreenFloatingPreviewHost? = null
 
     /** 通知去重与节流状态，只在主线程读写。 */
     private var publishedContent: RenderedText? = null
@@ -51,6 +52,7 @@ internal class AgentExecutionService : Service() {
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
         )
         ensureForeground()
+        if (!startRejected) floatingPreview = io.github.mangi.eta.agent.display.VirtualScreenFloatingPreviewHost(this)
     }
 
     private fun ensureForeground() {
@@ -86,6 +88,7 @@ internal class AgentExecutionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        floatingPreview?.close(); floatingPreview = null
         if (instance === this) instance = null
         // 销毁时同样收回本服务拥有的任务。回收在独立有界工作线程上完成，不阻塞 Main。
         stopQueue.close(leases.drainOwner(owner))
