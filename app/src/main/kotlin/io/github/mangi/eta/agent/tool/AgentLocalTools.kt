@@ -174,7 +174,8 @@ internal class AgentLocalTools(
         if (!closed.compareAndSet(false, true)) return
         MainScreenFallbackApproval.cancelOwner(browserRunId)
         val cancelled = isRunCancelled()
-        VirtualScreenSession.releaseRun(virtualScreenOwner, browserRunId, retainVirtualScreen.get() && !cancelled, cancelled)
+        VirtualScreenSession.releaseRun(virtualScreenOwner, browserRunId, retainVirtualScreen.get() && !cancelled,
+            cancelled, paused = pausedVirtualScreen.get() && !cancelled)
         publishedObservation.set(PublishedObservation())
         if (browserSessionRef.isInitialized()) browserSessionRef.value.interruptAgentAction(browserRunId)
         webTools.close()
@@ -358,6 +359,10 @@ internal class AgentLocalTools(
                 )
             )
         }.let { result ->
+            if (result.stop != null) {
+                pausedVirtualScreen.set(true)
+                retainVirtualScreen.set(true)
+            }
             if (result.sensitive || !AgentSensitiveToolPolicy.isSensitive(toolCall.name)) {
                 result
             } else {

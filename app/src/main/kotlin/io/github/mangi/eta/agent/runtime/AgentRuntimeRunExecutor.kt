@@ -10,6 +10,7 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentModelFailure
+import io.github.mangi.eta.agent.model.AgentUiExecutionPausedException
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
@@ -75,6 +76,7 @@ internal class AgentRuntimeRunExecutor(
         val archivedEvents = AgentRunArchiveStore.createEventBuffer(request.handoff)
         var entrySurfaceGuard: EntrySurfaceGuard? = null
         var toolExecutor: AutoCloseable? = null
+        var localTools: AgentLocalTools? = null
         var toolsBinding: AgentRunController.ResourceBinding? = null
         var guiRun: GuiControlCoordinator.RunControl? = null
         var browserBinding: AutoCloseable? = null
@@ -256,6 +258,7 @@ internal class AgentRuntimeRunExecutor(
                 local = executor,
                 mcp = McpToolExecutor(mcpSnapshot),
             )
+            localTools = executor
             toolExecutor = routingExecutor
             toolsBinding = runController.register(routingExecutor::close)
             timing.preparationFinished(skillContext.installedSkills.size)
@@ -315,6 +318,7 @@ internal class AgentRuntimeRunExecutor(
                 memoryContext = memoryContext,
                 additionalTools = runTools,
                 executionContext = executor.terminalExecutionContext,
+                recoverVirtualUi = executor::recoverVirtualUi,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(
@@ -343,6 +347,7 @@ internal class AgentRuntimeRunExecutor(
             ConversationMemoryPins.forget(memoryConversationId)
             cancelled = runController.isCancelled || throwable is AgentRunCancelledException
             val modelFailure = throwable as? AgentModelExecutionException
+            val uiPause = modelFailure?.cause as? AgentUiExecutionPausedException
             val message = if (cancelled) {
                 "已停止"
             } else {
@@ -350,6 +355,9 @@ internal class AgentRuntimeRunExecutor(
             }
             if (cancelled) {
                 AndroidAgentLogger.info("Agent runtime stopped")
+            } else if (uiPause != null) {
+                localTools?.retainVirtualScreenOnPause()
+                AndroidAgentLogger.info("Agent virtual UI paused: code=${uiPause.stop.code}")
             } else {
                 val requestFailure = modelFailure?.cause as? AgentModelFailure
                 AndroidAgentLogger.error(
@@ -384,6 +392,7 @@ internal class AgentRuntimeRunExecutor(
                 contextSnapshot = modelFailure?.contextSnapshot?.copy(operationId = request.runId) ?: session.contextSnapshot,
                 operation = request.operation,
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
+                errorCode = if (!cancelled && uiPause != null) "UI_EXECUTION_PAUSED" else "",
             )
         } finally {
             runCatching { toolsBinding?.close() }
