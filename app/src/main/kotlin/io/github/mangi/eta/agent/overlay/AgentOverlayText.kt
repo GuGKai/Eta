@@ -55,6 +55,7 @@ internal fun toolDisplayName(resources: Resources, name: String): String {
 
 @StringRes
 internal fun toolDisplayNameResource(name: String): Int? = when (name) {
+    "batch" -> R.string.tool_batch
     "virtual_screen" -> R.string.tool_virtual_screen
     "observe_screen" -> R.string.tool_observe_screen
     "release_gui" -> R.string.tool_release_gui
