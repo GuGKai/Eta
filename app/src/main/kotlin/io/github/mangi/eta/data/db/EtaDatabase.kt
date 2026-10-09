@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -72,6 +72,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_23_24,
                         MIGRATION_24_25,
                         MIGRATION_25_26,
+                        MIGRATION_26_27,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -87,6 +88,13 @@ internal abstract class EtaDatabase : RoomDatabase() {
             synchronized(this) {
                 instance?.close()
                 instance = null
+            }
+        }
+
+        /** 26 → 27：运行结果与归档补错误码（PR #142）。 */
+        internal val MIGRATION_26_27 = Migration(26, 27) { database ->
+            listOf("runtime_results", "runtime_archive_runs").forEach { table ->
+                database.execSQL("ALTER TABLE $table ADD COLUMN error_code TEXT NOT NULL DEFAULT ''")
             }
         }
 

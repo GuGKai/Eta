@@ -72,6 +72,16 @@ class ToolCatalogUiTest {
         assertTrue(terminal.tools.map { it.id }.containsAll(listOf("terminal", "terminal_job", "terminal_daemon")))
         assertEquals(R.string.tool_terminal_job, toolDisplayNameResource("terminal_job"))
         assertEquals(R.string.tool_terminal_daemon, toolDisplayNameResource("terminal_daemon"))
+    @Test
+    fun batchCardIsVisibleInCurrentDeviceToolsWithoutRoot() {
+        val context = RuntimeEnvironment.getApplication()
+        val groups = buildToolsState(context).groups
+        val appGroup = projectToolGroups(groups, false, false, false).single { it.id == "app" }
+        val batch = appGroup.tools.single { it.id == "batch" }
+        assertEquals(context.getString(R.string.tool_batch), batch.title)
+        assertEquals(context.getString(R.string.tool_batch_description), batch.summary)
+        assertEquals(R.string.tool_batch, toolDisplayNameResource("batch"))
+        assertEquals(RootRequirement.NONE, toolCardRequirement("batch").rootRequirement)
     }
 
     @Test

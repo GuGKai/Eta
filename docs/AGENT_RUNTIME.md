@@ -30,7 +30,7 @@ Eta 的 Agent Runtime 负责把一次用户输入组织为模型回合、工具�
 pending steering
 → provider response
 → assistant history
-→ tool batch（按模型顺序串行执行）
+→ tool batch（独立读取可并行，其余按模型顺序执行）
 → contiguous tool results
 → optional image observations
 → next turn / final result
