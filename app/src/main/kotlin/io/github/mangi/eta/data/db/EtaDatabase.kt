@@ -29,7 +29,7 @@ import androidx.room.migration.Migration
         AgentTaskRunEntity::class,
         LearningProposalEntity::class,
     ],
-    version = 27,
+    version = 28,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -75,6 +75,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_24_25,
                         MIGRATION_25_26,
                         MIGRATION_26_27,
+                        MIGRATION_27_28,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -180,6 +181,49 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL)")
             createTextChunkCleanup(database)
         }
+
+        /**
+         * 27 → 28：兼容装过早期贡献分支包的库（user_version 可能是 25/27）。
+         *
+         * 那些库可能已经有 model_id、error_code 或自动任务表，也可能缺 last_model_usage_json、
+         * request_duration_ms、pinned；这里逐列逐表判断后再补，不重复加列。
+         */
+        internal val MIGRATION_27_28 = Migration(27, 28) { database ->
+            if (!database.conversationColumnExists("pinned")) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+            }
+            if (!database.conversationColumnExists("model_id")) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
+            }
+            if (!database.conversationColumnExists("last_model_usage_json")) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN last_model_usage_json TEXT NOT NULL DEFAULT ''")
+            }
+            if (!database.columnExists("conversation_messages", "request_duration_ms")) {
+                database.execSQL("ALTER TABLE conversation_messages ADD COLUMN request_duration_ms INTEGER")
+            }
+            listOf("runtime_results", "runtime_archive_runs").forEach { table ->
+                if (!database.columnExists(table, "error_code")) {
+                    database.execSQL("ALTER TABLE $table ADD COLUMN error_code TEXT NOT NULL DEFAULT ''")
+                }
+            }
+            MIGRATION_23_24.migrate(database)
+        }
+
+        private fun androidx.sqlite.db.SupportSQLiteDatabase.conversationColumnExists(column: String): Boolean =
+            columnExists("conversations", column)
+
+        private fun androidx.sqlite.db.SupportSQLiteDatabase.columnExists(table: String, column: String): Boolean =
+            query("PRAGMA table_info($table)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                var found = false
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex) == column) {
+                        found = true
+                        break
+                    }
+                }
+                found
+            }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",
