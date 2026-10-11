@@ -59,6 +59,17 @@ class DeepSeekSpendTrackerTest {
     }
 
     @Test
+    fun reseedingAfterPlatformChangeReplacesTheBaseline() {
+        // 长按校准：扔掉旧基线，用新平台数字 + 最新余额重新起算
+        val spend = tracker(seed = 306.56)
+        spend.observe(total = 43.83, now = 1_000L, previousTotal = null)
+        spend.restore(baseline = null, baselineAtMillis = null)
+        val sample = spend.observe(total = 41.20, now = 2_000L, previousTotal = null)
+        assertEquals(347.76, sample.baseline, 0.0001)
+        assertEquals(306.56, sample.spent, 0.0001)
+    }
+
+    @Test
     fun corruptBaselineBelowBalanceIsRebuilt() {
         val spend = tracker(seed = 306.56)
         spend.restore(baseline = 10.0, baselineAtMillis = 1L)

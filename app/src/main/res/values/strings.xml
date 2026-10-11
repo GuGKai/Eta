@@ -1545,6 +1545,10 @@
     <string name="deepseek_capsule_spend">Spent %1$s</string>
     <string name="deepseek_capsule_description">DeepSeek balance %1$s, spent %2$s. Tap to refresh.</string>
     <string name="deepseek_capsule_unavailable">DeepSeek balance unavailable. Tap to retry.</string>
+    <string name="deepseek_capsule_reseed_hint">Long press to calibrate the cumulative spend</string>
+    <string name="deepseek_seed_title">Calibrate cumulative spend</string>
+    <string name="deepseek_seed_summary">Enter the “cumulative spend” from the DeepSeek platform. Current balance is %1$s; the total keeps counting from your number and top-ups no longer reset it.</string>
+    <string name="deepseek_seed_hint">e.g. 306.56</string>
     <string name="default_prompt_title">Default assistant prompt</string>
     <string name="default_prompt_summary">Edit the system prompt for regular assistant conversations</string>
     <string name="default_prompt_description">Applies to the next regular assistant request. A provider’s custom prompt takes priority. Character conversations use their character cards. Leave blank or reset to use Eta’s built-in prompt.</string>
