@@ -54,7 +54,6 @@ internal class AgentRuntimeRunExecutor(
         AgentRuntimeWire.RunResult,
         List<AgentEvent>,
     ) -> Unit,
-    private val reviewGeneration: Long? = null,
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -239,10 +238,6 @@ internal class AgentRuntimeRunExecutor(
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
                 skillAuthoringService = SkillAuthoringService(skillIndexService, skillPackageInstaller),
-                learningProposalWriter = { tool, args -> runBlocking {
-                    io.github.mangi.eta.data.repository.LearningProposalRepository(appContext).stage(
-                        tool, args, request.virtualScreenOwner, request.runId, isCancelled = { runController.isCancelled })
-                } },
                 onMainScreenFallback = { session.mainScreenFallbackApproved.set(true) },
                 onVirtualTaskCancelled = { session.cancel("用户取消虚拟屏任务") },
             )
@@ -427,13 +422,6 @@ internal class AgentRuntimeRunExecutor(
                         "Agent runtime artifact persistence failed: type=${throwable.safeLogType()}"
                     )
                 }
-        }
-        val reviewEpoch = reviewGeneration
-        if (committed && result.ok && !cancelled && !roleplayRun && reviewEpoch != null) {
-            response?.let { completed ->
-                runCatching { AgentExperienceReview.submit(appContext, reviewEpoch, completedRequest, completed, archivedEvents.toList()) }
-                    .onFailure { error -> AndroidAgentLogger.warn("Experience review submission failed: type=${error.safeLogType()}") }
-            }
         }
         return Outcome(
             result = result,

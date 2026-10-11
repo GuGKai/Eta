@@ -978,18 +978,6 @@ internal class AgentAppState(
     }
     }
 
-    fun startLearningRefinement(prompt: String) {
-        createConversation()
-        val id = newConversationId()
-        selectedConversationId = id
-        homeState = homeState.copy(input = prompt)
-        conversationTitles = conversationTitles + (id to appContext.getString(io.github.mangi.eta.R.string.inbox_refinement_conversation))
-        updateConversation(id, homeState)
-        conversationPaneState = conversationPaneState.copy(selectedConversationId = id)
-        refreshConversationSummaries()
-        persistConversations()
-    }
-
     fun startCharacterConversation(binding: RoleplayBinding, greeting: String) {
         createConversation()
         val id = newConversationId()
