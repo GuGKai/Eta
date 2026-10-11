@@ -43,11 +43,6 @@ internal class PhoneAppTools(
         return executeRoot(tool, arguments)
     }
 
-    fun executeVivoPersonal(tool: String, arguments: JSONObject): JSONObject {
-        if (!rootAvailable()) return PhoneOperation.failure("ROOT_REQUIRED", "vivo 个人数据接口需要 Root")
-        return executeRoot(tool, arguments, "vivo_personal")
-    }
-
     private fun executeRoot(tool: String, arguments: JSONObject, backend: String? = null): JSONObject {
         val request =
             JSONObject()

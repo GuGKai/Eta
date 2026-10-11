@@ -27,7 +27,11 @@
 - **经验学习与通知中心**（PR 的 #106）：删除 `LearningProposal*`、`AgentExperienceReview`、
   `NotificationCenterStore/Screen`、`AppRoute.Notifications`/`LearningProposalDetail`、侧栏通知计数、
   `LearningProposalRepositoryTest`/`ExperienceReviewPolicyTest`；`memory_write`/`skills_manage` 恢复直写。
-- **vivo 接管 / 小 V 原子岛 / 原子笔记上下文**：暂未剔除（代码在，`isVivoDevice()` 门控，本机不生效）。
+- **vivo 接管 / 小 V 原子岛 / 原子笔记上下文**：已全部剔除（2026-10-11 第二轮）：删除 `hook/vivo/*` 12 个文件、
+  `VivoPersonalContextQuery`、`AgentRuntimeIslandBridge`、Xposed 作用域里的 `com.vivo.ai.copilot`、
+  `ModuleConfig.VIVO_COPILOT_PACKAGE`、`Prefs` 的 vivo 旧键别名、工具能力里的 `vivo`/`vivoAlternative`、
+  `PhoneCommandMain` 的 `vivo_personal` 后端、注入端 16 条 `injected_vivo_*` 文案与相关测试；
+  厂商助手接管仍保留小布（Breeno）与小爱通道。
 - **批量执行**（`AgentToolBatchPlanner` 等）：随 GUI 效率改动一并保留，未单独接入说明。
 
 冲突取舍（12 处）：

@@ -99,9 +99,6 @@ internal object AgentToolRequirements {
             "search_notes", "search_coloros_recordings", "search_recording_summaries",
             "search_system_memories", "search_saved_places",
         ).forEach { name -> put(name, getValue(name).copy(colorOs = true)) }
-        io.github.mangi.eta.agent.context.VivoPersonalContextQuery.tools.forEach { name ->
-            put(name, getValue(name).copy(vivoAlternative = true))
-        }
         // 系统记忆优先使用 Hook 桥接，框架失联时仍有独立的 Root 快照来源。
         listOf("search_system_memories", "search_saved_places", "search_personal_orders").forEach { name ->
             put(name, getValue(name).copy(lsposedRequirement = LsposedRequirement.OPTIONAL))

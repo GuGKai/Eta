@@ -18,7 +18,7 @@ internal object AgentPersonalSearchToolCatalog {
         tools.put(
             function(
                 "read_personal_item",
-                "使用个人数据查询返回的 ref 读取详情；支持 ColorOS 索引与 vivo 原始只读引用，不能用该引用直接修改记录。",
+                "使用个人数据查询返回的 ref 读取详情；支持 ColorOS 索引的原始只读引用，不能用该引用直接修改记录。",
                 JSONObject().put("ref", string("查询结果中的 ref", 160)),
                 "ref",
             )
