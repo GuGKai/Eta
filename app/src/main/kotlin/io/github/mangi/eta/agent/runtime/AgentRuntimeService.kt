@@ -92,7 +92,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val mainHandler = Handler(Looper.getMainLooper())
     private val resultIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "agent-result-io") }
     private val serviceMessenger = Messenger(IncomingHandler())
-    private lateinit var islandBridge: AgentRuntimeIslandBridge
 
     @Volatile
     private var activeSession: AgentRuntimeSession? = null
@@ -175,7 +174,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onCreate() {
         super.onCreate()
-        islandBridge = AgentRuntimeIslandBridge(this, AndroidAgentLogger, ::cancelRun)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -223,7 +221,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         pendingStartRequest = null
         activeSession?.cancel("Agent Runtime 服务已停止")
         activeSession = null
-        islandBridge.close()
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         AgentOverlayClearance.detach(clearanceHost)
@@ -425,11 +422,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     current.virtualUiRouted.set(true)
                 }
                 val virtualScreen = current?.let { usesVirtualUi(it) } == true
-                islandBridge.update(request.runId, event, virtualScreen)
                 sendEventTo(replyTo, event, virtualScreen)
             },
             resultSink = { result ->
-                islandBridge.finish(result)
                 sendResultTo(replyTo, result)
             },
         )
@@ -447,7 +442,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             return
         }
         activeSession = session
-        islandBridge.start(request)
         lastCompletedRunContext = null
         runCatching {
             startService(Intent(this, AgentRuntimeService::class.java).setAction(ACTION_KEEP_ALIVE))

@@ -56,7 +56,6 @@ Eta 内置 Agent Runtime，通过 Agent Loop 编排模型调用、工具执行�
 - **个人上下文**：按需检索通知、应用使用情况与位置；相册、日历、短信、录音、健康摘要、聊天图片等专用检索需要 Root，部分来源还要求对应 ROM 与应用支持。
 - **长期记忆**：使用本机 `MEMORY.md` 保存跨对话背景，核心内容按预算加入上下文，其余按需读取；支持编辑、清空和关闭。
 - **Skills**：按需加载任务方法、参考资料与脚本资源，支持公开 GitHub 仓库安装和本地 ZIP 导入；安装不会执行脚本或开启额外权限。
-- **经验学习**：任务完成后可自动追加持久记忆，并将已验证的操作方法生成或更新为用户技能；新任务优先，自动学习可分别关闭。见 [自动记忆与操作经验](docs/EXPERIENCE_LEARNING.md)。
 - **自动任务**：AI 辅助创建一次性、间隔、每日与事件规则，支持本地匹配、冷却、次数限制、运行记录及取消。Android 后台调度可能延迟，见 [定时与事件任务](docs/AUTOMATION.md)。
 - **Root 虚拟屏（实验性）**：启用后 AI UI 工具自动路由到独立 display，可从通知打开带触控和操作指示的查看页。可另开启回退申请，只有点击通知允许后，本次任务才能改用主屏。需要 Android 14+、Root 和用户开关；熄屏执行另需许可，兼容与验证范围见 [虚拟屏](docs/VIRTUAL_SCREEN.md)。
 - **MCP**：通过 Streamable HTTP 连接远程工具，支持 Bearer Token；工具逐项启用，与本机工具共同参与任务。
@@ -108,8 +107,6 @@ Provider 层支持 OpenAI-compatible Chat Completions、Responses API 和 Anthro
 - **长按电源键**：选择唤起系统默认助手、Gemini 或 Eta。
 - **Eta 系统助手**：从电源键入口打开全局语音浮窗，竖屏下光效从按键位置沿屏幕边缘进入并汇聚到底部，也可切换键盘或点击建议提问；自动附带唤醒时的截图与应用内容，无需额外点击或开启无障碍截图。语音识别可选择系统服务、千问或豆包；云端模式只需麦克风权限与对应服务配置，不依赖设备自带识别服务。语音播报支持千问、豆包、Gemini 和 MiniMax，可配置音色并试听，支持助手回答自动播报、聊天听写和手动朗读，详见[语音配置](docs/VOICE.md)。
 - **小布 / 超级小爱接管**：保留厂商助手的电源键入口，将请求交给 Eta，使用自己配置的模型。
-- **vivo 小 V 接管**：支持蓝心小 V `6.8.5.3` 的普通打字与单次语音识别请求，由“启用厂商助手自定义模型”统一控制；可选择仅接管 `/agent` 前缀，最终回答显示在小 V 原生界面中。Eta 聊天、语音、自动任务和小 V 接管任务均支持原子岛进度、查看和停止。配置与范围见 [vivo 小 V 接管](docs/VIVO_XIAOV.md)。
-- **vivo 个人上下文**：通过原子笔记的原生接口读取普通便签和待办，支持分页与详情，过滤私密、加密和回收记录。Root 与敏感读取权限要求见 [vivo 个人上下文](docs/VIVO_PERSONAL_CONTEXT.md)。
 
 电源键接管需要 LSPosed 与对应系统支持。
 
@@ -193,7 +190,6 @@ Eta 先从现有 Android 上的模型、上下文与工具做起。真正落地�
 - [设备支持与权限边界](docs/ROOTLESS_SUPPORT.md)：普通设备、Root、文件工作区与后台运行。
 - [技术实现](docs/TECHNICAL.md)：设备工具、数据检索、浏览器、终端与系统集成。
 - [Agent Runtime](docs/AGENT_RUNTIME.md)：Agent Loop、Provider、steering、transcript 与结果恢复。
-- [自动记忆与操作经验](docs/EXPERIENCE_LEARNING.md)：后台复盘、用户技能写入与权限边界。
 - [定时与事件任务](docs/AUTOMATION.md)：模型工具、触发器、规则和调度限制。
 - [Root 虚拟屏](docs/VIRTUAL_SCREEN.md)：实验虚拟屏与通知授权流程。
 - [HyperOS 系统入口](docs/HYPEROS_SYSTEM_ENTRY.md)：电源键、一圈即搜的适配条件与验证边界。

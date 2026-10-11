@@ -55,7 +55,6 @@ A task can combine these tools: read web sources and then organize files with a 
 - **Personal context:** retrieve notifications, app usage, and location on demand. Dedicated searches for photos, calendar events, SMS messages, recordings, health summaries, and chat images require root; some sources also depend on the ROM and installed apps.
 - **Long-term memory:** store context for future conversations in a local `MEMORY.md`. Core memory is included within a context budget, with the rest retrieved as needed. You can edit, clear, or disable it.
 - **Skills:** load task instructions, reference material, and script resources as needed. Install from public GitHub repositories or import a local ZIP. Installation does not run scripts or grant additional permissions.
-- **Experience learning:** after successful tasks, a separate review can append durable memory and create or update user skills from verified methods. Foreground work takes priority; both learning options can be disabled. See [experience learning](docs/EXPERIENCE_LEARNING.md).
 - **Automation:** ask AI to create time or event rules with local matching, cooldowns, run limits, history, and cancellation. Android background scheduling may delay execution. See [automation](docs/AUTOMATION.md).
 - **Root virtual screen (experimental):** automatically route AI UI tools to a separate display when enabled. Open its interactive viewer from the notification, with touch controls and gesture indicators. An optional fallback setting allows notification requests; only an explicit Allow action authorizes the current task to use the main screen. Requires Android 14+, root, and a user setting; screen-off operation has separate consent and remains unverified. See [virtual screen](docs/VIRTUAL_SCREEN.md).
 - **MCP:** connect remote tools over Streamable HTTP, with optional bearer-token authentication. Enable tools individually to use them alongside local tools.
@@ -175,7 +174,6 @@ These implementation notes are currently in Chinese:
 - [Device support and permissions](docs/ROOTLESS_SUPPORT.md): unrooted and rooted devices, the file workspace, and background execution.
 - [Technical implementation](docs/TECHNICAL.md): system tools, data retrieval, browser, terminal, and system integration.
 - [Agent Runtime](docs/AGENT_RUNTIME.md): the agent loop, providers, steering, transcripts, and result recovery.
-- [Experience learning](docs/EXPERIENCE_LEARNING.md): background review, user skill updates, and permission boundaries.
 - [Automation](docs/AUTOMATION.md): model tools, triggers, rules, and scheduling limits.
 - [Root virtual screen](docs/VIRTUAL_SCREEN.md): the experimental display and notification approval flow.
 - [HyperOS system entry points](docs/HYPEROS_SYSTEM_ENTRY.md): power-button and Circle to Search integration, requirements, and validation coverage.
