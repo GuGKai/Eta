@@ -80,8 +80,6 @@ import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterPersonaScreen
 import io.github.mangi.eta.ui.screens.characters.DefaultAssistantPromptScreen
-import io.github.mangi.eta.ui.screens.notifications.NotificationCenterScreen
-import io.github.mangi.eta.ui.screens.notifications.LearningProposalDetailScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterMemoryScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterPersonaScreen
 import io.github.mangi.eta.ui.screens.enhance.SystemEnhanceScreen
@@ -163,7 +161,6 @@ fun AgentAppRoot(
     }
     val skills = appViewModel.skills
     val memory = appViewModel.memory
-    val notificationCenter = appViewModel.notificationCenter
     val permissionHealth = appViewModel.permissionHealth
     val toolsState = remember { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
@@ -373,8 +370,6 @@ fun AgentAppRoot(
             onOpenTools = { pushRoute(AppRoute.Tools) },
             onOpenSkills = { pushRoute(AppRoute.Skills) },
             onOpenCharacters = { pushRoute(AppRoute.Characters) },
-            onOpenNotifications = { pushRoute(AppRoute.Notifications) },
-            notificationCount = notificationCenter.pendingCount,
             onOpenPermissions = { pushRoute(AppRoute.Permissions) },
             onOpenSettings = { pushRoute(AppRoute.Settings) },
             onOpenRootSettings = { focusManager.clearFocus(); pushRoute(AppRoute.SystemEnhance) },
@@ -546,15 +541,6 @@ fun AgentAppRoot(
                         }
                     },
                 )
-            }
-            entry<AppRoute.Notifications>(swipeDismiss = swipeDismiss) {
-                NotificationCenterScreen(notificationCenter, { pushRoute(AppRoute.LearningProposalDetail(it)) }, ::popRoute)
-            }
-            entry<AppRoute.LearningProposalDetail>(swipeDismiss = swipeDismiss) { route ->
-                LearningProposalDetailScreen(route.proposalId, notificationCenter, { prompt ->
-                    agentState.startLearningRefinement(prompt)
-                    navigator.popToHome()
-                }, ::popRoute)
             }
             entry<AppRoute.Characters>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(backStack.lastOrNull() == AppRoute.Characters) {
