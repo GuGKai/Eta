@@ -175,7 +175,6 @@ internal object SettingsDataStore {
             prefs[VIRTUAL_SCREEN_FALLBACK_ENABLED] = updated.virtualScreenFallbackEnabled
             prefs[VIRTUAL_SCREEN_AUTO_RESTART_APPS] = updated.virtualScreenAutoRestartApps
             prefs[VIRTUAL_SCREEN_IDLE_TIMEOUT] = io.github.mangi.eta.data.model.VirtualScreenIdleTimeout.normalize(updated.virtualScreenIdleTimeoutMinutes)
-            prefs.remove(stringPreferencesKey("vivo_atomic_scene"))
             prefs.putAppearance(updated.appearance.normalized())
         }
     }
