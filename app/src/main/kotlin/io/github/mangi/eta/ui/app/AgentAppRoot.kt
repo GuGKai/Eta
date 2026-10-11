@@ -163,6 +163,7 @@ fun AgentAppRoot(
     val skills = appViewModel.skills
     val memory = appViewModel.memory
     val permissionHealth = appViewModel.permissionHealth
+    val deepSeekBalance = appViewModel.deepSeekBalance
     val toolsState = remember { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
     val communityCatalogStore = viewModel<CommunityCatalogViewModel>().store
@@ -317,9 +318,9 @@ fun AgentAppRoot(
             conversationPaneState = agentState.conversationPaneState,
             isConversationPaneOpen = conversationPaneOpen,
             conversationStatus = {
-                io.github.mangi.eta.ui.components.ConversationStatusCapsules(
-                    agentState.homeState.messages, agentState.modelPickerState.selectedModel,
-                    agentState.homeState.lastModelUsage,
+                io.github.mangi.eta.ui.components.AccountBalanceCapsules(
+                    state = deepSeekBalance.state,
+                    onRefresh = deepSeekBalance::refreshNow,
                 )
             },
             onBack = { popRoute() },
