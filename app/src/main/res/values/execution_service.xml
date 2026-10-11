@@ -12,4 +12,6 @@
     <string name="execution_reply_done_channel">Reply finished</string>
     <string name="execution_reply_done_title">Eta finished replying</string>
     <string name="execution_reply_done_fallback">Tap to view the reply</string>
+    <string name="execution_keepalive_title">Virtual screen kept alive</string>
+    <string name="execution_keepalive_summary">Tap to return to Eta</string>
 </resources>

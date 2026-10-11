@@ -56,4 +56,20 @@ class ExecutionLeaseRegistryTest {
         registry.release("user:daemon")
         assertEquals(1, registry.count())
     }
+
+    @Test
+    fun keepAliveLeaseHoldsForegroundWithoutCountingAsRunningTask() {
+        val registry = ExecutionLeaseRegistry()
+        registry.attachOwner(1)
+        assertTrue(registry.acquire("virtual-screen:1", kind = ExecutionLeaseRegistry.Kind.KEEP_ALIVE) { })
+        // 只剩虚拟屏会话时，前台服务必须活着，但不能报告“有任务在跑”。
+        assertEquals(1, registry.count())
+        assertEquals(0, registry.taskCount())
+        assertFalse(registry.closeOwnerIfIdle(1))
+        assertTrue(registry.acquire("run:1") { })
+        assertEquals(1, registry.taskCount())
+        registry.release("run:1")
+        assertEquals(0, registry.taskCount())
+        assertEquals(1, registry.count())
+    }
 }
