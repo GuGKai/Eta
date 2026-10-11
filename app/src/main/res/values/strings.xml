@@ -1482,8 +1482,6 @@
     <string name="virtual_screen_notification_channel">Virtual screen</string>
     <string name="virtual_screen_notification_title">Virtual screen is active</string>
     <string name="virtual_screen_notification_content">Tap to view and control the current screen</string>
-    <string name="conversation_context_capsule">Context</string>
-    <string name="conversation_speed_description">Last model request: %1$s output tokens per second, including time to first token.</string>
     <string name="virtual_screen_home">Home</string>
     <string name="virtual_screen_menu">Recent apps</string>
     <string name="virtual_screen_home_empty">Apps opened on this screen will appear here.</string>
@@ -1543,6 +1541,10 @@
     <string name="virtual_screen_text_toggle">Text input</string>
     <string name="virtual_screen_text_placeholder">Text</string>
     <string name="virtual_screen_text_insert">Insert text</string>
+    <string name="deepseek_capsule_balance">Balance %1$s</string>
+    <string name="deepseek_capsule_spend">Spent %1$s</string>
+    <string name="deepseek_capsule_description">DeepSeek balance %1$s, spent %2$s. Tap to refresh.</string>
+    <string name="deepseek_capsule_unavailable">DeepSeek balance unavailable. Tap to retry.</string>
     <string name="default_prompt_title">Default assistant prompt</string>
     <string name="default_prompt_summary">Edit the system prompt for regular assistant conversations</string>
     <string name="default_prompt_description">Applies to the next regular assistant request. A provider’s custom prompt takes priority. Character conversations use their character cards. Leave blank or reset to use Eta’s built-in prompt.</string>
