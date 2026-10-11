@@ -1,14 +1,17 @@
 package io.github.mangi.eta.ui.app
 
 /**
- * 「累计消耗」的基线规则：官方没有用量接口，只能用余额减少量近似。
+ * 「累计消费」的记账规则：官方没有用量接口，只能用余额差额推算。
  *
- * - 第一次拿到余额时把当前值记为基线；
- * - 之后 `消耗 = 基线 - 当前余额`；
- * - 余额上升（充值）时把基线抬高到新高点重新起算，保证这个数只增不减；
- * - 基线可以随快照一起持久化，重启后继续沿用。
+ * 记账基线 = **累计消费 + 当前余额**（`spent = 基线 - 余额`）：
+ *
+ * - 首次观测时用 [seedSpent]（平台「累计消费金额」，如 306.56）加当前余额建基线，
+ *   于是显示值一开始就等于平台上的历史累计；
+ * - 之后余额每减少多少，累计就增加多少；
+ * - 余额上升（充值/退款）时把基线抬高等量，**累计不会被清零或倒退**；
+ * - 基线随快照持久化，重启/离线期间充值都能接上。
  */
-internal class DeepSeekSpendTracker {
+internal class DeepSeekSpendTracker(private val seedSpent: () -> Double) {
     data class Sample(
         val baseline: Double,
         val baselineAtMillis: Long,
@@ -28,17 +31,22 @@ internal class DeepSeekSpendTracker {
 
     /** [previousTotal] 是上一次观测到的余额，用于识别充值；首帧传 null。 */
     fun observe(total: Double, now: Long, previousTotal: Double?): Sample {
-        val toppedUp = baseline == null ||
-            (previousTotal != null && total > previousTotal + TOP_UP_EPSILON)
-        if (toppedUp) {
-            baseline = total
-            baselineAtMillis = now
+        val current = baseline
+        val next = when {
+            current == null -> seedSpent() + total
+            previousTotal != null && total > previousTotal + TOP_UP_EPSILON ->
+                current + (total - previousTotal)
+            current < total - TOP_UP_EPSILON -> seedSpent() + total
+            else -> current
         }
-        val sample = baseline ?: total
+        if (next != current) {
+            baseline = next
+            if (current == null) baselineAtMillis = now
+        }
         return Sample(
-            baseline = sample,
+            baseline = next,
             baselineAtMillis = baselineAtMillis ?: now,
-            spent = (sample - total).coerceAtLeast(0.0),
+            spent = (next - total).coerceAtLeast(0.0),
         )
     }
 

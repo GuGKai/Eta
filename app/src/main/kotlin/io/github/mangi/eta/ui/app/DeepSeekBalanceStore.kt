@@ -49,7 +49,10 @@ internal class DeepSeekBalanceStore(
 
     private var job: Job? = null
     private var lastAttemptAt = 0L
-    private val spend = DeepSeekSpendTracker()
+
+    /** 平台「累计消费金额」；未校准或未持久化时用 2026-10-11 的实测值兜底。 */
+    private var seedSpent = DEFAULT_SEED_SPENT
+    private val spend = DeepSeekSpendTracker { seedSpent }
 
     init {
         scope.launch {
@@ -122,6 +125,7 @@ internal class DeepSeekBalanceStore(
         val json = JSONObject()
             .put("currency", state.currency.orEmpty())
             .put("total", state.total ?: JSONObject.NULL)
+            .put("seed", seedSpent)
             .put("baseline", spend.storedBaseline ?: JSONObject.NULL)
             .put("baselineAt", spend.storedBaselineAtMillis ?: 0L)
             .put("fetchedAt", state.fetchedAtMillis ?: 0L)
@@ -133,10 +137,12 @@ internal class DeepSeekBalanceStore(
         runCatching {
             val json = JSONObject(raw)
             val total = json.optDouble("total").takeUnless { it.isNaN() }
+            val storedSeed = json.optDouble("seed").takeUnless { it.isNaN() }
             val storedBaseline = json.optDouble("baseline").takeUnless { it.isNaN() }
             val storedBaselineAt = json.optLong("baselineAt").takeIf { it > 0L }
             val fetchedAt = json.optLong("fetchedAt").takeIf { it > 0L }
             if (total == null) return@runCatching
+            if (storedSeed != null) seedSpent = storedSeed
             spend.restore(storedBaseline, storedBaselineAt)
             state = UiState(
                 configured = true,
@@ -153,6 +159,9 @@ internal class DeepSeekBalanceStore(
 
     private companion object {
         const val DEEPSEEK_HOST = "api.deepseek.com"
+
+        /** 2026-10-11 校准：DeepSeek 平台「累计消费金额」306.56、余额 43.83。 */
+        const val DEFAULT_SEED_SPENT = 306.56
         const val AUTO_INTERVAL_MS = 60_000L
         const val MANUAL_INTERVAL_MS = 5_000L
     }

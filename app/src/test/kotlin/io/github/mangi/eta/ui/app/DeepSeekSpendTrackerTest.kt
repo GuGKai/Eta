@@ -4,45 +4,66 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DeepSeekSpendTrackerTest {
+    private fun tracker(seed: Double = 0.0) = DeepSeekSpendTracker { seed }
+
     @Test
-    fun firstSampleSetsBaselineWithoutSpending() {
-        val tracker = DeepSeekSpendTracker()
-        val sample = tracker.observe(total = 43.83, now = 1_000L, previousTotal = null)
-        assertEquals(43.83, sample.baseline, 0.0001)
+    fun seedMatchesPlatformCumulativeSpendOnFirstSample() {
+        // 平台累计 306.56、当前余额 43.83 → 基线 350.39，显示值应当就是 306.56
+        val spend = tracker(seed = 306.56)
+        val sample = spend.observe(total = 43.83, now = 1_000L, previousTotal = null)
+        assertEquals(350.39, sample.baseline, 0.0001)
+        assertEquals(306.56, sample.spent, 0.0001)
         assertEquals(1_000L, sample.baselineAtMillis)
-        assertEquals(0.0, sample.spent, 0.0001)
     }
 
     @Test
-    fun laterSamplesReportBalanceDropAsSpending() {
-        val tracker = DeepSeekSpendTracker()
-        tracker.observe(total = 43.83, now = 1_000L, previousTotal = null)
-        val sample = tracker.observe(total = 41.20, now = 5_000L, previousTotal = 43.83)
-        assertEquals(43.83, sample.baseline, 0.0001)
-        assertEquals(1_000L, sample.baselineAtMillis)
-        assertEquals(2.63, sample.spent, 0.0001)
+    fun balanceDropAddsToTheCumulativeSpend() {
+        val spend = tracker(seed = 306.56)
+        spend.observe(total = 43.83, now = 1_000L, previousTotal = null)
+        val sample = spend.observe(total = 41.20, now = 5_000L, previousTotal = 43.83)
+        assertEquals(350.39, sample.baseline, 0.0001)
+        assertEquals(309.19, sample.spent, 0.0001)
     }
 
     @Test
-    fun topUpRestartsTheBaseline() {
-        val tracker = DeepSeekSpendTracker()
-        tracker.observe(total = 10.00, now = 1_000L, previousTotal = null)
-        tracker.observe(total = 6.00, now = 2_000L, previousTotal = 10.00)
-        val afterTopUp = tracker.observe(total = 56.00, now = 3_000L, previousTotal = 6.00)
-        assertEquals(56.00, afterTopUp.baseline, 0.0001)
-        assertEquals(3_000L, afterTopUp.baselineAtMillis)
-        assertEquals(0.0, afterTopUp.spent, 0.0001)
-        val later = tracker.observe(total = 51.50, now = 4_000L, previousTotal = 56.00)
-        assertEquals(4.50, later.spent, 0.0001)
+    fun topUpKeepsTheCumulativeSpendGrowing() {
+        val spend = tracker(seed = 306.56)
+        spend.observe(total = 43.83, now = 1_000L, previousTotal = null)
+        spend.observe(total = 41.20, now = 2_000L, previousTotal = 43.83)
+        val afterTopUp = spend.observe(total = 91.20, now = 3_000L, previousTotal = 41.20)
+        assertEquals(400.39, afterTopUp.baseline, 0.0001)
+        assertEquals(309.19, afterTopUp.spent, 0.0001)
+        val later = spend.observe(total = 89.00, now = 4_000L, previousTotal = 91.20)
+        assertEquals(311.39, later.spent, 0.0001)
     }
 
     @Test
-    fun restoredBaselineSurvivesRestart() {
-        val tracker = DeepSeekSpendTracker()
-        tracker.restore(baseline = 100.0, baselineAtMillis = 42L)
-        val sample = tracker.observe(total = 97.5, now = 9_000L, previousTotal = null)
-        assertEquals(100.0, sample.baseline, 0.0001)
+    fun offlineTopUpIsReconciledFromTheCachedBalance() {
+        val spend = tracker(seed = 306.56)
+        spend.observe(total = 43.83, now = 1_000L, previousTotal = null)
+        // 应用关闭期间充值：恢复出的基线仍是旧的，previousTotal 是缓存余额
+        spend.restore(baseline = 350.39, baselineAtMillis = 1_000L)
+        val sample = spend.observe(total = 93.83, now = 9_000L, previousTotal = 43.83)
+        assertEquals(400.39, sample.baseline, 0.0001)
+        assertEquals(306.56, sample.spent, 0.0001)
+    }
+
+    @Test
+    fun restoredSnapshotKeepsCountingWithoutSeed() {
+        val spend = tracker(seed = 306.56)
+        spend.restore(baseline = 400.39, baselineAtMillis = 42L)
+        val sample = spend.observe(total = 97.50, now = 9_000L, previousTotal = null)
+        assertEquals(400.39, sample.baseline, 0.0001)
+        assertEquals(302.89, sample.spent, 0.0001)
         assertEquals(42L, sample.baselineAtMillis)
-        assertEquals(2.5, sample.spent, 0.0001)
+    }
+
+    @Test
+    fun corruptBaselineBelowBalanceIsRebuilt() {
+        val spend = tracker(seed = 306.56)
+        spend.restore(baseline = 10.0, baselineAtMillis = 1L)
+        val sample = spend.observe(total = 43.83, now = 5_000L, previousTotal = null)
+        assertEquals(350.39, sample.baseline, 0.0001)
+        assertEquals(306.56, sample.spent, 0.0001)
     }
 }
