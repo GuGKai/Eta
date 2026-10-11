@@ -1432,8 +1432,6 @@
     <string name="virtual_screen_notification_channel">虛擬螢幕</string>
     <string name="virtual_screen_notification_title">虛擬螢幕正在執行</string>
     <string name="virtual_screen_notification_content">點擊查看並操作虛擬螢幕目前內容</string>
-    <string name="conversation_context_capsule">上下文</string>
-    <string name="conversation_speed_description">最近一次模型請求：平均每秒產生 %1$s 個輸出 token，包含首字等待時間。</string>
     <string name="virtual_screen_home">主頁</string>
     <string name="virtual_screen_menu">應用選單</string>
     <string name="virtual_screen_home_empty">這塊虛擬螢幕上開啟的應用程式會顯示在這裡。</string>
@@ -1493,6 +1491,10 @@
     <string name="virtual_screen_text_toggle">文字輸入</string>
     <string name="virtual_screen_text_placeholder">輸入文字</string>
     <string name="virtual_screen_text_insert">插入文字</string>
+    <string name="deepseek_capsule_balance">餘額 %1$s</string>
+    <string name="deepseek_capsule_spend">累計 %1$s</string>
+    <string name="deepseek_capsule_description">DeepSeek 餘額 %1$s，累計消耗 %2$s；點擊重新整理</string>
+    <string name="deepseek_capsule_unavailable">DeepSeek 餘額暫不可用，點擊重試</string>
     <string name="default_prompt_title">預設助手提示詞</string>
     <string name="default_prompt_summary">編輯一般助手對話的預設系統提示詞</string>
     <string name="default_prompt_description">儲存後從下一次一般助手請求生效。供應商單獨設定的提示詞優先，角色對話使用角色卡。留空或還原預設可使用 Eta 內建提示詞。</string>

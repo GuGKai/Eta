@@ -48,6 +48,7 @@ internal object SettingsDataStore {
 
     private val SELECTED_PROVIDER_ID = stringPreferencesKey("selected_provider_id")
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
+    private val DEEPSEEK_BALANCE = stringPreferencesKey("deepseek_balance_snapshot_v1")
     private val DEFAULT_ASSISTANT_SYSTEM_PROMPT = stringPreferencesKey("default_assistant_system_prompt")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
@@ -110,6 +111,19 @@ internal object SettingsDataStore {
         ensureInitialized()
         dataStore.edit { preferences ->
             preferences[OFFICIAL_MODEL_CATALOG_REVISION] = revision
+        }
+    }
+
+    /** 顶栏 DeepSeek 余额胶囊的快照（余额 + 基线 + 抓取时间）。 */
+    suspend fun deepSeekBalanceJson(): String? {
+        ensureInitialized()
+        return dataStore.data.first()[DEEPSEEK_BALANCE]
+    }
+
+    suspend fun setDeepSeekBalanceJson(value: String) {
+        ensureInitialized()
+        dataStore.edit { preferences ->
+            preferences[DEEPSEEK_BALANCE] = value
         }
     }
 
