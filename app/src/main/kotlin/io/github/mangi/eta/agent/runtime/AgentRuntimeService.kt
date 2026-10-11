@@ -402,7 +402,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             sendResultTo(replyTo, AgentRuntimeWire.RunResult(request.runId, false, "", "AUTOMATION_RUNTIME_BUSY"))
             return
         }
-        val reviewGeneration = AgentExperienceReview.foregroundStarted()
         activeSession?.controller?.cancel()
         val session = AgentRuntimeSession(
             runId = request.runId,
@@ -479,7 +478,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         thread(name = "agent-runtime") {
             try {
-                executeRun(session, request, reviewGeneration)
+                executeRun(session, request)
             } finally {
                 AgentExecutionService.updateRunStatus(this, null)
                 AgentExecutionService.release("run:${request.runId}")
@@ -490,11 +489,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun executeRun(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
-        reviewGeneration: Long,
     ) {
         val outcome = AgentRuntimeRunExecutor(
             context = this,
-            reviewGeneration = reviewGeneration,
             currentPermissions = ::currentRuntimePermissions,
             snapshotRequest = { it.withActiveSupplements() },
             onAcceptedEvent = { event, entrySurfaceGuard ->

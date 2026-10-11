@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.app
 
 import android.content.Context
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +31,7 @@ internal object AgentConversationLoader {
     fun start(context: Context, assistantConversationKey: String? = null) {
         val preferredId = assistantConversationKey
             ?.takeIf(String::isNotBlank)
-            ?.let { archiveConversationId(AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE, it) }
+            ?.let { AgentExternalArchivePayload.conversationId(AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE, it) }
         synchronized(lock) {
             if (job != null || cached != null) return
             val appContext = context.applicationContext
