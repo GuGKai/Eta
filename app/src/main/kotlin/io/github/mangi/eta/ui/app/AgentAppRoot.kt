@@ -300,6 +300,7 @@ fun AgentAppRoot(
                 io.github.mangi.eta.ui.components.AccountBalanceCapsules(
                     state = deepSeekBalance.state,
                     onRefresh = deepSeekBalance::refreshNow,
+                    onReseed = deepSeekBalance::reseed,
                 )
             },
             onBack = { popRoute() },
