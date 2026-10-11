@@ -8,7 +8,7 @@ class ModuleConfigEntryPackagesTest {
     @Test
     fun runtimeOnlyTrustsTheKnownAssistantEntryPackages() {
         assertEquals(
-            setOf("com.heytap.speechassist", "com.miui.voiceassist", "com.vivo.ai.copilot"),
+            setOf("com.heytap.speechassist", "com.miui.voiceassist"),
             ModuleConfig.AGENT_RUNTIME_ENTRY_PACKAGES,
         )
         assertTrue(ModuleConfig.XIAOAI_CORE_PROCESS.endsWith(":core"))

@@ -97,7 +97,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val mainHandler = Handler(Looper.getMainLooper())
     private val resultIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "agent-result-io") }
     private val serviceMessenger = Messenger(IncomingHandler())
-    private lateinit var islandBridge: AgentRuntimeIslandBridge
 
     private val runs = RuntimeRunRegistry()
     private val guiControl = GuiControlCoordinator()
@@ -152,7 +151,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onCreate() {
         super.onCreate()
-        islandBridge = AgentRuntimeIslandBridge(this, AndroidAgentLogger, ::cancelRun)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)

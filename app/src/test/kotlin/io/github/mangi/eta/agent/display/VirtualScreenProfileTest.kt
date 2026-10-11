@@ -7,7 +7,7 @@ import org.junit.Test
 
 class VirtualScreenProfileTest {
     @Test
-    fun vivoPhoneUsesNativeResolutionAspectRatioAndDensity() {
+    fun nativeResolutionKeepsAspectRatioAndDensity() {
         assertEquals(VirtualScreenProfile(1216, 2640, 560), VirtualScreenProfile.fit(1216, 2640, 560))
     }
 
