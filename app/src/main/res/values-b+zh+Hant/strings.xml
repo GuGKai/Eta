@@ -1499,6 +1499,10 @@
     <string name="deepseek_capsule_spend">累計 %1$s</string>
     <string name="deepseek_capsule_description">DeepSeek 餘額 %1$s，累計消耗 %2$s；點擊重新整理</string>
     <string name="deepseek_capsule_unavailable">DeepSeek 餘額暫不可用，點擊重試</string>
+    <string name="deepseek_capsule_reseed_hint">長按可校準累計消費</string>
+    <string name="deepseek_seed_title">校準累計消費</string>
+    <string name="deepseek_seed_summary">填入 DeepSeek 平台上的「累計消費金額」。目前餘額 %1$s；之後餘額每減少一點這個數就增加一點，儲值不會讓它歸零。</string>
+    <string name="deepseek_seed_hint">例如 306.56</string>
     <string name="default_prompt_title">預設助手提示詞</string>
     <string name="default_prompt_summary">編輯一般助手對話的預設系統提示詞</string>
     <string name="default_prompt_description">儲存後從下一次一般助手請求生效。供應商單獨設定的提示詞優先，角色對話使用角色卡。留空或還原預設可使用 Eta 內建提示詞。</string>
