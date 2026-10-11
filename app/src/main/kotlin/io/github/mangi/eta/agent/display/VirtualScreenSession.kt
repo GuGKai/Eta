@@ -223,7 +223,12 @@ internal object VirtualScreenSession {
                     runCatching { process.waitFor() }
                     current.close()
                 }.apply { name = "eta-display-exit"; isDaemon = true; start() }
-                if (!AgentExecutionService.acquire(context, "virtual-screen-${current.id}", onStop = current::close)) {
+                if (!AgentExecutionService.acquire(
+                        context,
+                        "virtual-screen-${current.id}",
+                        kind = io.github.mangi.eta.agent.runtime.ExecutionLeaseRegistry.Kind.KEEP_ALIVE,
+                        onStop = current::close,
+                    )) {
                     current.close(); error("DISPLAY_LIFECYCLE_UNAVAILABLE")
                 }
                 if (isCancelled() || current.closed.get()) {
