@@ -11,4 +11,6 @@
     <string name="execution_reply_done_channel">回复完成提醒</string>
     <string name="execution_reply_done_title">Eta 已完成回复</string>
     <string name="execution_reply_done_fallback">点击查看回复</string>
+    <string name="execution_keepalive_title">虚拟屏保持中</string>
+    <string name="execution_keepalive_summary">点按返回 Eta 对话</string>
 </resources>

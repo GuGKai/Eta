@@ -121,7 +121,14 @@ internal class AgentExecutionService : Service() {
     private fun renderedText(): RenderedText {
         val status = runStatus
         if (status == null) {
-            val taskCount = leases.count()
+            val taskCount = leases.taskCount()
+            if (taskCount == 0) {
+                // 只剩虚拟屏会话这类保活租约：前台通知必须存在，但不能说成“任务正在运行”。
+                return RenderedText(
+                    title = getString(R.string.execution_keepalive_title),
+                    text = getString(R.string.execution_keepalive_summary),
+                )
+            }
             return RenderedText(
                 title = getString(R.string.execution_title),
                 text = resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount),
@@ -175,8 +182,12 @@ internal class AgentExecutionService : Service() {
 
     private fun notification(content: RenderedText): Notification {
         val status = runStatus
+        // 只有 Agent run 正在跑时才指向虚拟屏查看页；任务跑完或只剩保活会话时指向对话界面，
+        // 否则用户点通知会先落在查看页、还要按返回才回到对话。
+        val openVirtualScreen =
+            runStatus != null && io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, if (io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()) io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java else MainActivity::class.java),
+            this, 0, Intent(this, if (openVirtualScreen) io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java else MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(
@@ -263,10 +274,11 @@ internal class AgentExecutionService : Service() {
             context: Context,
             id: String,
             allowBoundFallback: Boolean = false,
+            kind: ExecutionLeaseRegistry.Kind = ExecutionLeaseRegistry.Kind.TASK,
             onStop: () -> Unit,
         ): Boolean {
             if (instance?.startRejected == true) return false
-            if (!leases.acquire(id, allowBoundFallback, onStop)) return true
+            if (!leases.acquire(id, kind, allowBoundFallback, onStop)) return true
             return try {
                 context.applicationContext.startForegroundService(Intent(context, AgentExecutionService::class.java))
                 true
