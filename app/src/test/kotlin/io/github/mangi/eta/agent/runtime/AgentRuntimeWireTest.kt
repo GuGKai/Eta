@@ -66,15 +66,16 @@ class AgentRuntimeWireTest {
     }
 
     @Test
-    fun vivoAndImportedEtaTurnsShareTheVirtualDisplayOwner() {
-        val handoff = io.github.mangi.eta.hook.vivo.VivoHandoff.create("one", "trace", "request", "session", "操作应用")
+    fun importedTurnsShareTheVirtualDisplayOwner() {
         val config = AgentModelClient.ModelConfig(baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = "")
-        val vivo = AgentRuntimeWire.RunRequest("one", "操作应用", config, emptyList(), handoff = handoff)
-        val id = AgentExternalArchivePayload.conversationId("vivo", "session")
-        val eta = vivo.copy(runId = "two", handoff = AgentRuntimeWire.EntryHandoff("two", AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE, id))
-        assertEquals(id, vivo.virtualScreenOwner)
-        assertEquals(vivo.virtualScreenOwner, eta.virtualScreenOwner)
-        assertEquals(id, eta.copy(runId = "three").virtualScreenOwner)
+        val payload = AgentExternalArchivePayload("操作应用", "session", "操作应用").toJson()
+        val id = AgentExternalArchivePayload.conversationId(AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE, "session")
+        val imported = AgentRuntimeWire.RunRequest(
+            "one", "操作应用", config, emptyList(),
+            handoff = AgentRuntimeWire.EntryHandoff("one", AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE, payload),
+        )
+        assertEquals(id, imported.virtualScreenOwner)
+        assertEquals(id, imported.copy(runId = "three").virtualScreenOwner)
     }
 
     @Test

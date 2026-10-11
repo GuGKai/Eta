@@ -19,7 +19,6 @@ import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.agent.display.VirtualScreenViewerActivity
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
-import io.github.mangi.eta.hook.vivo.VivoHandoff
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.ui.app.AgentAppRoot
@@ -114,7 +113,7 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == ACTION_VIEW_EXECUTION) {
             assistantConversationSource = intent.getStringExtra(EXTRA_EXECUTION_SOURCE)
                 ?.takeIf { it in setOf(
-                    VivoHandoff.SOURCE, AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+                    AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
                     AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE, "automation",
                 ) } ?: AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE
             assistantConversationKey = intent.getStringExtra(

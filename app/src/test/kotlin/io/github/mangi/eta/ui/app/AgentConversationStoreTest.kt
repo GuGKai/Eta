@@ -437,8 +437,8 @@ class AgentConversationStoreTest {
     }
 
     @Test
-    fun vivoArchiveContinuesInTheSameConversationWithRecoveredUserHistoryAndSavedSpeed() = runBlocking {
-        val id = io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload.conversationId("vivo", "session")
+    fun externalArchiveContinuesInTheSameConversationWithRecoveredUserHistoryAndSavedSpeed() = runBlocking {
+        val id = io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload.conversationId("breeno", "session")
         val usage = TokenUsageUi(contextTokens = 1200, outputTokens = 80, requestDurationMs = 2000)
         val answer = AgentModelClient.ConversationMessage(role = "assistant", content = "记住了", messageId = "assistant-old-run-1")
         val old = AgentChatHomeUiState(
