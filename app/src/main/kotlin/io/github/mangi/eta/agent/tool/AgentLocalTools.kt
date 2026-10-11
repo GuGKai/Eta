@@ -114,7 +114,6 @@ internal class AgentLocalTools(
     private val guiControl: GuiControlCoordinator.RunControl? = null,
     browserSession: AgentBrowserSession? = null,
     private val skillAuthoringService: SkillAuthoringService? = null,
-    private val learningProposalWriter: ((String, JSONObject) -> JSONObject)? = null,
     private val virtualScreenSettings: () -> Settings = { runBlocking { SettingsDataStore.settings() } },
     private val virtualUiExecutor: ((String, JSONObject) -> AgentModelClient.ToolResult)? = null,
     private val fallbackApproval: ((String, String) -> MainScreenFallbackDecision)? = null,
@@ -336,7 +335,7 @@ internal class AgentLocalTools(
                 })
                 in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
                 "memory_get" -> textResult(memoryGet(args))
-                "memory_write" -> textResult(learningProposalWriter?.invoke("memory_write", args)?.toString() ?: memoryWrite(args))
+                "memory_write" -> textResult(memoryWrite(args))
                 "skills_list" -> textResult(skillsList(args))
                 "skills_manage" -> textResult(skillsManage(args))
                 "skills_read" -> textResult(skillsRead(args))
@@ -1075,7 +1074,6 @@ internal class AgentLocalTools(
     private fun skillsManage(args: JSONObject): String {
         if (!memoryWritable) return errorResult("SKILL_READ_ONLY", "角色会话不能改写公共技能")
         if (skillTreeMutationUncertain.get()) return nextTurnRequired("Skill 树")
-        learningProposalWriter?.let { return it("skills_manage", args).toString() }
         val service = skillAuthoringService ?: return errorResult("SKILLS_UNAVAILABLE", "技能编写服务未初始化")
         val result = service.manage(args) { closed.get() }
         if (result.optBoolean("ok")) mutatedSkillIds += SkillParser.normalizeSkillLookup(result.getString("skillId"))

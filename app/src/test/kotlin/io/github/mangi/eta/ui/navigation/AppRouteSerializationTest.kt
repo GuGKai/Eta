@@ -29,8 +29,6 @@ class AppRouteSerializationTest {
             AppRoute.Subagents,
             AppRoute.Characters,
             AppRoute.DefaultAssistantPrompt,
-            AppRoute.Notifications,
-            AppRoute.LearningProposalDetail("proposal"),
             AppRoute.CharacterDetail("character"),
             AppRoute.CharacterEditor(),
             AppRoute.CharacterEditor("character"),
