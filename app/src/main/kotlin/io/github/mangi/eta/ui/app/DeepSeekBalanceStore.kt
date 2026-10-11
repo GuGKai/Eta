@@ -52,6 +52,7 @@ internal class DeepSeekBalanceStore(
 
     /** 平台「累计消费金额」；未校准或未持久化时用 2026-10-11 的实测值兜底。 */
     private var seedSpent = DEFAULT_SEED_SPENT
+    private var pendingSeed: Double? = null
     private val spend = DeepSeekSpendTracker { seedSpent }
 
     init {
@@ -66,6 +67,16 @@ internal class DeepSeekBalanceStore(
 
     /** 手动刷新（点击胶囊），最短间隔 [MANUAL_INTERVAL_MS]。 */
     fun refreshNow() = request(force = true)
+
+    /** 长按校准：把累计改成平台上的数字，随后立即按新余额重建基线。 */
+    fun reseed(cumulativeSpent: Double) {
+        val value = cumulativeSpent.coerceAtLeast(0.0)
+        seedSpent = value
+        pendingSeed = value
+        state = state.copy(spent = value)
+        scope.launch { persist() }
+        request(force = true)
+    }
 
     private fun request(force: Boolean) {
         val now = System.currentTimeMillis()
@@ -92,6 +103,11 @@ internal class DeepSeekBalanceStore(
 
     private fun apply(balance: DeepSeekBalanceClient.Balance) {
         val now = System.currentTimeMillis()
+        if (pendingSeed != null) {
+            // 刚校准过：丢掉旧基线，用这次拿到的余额重建
+            spend.restore(baseline = null, baselineAtMillis = null)
+            pendingSeed = null
+        }
         val sample = spend.observe(
             total = balance.total,
             now = now,
