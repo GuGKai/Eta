@@ -1,14 +1,55 @@
 # Eta 本地改动清单（fork: GuGKai/Eta）
 
-- 上游基线：**v3.3.0**（`Mangi-11/Eta` @ `4d760b8`，2026-10-07 合并）
+- 上游基线：**v3.3.0**（`Mangi-11/Eta` @ `4d760b8`，2026-10-07 合并；2026-10-11 快进到 `9de3a3f`）
 - 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
-- 最后更新：2026-10-07
-- 出包版本：versionCode `2026100708`，versionName 跟随上游 `3.3.0`
+- 最后更新：2026-10-11
+- 出包版本：versionCode `2026101101`，versionName `3.3.1-beta.1`（未出包，待验证后定）
 - 本次同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（同步前的 `feat/local`＝`e61cce4`，按用户要求长期保留）
+- 本次合并备份分支：`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
 
 > 本文件记录 fork 相对上游原版的全部改动。上游每发新版、本地提交重放（rebase）之后
 > 提交号会变化，**请以「提交标题」为准**；SHA 只对应当前基线。
 > 自查：`git log --oneline main..HEAD`、`git diff --stat main..HEAD`
+
+## 零之二、PR #142 部分合并（2026-10-11，分支 `feat/pr142-merge`）
+
+来源：`Mangi-11/Eta` PR #142（`lejw0925:feat/virtual-screen-automation-vivo`，head `716caf0`，38 提交，
++22180/−607、288 文件）。**只取三块功能**，其余（vivo 接管、经验学习/审批、批量执行）不纳入或已剔除：
+
+| 纳入 | 说明 |
+|---|---|
+| Root 虚拟屏 | 新增 `agent/display/` 整包（会话、截图、输入注入、查看页、悬浮预览、模式徽标），UI 工具按 display 路由；需 Root + Android 14+，opt-in |
+| 自动任务 | 新增 `agent/automation/`（Room 表 `agent_tasks`/`agent_task_runs`、AlarmManager/JobScheduler、触发器、运行历史）+ 侧栏「任务」入口 |
+| 实时插话 | `AgentLoop` 中断与跳过未开始动作、输入框插话/停止按钮、`LaunchedEffect(input)` 延迟回填 |
+
+剔除/未纳入：
+
+- **经验学习与通知中心**（PR 的 #106）：删除 `LearningProposal*`、`AgentExperienceReview`、
+  `NotificationCenterStore/Screen`、`AppRoute.Notifications`/`LearningProposalDetail`、侧栏通知计数、
+  `LearningProposalRepositoryTest`/`ExperienceReviewPolicyTest`；`memory_write`/`skills_manage` 恢复直写。
+- **vivo 接管 / 小 V 原子岛 / 原子笔记上下文**：暂未剔除（代码在，`isVivoDevice()` 门控，本机不生效）。
+- **批量执行**（`AgentToolBatchPlanner` 等）：随 GUI 效率改动一并保留，未单独接入说明。
+
+冲突取舍（12 处）：
+
+| 文件 | 取舍 |
+|---|---|
+| 侧栏 `ConversationPanePanel` | 保留本地设计（置顶折叠、分组标题、底部 Dock、精简输入栏），补入 PR 的模式徽标 + 「任务」入口 |
+| `AgentChatInputBar` | 保留本地的聚焦/退后台清焦点效果，补入 PR 的插话停止按钮；**不恢复**语音/模型按钮（本地补丁 #21） |
+| `AgentAppShell` | 新建对话按钮（本地）与运行状态胶囊（PR）并存 |
+| `AgentExecutionService` | 保留本地通知样式（去重/节流/固定 when） |
+| `*ConversationPersistence/Store/Dao/Entities` | `pinned`（本地）与 `lastModelUsage`/`request_duration_ms`（PR）并存 |
+| `AgentAppState` | 归档会话 id 改用 `AgentExternalArchivePayload.conversationId`（与本地 private 实现语义一致，去重） |
+
+**数据库升到 v28**（本地 23 保持不变，PR 的迁移重排到其后）：
+
+```
+21→22 model_id（上游）       22→23 pinned + model_id（本地，逐列判断）
+23→24 agent_tasks/agent_task_runs 表        24→25 conversation_messages.request_duration_ms
+25→26 conversations.last_model_usage_json   26→27 runtime_results/archive_runs.error_code
+27→28 兼容装过 PR 自带包（3.3.1-beta，user_version=27）的库：逐列/逐表补齐 pinned、model_id、
+      last_model_usage_json、request_duration_ms、error_code、自动任务表
+```
 
 ## 零、本次同步（2026-10-07，上游 3.2.0 → 3.3.0）
 
