@@ -2,8 +2,8 @@
 
 - 上游基线：**v3.3.0**（`Mangi-11/Eta` @ `4d760b8`，2026-10-07 合并；2026-10-11 快进到 `9de3a3f`）
 - 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
-- 最后更新：2026-10-11
-- 出包版本：versionCode `2026101101`，versionName `3.3.1-beta.1`（未出包，待验证后定）
+- 最后更新：2026-10-12
+- 出包版本：versionCode `2026101201`，versionName `3.3.1-beta.1`（2026-10-12 出包：虚拟屏通知语义修正，产物 `/workspace/eta-3.3.1-beta.1-2026101201-dispnotify.apk`，待装机验证）
 - 本次同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（同步前的 `feat/local`＝`e61cce4`，按用户要求长期保留）
 - 本次合并备份分支：`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
 
@@ -120,6 +120,7 @@
 | 27 | 流体云门槛放宽 | `fix(notification): 流体云/Live Update 门槛从 36.1 放宽到 36.0` | 上游用 `SDK_INT_FULL >= VERSION_CODES_FULL.BAKLAVA_1`（3600001）判断，本机 `ro.build.version.sdk_full=36.0`（3600000）恒假 → 永不申请 promoted。收紧到 `BAKLAVA`（3600000） |
 | 28 | 执行通知恢复 fork 旧样式 | `feat(notification): 执行通知恢复「当前环节 + 已完成 N 个步骤」样式` | 上游 3.3.0 覆盖后重做：`AgentOverlayState` 增加 `completedSteps`（`ToolFinished`/`HostedToolFinished` +1、`RunStarted` 归零）；`AgentExecutionService` 标题改为当前环节名（工具本地化名，其余状态用各自文案，不再加 `ETA 👉` 前缀）、正文改为 `work_completed_steps`（已完成 N 个步骤）、小图标改回应用彩色图标、去掉 `ProgressStyle` 进度条、`setShortCriticalText` 取环节名限 4 字；`updateRunStatus` 多带步数，按「状态+步数」变化刷新 |
 | 29 | 通知去重 + 节流 + 固定时间戳 | `fix(notification): 执行通知去重与节流，缓解流体云胶囊闪跳` | 实测 SystemUI 把每次通知更新都当一次流体云"发布"交给插件重建（`notifyLiveAlerts: PostAction` + `NotificationLiveAlertProvider-->post sbn`），而一次工具调用会产生 3–4 次刷新。改为 `renderedText()` 比对去重、距上次发布 <400ms 合并成尾发（`MIN_PUBLISH_INTERVAL_MS`），`when` 固定为前台期起点并 `setShowWhen(false)`，停止按钮文案改「停止任务」 |
+| 30 | 虚拟屏会话通知语义修正 | `fix(notification): 虚拟屏会话不再冒充运行中的任务，通知点击直达对话` | ① `ExecutionLeaseRegistry` 加租约类型（`TASK`／`KEEP_ALIVE`）与 `taskCount()`：虚拟屏会话登记为保活租约，前台服务继续保活，但不再计入“N 项任务正在运行”；② `AgentExecutionService.renderedText()` 在只剩保活租约时改用新文案「虚拟屏保持中／点按返回 Eta 对话」（`execution_keepalive_title`／`execution_keepalive_summary`，三语）；③ 同处 `notification()` 的 contentIntent 改为只在有 Agent run 时指向 `VirtualScreenViewerActivity`，任务跑完或空闲会话指回 `MainActivity`，不再“按返回才回到对话”；④ `AppForegroundState` 只统计默认 display 上 started 的 Activity：虚拟屏 display 上的 `VirtualScreenHomeActivity`／查看页此前让 `hasVisibleSurface` 恒为真，导致 `notifyReplyCompleted` 把「Eta 已完成回复」通知静默丢弃 |
 | 27 | 工作分支统一 | `chore(sync): 工作分支统一为 feat/system-tts` | `feat/raise-backup-limit`、`fix/agent-overlay-glow-corner` 改名 `archive/*` 归档，脚本不再重放 |
 | 28 | 工作分支更名 | `chore(sync): 工作分支更名为 feat/local` | `feat/system-tts` → `feat/local`，脚本 `WORK_BRANCH` 默认值同步更新 |
 | 29 | 改动清单 | `docs: 新增本地改动清单` | 即本文件 |
