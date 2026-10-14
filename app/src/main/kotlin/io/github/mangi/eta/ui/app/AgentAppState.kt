@@ -39,6 +39,9 @@ import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.data.datastore.ConversationWorkspaceRecord
+import io.github.mangi.eta.data.datastore.ConversationWorkspaceState
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
@@ -55,6 +58,7 @@ import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.ConversationModeUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.ConversationWorkspaceUi
 import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
@@ -130,6 +134,12 @@ internal class AgentAppState(
     private var conversationUpdatedAt: Map<String, Long> = initialSnapshot.updatedAt
     private var conversationPinned: Set<String> = initialSnapshot.pinned
 
+    /** 侧栏工作区（会话文件夹）：列表即展示顺序，折叠状态随之持久化。 */
+    private var workspaceRecords: List<ConversationWorkspaceRecord> = emptyList()
+
+    /** 会话 → 工作区归属；没有键的会话不在任何工作区里。 */
+    private var workspaceAssignments: Map<String, String> = emptyMap()
+
     /** 上下文（history/journal）仍待补解的会话；补解前不得写回 checkpoint。 */
     private var deferredContextIds: Set<String> = initialSnapshot.deferredContextIds
     private val contextLoadMutex = Mutex()
@@ -160,6 +170,11 @@ internal class AgentAppState(
     init {
         refreshConversationSummaries()
         observeRuntimeSelection()
+        scope.launch {
+            // 工作区与设置同库（DataStore），与会话库解耦：读不到就按空处理，不影响会话加载。
+            val workspaceState = runCatching { SettingsDataStore.conversationWorkspaces() }.getOrNull()
+            if (workspaceState != null) applyWorkspaceState(workspaceState)
+        }
         if (!conversationsLoadedFromDisk) {
             scope.launch { loadConversationsFromDiskAndApply() }
         }
@@ -876,6 +891,10 @@ internal class AgentAppState(
         conversationTitles = conversationTitles - conversationId
         conversationUpdatedAt = conversationUpdatedAt - conversationId
         conversationPinned = conversationPinned - conversationId
+        if (workspaceAssignments.containsKey(conversationId)) {
+            workspaceAssignments = workspaceAssignments - conversationId
+            persistWorkspaces()
+        }
         if (wasSelected) {
             fileAttachmentOwnerVersion += 1
             val nextId = conversationsById.keys.firstOrNull()
@@ -909,6 +928,73 @@ internal class AgentAppState(
         conversationPinned = updated
         refreshConversationSummaries()
         persistConversations()
+    }
+
+    /** 新建工作区（会话文件夹）。name 为空时用「工作区 N」兜底，返回新 id。 */
+    fun createWorkspace(name: String? = null): String {
+        val id = UUID.randomUUID().toString()
+        val resolved = name?.trim().orEmpty().ifBlank {
+            appContext.getString(R.string.workspace_default_name, workspaceRecords.size + 1)
+        }
+        workspaceRecords = workspaceRecords + ConversationWorkspaceRecord(id = id, name = resolved)
+        persistWorkspaces()
+        refreshConversationSummaries()
+        return id
+    }
+
+    fun renameWorkspace(workspaceId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val index = workspaceRecords.indexOfFirst { it.id == workspaceId }
+        if (index < 0 || workspaceRecords[index].name == trimmed) return
+        workspaceRecords = workspaceRecords.toMutableList().also { it[index] = it[index].copy(name = trimmed) }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 删除工作区只删文件夹本身，里面的会话回到普通列表，不会被一并删除。 */
+    fun deleteWorkspace(workspaceId: String) {
+        if (workspaceRecords.none { it.id == workspaceId }) return
+        workspaceRecords = workspaceRecords.filterNot { it.id == workspaceId }
+        workspaceAssignments = workspaceAssignments.filterValues { it != workspaceId }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    fun setWorkspaceCollapsed(workspaceId: String, collapsed: Boolean) {
+        val index = workspaceRecords.indexOfFirst { it.id == workspaceId }
+        if (index < 0 || workspaceRecords[index].collapsed == collapsed) return
+        workspaceRecords = workspaceRecords.toMutableList().also { it[index] = it[index].copy(collapsed = collapsed) }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 把会话放进工作区；workspaceId 为空表示移出工作区。 */
+    fun moveConversationToWorkspace(conversationId: String, workspaceId: String?) {
+        if (!conversationsById.containsKey(conversationId)) return
+        val target = workspaceId?.takeIf { candidate -> workspaceRecords.any { it.id == candidate } }
+        val updated = if (target == null) {
+            workspaceAssignments - conversationId
+        } else {
+            workspaceAssignments + (conversationId to target)
+        }
+        if (updated == workspaceAssignments) return
+        workspaceAssignments = updated
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    private fun applyWorkspaceState(state: ConversationWorkspaceState) {
+        workspaceRecords = state.workspaces
+        workspaceAssignments = state.assignments
+        refreshConversationSummaries()
+    }
+
+    private fun persistWorkspaces() {
+        val state = ConversationWorkspaceState(workspaces = workspaceRecords, assignments = workspaceAssignments)
+        scope.launch(Dispatchers.IO) {
+            runCatching { SettingsDataStore.setConversationWorkspaces(state) }
+        }
     }
 
     fun exportConversationMarkdown(conversationId: String): String? {
@@ -1975,23 +2061,48 @@ internal class AgentAppState(
                     characterAvatarPath = state.roleplay?.avatarPath,
                     isActiveRun = state.isStreaming,
                     isPinned = id in conversationPinned,
+                    workspaceId = workspaceAssignments[id]
+                        ?.takeIf { target -> workspaceRecords.any { it.id == target } },
                 )
             }
             .sortedByDescending { it.isPinned }
         val query = conversationPaneState.searchQuery.trim()
+        val buckets = summaries.groupForWorkspaces()
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = selectedConversationId,
             conversations = if (query.isBlank()) {
-                summaries
+                buckets.loose
             } else {
                 contentMatchCache.keys.retainAll(conversationsById.keys)
-                summaries.filter { summary ->
+                buckets.loose.filter { summary ->
                     summary.title.contains(query, ignoreCase = true) ||
                         summary.preview.contains(query, ignoreCase = true) ||
                         conversationContentMatches(summary.id, query)
                 }
             },
+            // 搜索时把结果平铺出来，避免命中项被折叠在文件夹里看不见。
+            workspaces = if (query.isBlank()) buckets.workspaces else emptyList(),
         )
+    }
+
+    private data class WorkspaceBuckets(
+        val workspaces: List<ConversationWorkspaceUi>,
+        val loose: List<ConversationSummaryUi>,
+    )
+
+    /** 按工作区归拢摘要：已归入工作区的会话只在文件夹里出现，不在下方分组里重复。 */
+    private fun List<ConversationSummaryUi>.groupForWorkspaces(): WorkspaceBuckets {
+        if (workspaceRecords.isEmpty()) return WorkspaceBuckets(emptyList(), this)
+        val byWorkspace = groupBy { it.workspaceId }
+        val workspaces = workspaceRecords.map { record ->
+            ConversationWorkspaceUi(
+                id = record.id,
+                name = record.name,
+                collapsed = record.collapsed,
+                conversations = byWorkspace[record.id].orEmpty(),
+            )
+        }
+        return WorkspaceBuckets(workspaces = workspaces, loose = filter { it.workspaceId == null })
     }
 
     // 内容匹配按（查询词, 会话状态引用）缓存：刷新摘要时未变化的会话不重复全文扫描。

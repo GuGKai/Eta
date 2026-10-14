@@ -1451,8 +1451,6 @@
     <string name="sidebar_skills">技能</string>
     <string name="sidebar_characters">角色</string>
     <string name="sidebar_permissions">權限</string>
-    <string name="sidebar_more_expanded">已展開</string>
-    <string name="sidebar_more_collapsed">已收起</string>
     <string name="automation_triggers_title">觸發器</string>
     <string name="automation_triggers_count">%1$d / %2$d 可用 · 點擊查看條件</string>
     <string name="automation_triggers_time">時間計畫</string>
@@ -1558,4 +1556,22 @@
   <string name="memory_discard">放棄</string>
   <string name="chat_character_input_hint">對%1$s說點什麼…</string>
   <string name="chat_character_typing">%1$s 正在回覆…</string>
+
+  <!-- 側欄工作區（對話資料夾） -->
+  <string name="workspace_section_title">工作區</string>
+  <string name="workspace_default_name">工作區 %1$d</string>
+  <string name="workspace_empty_hint">還沒有工作區，點右側加號新增一個。</string>
+  <string name="workspace_create_title">新增工作區</string>
+  <string name="workspace_name_hint">工作區名稱</string>
+  <string name="workspace_delete_title">刪除工作區</string>
+  <string name="workspace_delete_message">刪除「%1$s」？裡面的對話會回到一般列表。</string>
+  <string name="workspace_move_title">移動到工作區</string>
+  <string name="workspace_move_empty">還沒有工作區。</string>
+  <string name="workspace_expand">展開工作區</string>
+  <string name="workspace_collapse">收合工作區</string>
+  <string name="action_create_workspace">新增工作區</string>
+  <string name="action_rename_workspace">重新命名工作區</string>
+  <string name="action_delete_workspace">刪除工作區</string>
+  <string name="action_move_to_workspace">移動到工作區</string>
+  <string name="action_remove_from_workspace">移出工作區</string>
 </resources>
