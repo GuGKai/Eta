@@ -3,9 +3,32 @@
 - 上游基线：**v3.3.1**（`Mangi-11/Eta` @ `213e8ed`，2026-10-14 合并；`v3.3.1` 标签指向 `a7fdfc2`）
 - 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
 - 最后更新：2026-10-14
-- 出包版本：versionCode `2026101404`，versionName `3.3.1`（2026-10-15 出包：侧栏清 PR 入口 + 顶栏余额胶囊合一 + 顶栏渲染点修复，产物 `/workspace/eta-3.3.1-2026101404-topbar-capsule-fix.apk`；前两次 `2026101403` 为侧栏清理、`2026101402` 为合并上游 3.3.1）
+- 出包版本：versionCode `2026101501`，versionName `3.3.1`（2026-10-15 出包：侧栏回归原作者版式 + 新增工作区，产物 `/workspace/eta-3.3.1-2026101501-sidebar-workspaces.apk`；此前 `2026101404` 为顶栏余额胶囊渲染点修复、`2026101403` 为侧栏清理、`2026101402` 为合并上游 3.3.1）
 - 历史同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（`e61cce4`）、`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
 - 本次同步备份分支：`backup/pre-sync-20261014-1555-feat-local`（同步前的 `feat/local`＝`d0a5840`，按用户要求长期保留）
+
+## 零之四、侧栏回归原作者版式 + 新增工作区（2026-10-15，出包 `2026101501`）
+
+需求：把侧栏里 PR #142 的版式改动全部剔除、只保留本地自己的改动；并在「置顶」上方加一条工作区栏
+（右侧加号新建；工作区即文件夹，可重命名 / 删除，可把会话放进去，点击标题行展开或折叠）。
+
+做法：
+
+- `ConversationPanePanel.kt` 回退到上游 `main` 的版式（顶部搜索栏 `PaneActionBar` + 底部图标条 `PaneDock`），
+  在基线之上重放本地自己的两处改动：置顶分组（置顶行底色、长按菜单里的置顶项、置顶分组可折叠）。
+  PR 的品牌头、快捷入口（角色 / 权限 / 更多选项）、底部搜索 + 设置按钮、模式徽标随之不复存在。
+- 新增工作区：`WorkspacesSection` 渲染在置顶分组之上，标题行右侧 `+` 新建；每个工作区一行
+  （文件夹图标 + 名称 + 会话数 + 折叠箭头），点击标题行折叠 / 展开，长按弹菜单重命名 / 删除；
+  会话行的长按菜单新增「移动到工作区」，弹窗里选工作区或「移出工作区」。
+- 数据持久化走 `SettingsDataStore` 的 `conversation_workspaces_v1`（`ConversationWorkspaceState`，JSON）：
+  存工作区列表、会话归属与折叠状态。**不占 Room 表、不做数据库迁移**。
+- 已归入工作区的会话只在文件夹里出现，不在下方日期分组重复；搜索时把结果平铺，避免命中项被折叠藏起来。
+- 删除 PR 遗留且已无引用的字符串 `sidebar_more_expanded` / `sidebar_more_collapsed`。
+- 参数链 `AgentAppRoot → AgentAppShell → ConversationSidePaneScaffold → ConversationPanePanel` 新增
+  `onCreateWorkspace` / `onRenameWorkspace` / `onDeleteWorkspace` / `onWorkspaceCollapsedChange` /
+  `onConversationMoveToWorkspace`；移除只服务于 PR 徽标的 `onOpenRootSettings` / `onOpenAccessibilitySettings`。
+
+出包：versionCode `2026101501`，产物 `/workspace/eta-3.3.1-2026101501-sidebar-workspaces.apk`。
 
 ## 零之三、侧栏清掉 PR #142 入口 + 顶栏余额胶囊合一（2026-10-14，出包 `2026101403`）
 

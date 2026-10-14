@@ -370,13 +370,20 @@ fun AgentAppRoot(
             onConversationDelete = { conversation ->
                 conversationDeleteTarget = conversation
             },
+            onCreateWorkspace = { name -> agentState.createWorkspace(name) },
+            onRenameWorkspace = { workspaceId, name -> agentState.renameWorkspace(workspaceId, name) },
+            onDeleteWorkspace = { workspaceId -> agentState.deleteWorkspace(workspaceId) },
+            onWorkspaceCollapsedChange = { workspaceId, collapsed ->
+                agentState.setWorkspaceCollapsed(workspaceId, collapsed)
+            },
+            onConversationMoveToWorkspace = { conversationId, workspaceId ->
+                agentState.moveConversationToWorkspace(conversationId, workspaceId)
+            },
             onOpenTools = { pushRoute(AppRoute.Tools) },
             onOpenSkills = { pushRoute(AppRoute.Skills) },
             onOpenCharacters = { pushRoute(AppRoute.Characters) },
             onOpenPermissions = { pushRoute(AppRoute.Permissions) },
             onOpenSettings = { pushRoute(AppRoute.Settings) },
-            onOpenRootSettings = { focusManager.clearFocus(); pushRoute(AppRoute.SystemEnhance) },
-            onOpenAccessibilitySettings = ::openAccessibilitySettings,
             onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
             homeCharacter = if (route is AppRoute.Home) agentState.homeState.roleplayChatUi() else null,
             onOpenCharacter = {

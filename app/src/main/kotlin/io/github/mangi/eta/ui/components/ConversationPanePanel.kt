@@ -1,6 +1,5 @@
 package io.github.mangi.eta.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -30,16 +28,16 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.rounded.AddComment
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PushPin
@@ -62,19 +60,15 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.ConversationWorkspaceUi
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
@@ -88,20 +82,7 @@ import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Alarm
-import top.yukonga.miuix.kmp.icon.extended.Contacts
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.icon.extended.ExpandLess
-import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import top.yukonga.miuix.kmp.icon.extended.GridView
-import top.yukonga.miuix.kmp.icon.extended.Layers
-import top.yukonga.miuix.kmp.icon.extended.Lock
-import top.yukonga.miuix.kmp.icon.extended.Messages
-import top.yukonga.miuix.kmp.icon.extended.Notes
-import top.yukonga.miuix.kmp.icon.extended.Rename
-import top.yukonga.miuix.kmp.icon.extended.Settings
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -111,14 +92,13 @@ private object ConversationPanelMetrics {
     val PaneHorizontalPadding = 16.dp
     val TopInset = 6.dp
     val AfterActionBar = 8.dp
-    val BottomInset = 8.dp
+    val BottomInset = 2.dp
     val ActionIconSize = 20.dp
     val SectionTopPadding = 8.dp
     val SectionBottomPadding = 10.dp
     val SectionIconSize = 14.dp
     val SectionIconGap = 8.dp
     val SectionCountGap = 12.dp
-    val SectionDividerVerticalPadding = 6.dp
     val RowMinHeight = 48.dp
     val RowGap = 4.dp
     val RowCornerRadius = 12.dp
@@ -127,7 +107,11 @@ private object ConversationPanelMetrics {
     val ActiveDotSize = 6.dp
     val ActiveDotGap = 10.dp
     val EmptyVerticalPadding = 28.dp
-    val DockTopGap = 8.dp
+    val DockTopGap = 2.dp
+    val DockEntryCornerRadius = 12.dp
+    val DockEntryIconSize = 20.dp
+    /** 工作区里的会话比外层列表缩进一档，用来体现「装在文件夹里」。 */
+    val WorkspaceIndent = 16.dp
 }
 
 /**
@@ -148,15 +132,17 @@ internal fun ConversationPanePanel(
     width: androidx.compose.ui.unit.Dp,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onSearchChange: (String) -> Unit,
-    onNewConversation: () -> Unit,
     onConversationSelected: (String) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
     onConversationPinnedChange: (ConversationSummaryUi, Boolean) -> Unit,
     onConversationExport: (ConversationSummaryUi) -> Unit,
     onConversationDelete: (ConversationSummaryUi) -> Unit,
+    onCreateWorkspace: (String) -> Unit,
+    onRenameWorkspace: (String, String) -> Unit,
+    onDeleteWorkspace: (String) -> Unit,
+    onWorkspaceCollapsedChange: (String, Boolean) -> Unit,
+    onConversationMoveToWorkspace: (String, String?) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenRootSettings: () -> Unit,
-    onOpenAccessibilitySettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
@@ -166,160 +152,523 @@ internal fun ConversationPanePanel(
 ) {
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
-    var moreExpanded by rememberSaveable { mutableStateOf(false) }
     val groups = remember(state.conversations) { state.conversations.groupForDrawer() }
     // 置顶分组可折叠：点击置顶分组的标题行收起/展开，只影响置顶区，日期分组照旧。
     // 搜索期间强制展开，避免命中项被折叠藏起来。
     var pinnedCollapsed by rememberSaveable { mutableStateOf(false) }
     val pinnedSectionCollapsed = pinnedCollapsed && query.isEmpty()
+    // 工作区的命名、删除与「移动到工作区」共用一个宿主状态。
+    var workspaceNameTarget by remember { mutableStateOf<WorkspaceNameTarget?>(null) }
+    var workspaceDeleteTarget by remember { mutableStateOf<ConversationWorkspaceUi?>(null) }
+    var workspaceMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
+    val hasWorkspaceConversations = state.workspaces.any { it.conversations.isNotEmpty() }
+    // stringResource 只能在组合期求值，先把默认名算好再交给点击回调。
+    val defaultWorkspaceName = stringResource(R.string.workspace_default_name, state.workspaces.size + 1)
 
-    Surface(
-        modifier = modifier
-            .width(width)
-            .fillMaxHeight(),
-        color = conversationPaneContainerColor(),
-        contentColor = MiuixTheme.colorScheme.onSurface,
-    ) {
-        // 顶部品牌与底部搜索固定，历史列表在中间滚动。
-        Column(modifier = Modifier.fillMaxSize().imePadding()) {
-            PaneFixedRegion {
-                Column(
-                    modifier = Modifier
-                        .windowInsetsPadding(
-                            WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
-                        )
-                        .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
-                ) {
-                    Spacer(Modifier.height(ConversationPanelMetrics.TopInset))
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, tint = Color.Unspecified,
-                            modifier = Modifier.size(40.dp).clip(CircleShape)
-                                .background(MiuixTheme.colorScheme.surfaceContainerHighest).padding(4.dp))
-                        Row(
-                            modifier = Modifier.weight(1f).padding(start = 10.dp, end = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                stringResource(R.string.app_name),
-                                style = MiuixTheme.textStyles.headline2,
-                                fontWeight = FontWeight.Bold,
-                                color = MiuixTheme.colorScheme.onSurface,
-                                maxLines = 1,
+    Box(modifier = modifier) {
+        Surface(
+            modifier = Modifier
+                .width(width)
+                .fillMaxHeight(),
+            color = conversationPaneContainerColor(),
+            contentColor = MiuixTheme.colorScheme.onSurface,
+        ) {
+            // 搜索与工具条占据独立布局空间，列表只在中间视口内滚动和回弹。
+            Column(modifier = Modifier.fillMaxSize()) {
+                PaneFixedRegion {
+                    Column(
+                        modifier = Modifier
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
                             )
-                        }
-                        IconButton(onClick = onNewConversation, modifier = Modifier.clip(CircleShape).background(MiuixTheme.colorScheme.surfaceContainerHighest)) {
-                            Icon(MiuixIcons.Messages, contentDescription = stringResource(R.string.action_new_conversation), modifier = Modifier.size(22.dp))
+                            .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
+                    ) {
+                        Spacer(Modifier.height(ConversationPanelMetrics.TopInset))
+                        PaneActionBar(query = state.searchQuery, onSearchChange = onSearchChange)
+                        Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
+                    }
+                }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clipToBounds()
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
+                        )
+                        .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding)
+                        .scrollEndHaptic()
+                        .overScrollVertical(),
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(ConversationPanelMetrics.RowGap),
+                    overscrollEffect = null,
+                ) {
+                    if (query.isBlank()) {
+                        item(key = "workspaces") {
+                            WorkspacesSection(
+                                workspaces = state.workspaces,
+                                selectedConversationId = state.selectedConversationId,
+                                onCreateWorkspace = {
+                                    workspaceNameTarget = WorkspaceNameTarget.Create(
+                                        defaultName = defaultWorkspaceName,
+                                    )
+                                },
+                                onToggle = { workspace ->
+                                    onWorkspaceCollapsedChange(workspace.id, !workspace.collapsed)
+                                },
+                                onRenameRequest = { workspace ->
+                                    workspaceNameTarget = WorkspaceNameTarget.Rename(
+                                        id = workspace.id,
+                                        currentName = workspace.name,
+                                    )
+                                },
+                                onDeleteRequest = { workspace -> workspaceDeleteTarget = workspace },
+                                onConversationSelected = onConversationSelected,
+                                onConversationRename = onConversationRename,
+                                onConversationPinnedChange = onConversationPinnedChange,
+                                onConversationExport = onConversationExport,
+                                onConversationDelete = onConversationDelete,
+                                onConversationMove = { conversation -> workspaceMoveTarget = conversation },
+                            )
                         }
                     }
-                    Spacer(Modifier.height(ConversationPanelMetrics.AfterActionBar))
-                }
-            }
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .clipToBounds()
-                    .windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-                    )
-                    .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding)
-                    .scrollEndHaptic()
-                    .overScrollVertical(),
-                contentPadding = PaddingValues(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(ConversationPanelMetrics.RowGap),
-                overscrollEffect = null,
-            ) {
-                if (query.isBlank()) {
-                    item(key = "shortcuts") {
-                        Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            PaneShortcut(MiuixIcons.Contacts, stringResource(R.string.sidebar_characters), onOpenCharacters)
-                            PaneShortcut(MiuixIcons.Lock, stringResource(R.string.sidebar_permissions), onOpenPermissions)
-                            val expansionDescription = stringResource(
-                                if (moreExpanded) R.string.sidebar_more_expanded else R.string.sidebar_more_collapsed,
-                            )
-                            PaneShortcut(
-                                icon = if (moreExpanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,
-                                label = stringResource(R.string.action_more),
-                                onClick = { moreExpanded = !moreExpanded },
-                                modifier = Modifier.semantics { stateDescription = expansionDescription },
-                            )
-                            AnimatedVisibility(visible = moreExpanded) {
-                                Column(Modifier.padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    PaneShortcut(MiuixIcons.GridView, stringResource(R.string.ui_tool_ability_9f0f80), onOpenTools)
-                                    PaneShortcut(MiuixIcons.Layers, stringResource(R.string.sidebar_models), onOpenModelProviders)
-                                    PaneShortcut(MiuixIcons.Notes, stringResource(R.string.sidebar_skills), onOpenSkills)
+                    if (state.conversations.isEmpty() && !hasWorkspaceConversations) {
+                        item {
+                            EmptyConversations(isSearching = query.isNotBlank())
+                        }
+                    } else {
+                        groups.forEachIndexed { index, group ->
+                            val collapsible = group.section == ConversationDrawerSection.Pinned
+                            val collapsed = collapsible && pinnedSectionCollapsed
+                            item(key = "section-${group.section}") {
+                                ConversationSectionHeader(
+                                    group = group,
+                                    collapsible = collapsible,
+                                    collapsed = collapsed,
+                                    onToggleCollapse = { pinnedCollapsed = !pinnedCollapsed },
+                                )
+                            }
+                            if (!collapsed) {
+                                items(
+                                    items = group.items,
+                                    key = { it.id },
+                                ) { conversation ->
+                                    ConversationTextRow(
+                                        conversation = conversation,
+                                        selected = conversation.id == state.selectedConversationId,
+                                        onClick = { onConversationSelected(conversation.id) },
+                                        onRename = { onConversationRename(conversation) },
+                                        onTogglePinned = {
+                                            onConversationPinnedChange(conversation, !conversation.isPinned)
+                                        },
+                                        onMoveToWorkspace = { workspaceMoveTarget = conversation },
+                                        onExport = { onConversationExport(conversation) },
+                                        onDelete = { onConversationDelete(conversation) },
+                                    )
+                                }
+                            }
+                            // 置顶区与日期区之间补一条分割线，分组标题样式保持原有日期分隔方式。
+                            // 置顶区收起时不再补线，避免标题下直接跟一条悬空的分割线。
+                            if (collapsible && index < groups.lastIndex && !collapsed) {
+                                item(key = "section-divider-pinned") {
+                                    ConversationSectionDivider()
                                 }
                             }
                         }
                     }
                 }
-                item(key = "history-heading") {
-                    Text(stringResource(R.string.action_conversation_history), style = MiuixTheme.textStyles.body2,
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, bottom = 4.dp).semantics { heading() })
-                }
-                if (state.conversations.isEmpty()) {
-                    item {
-                        EmptyConversations(isSearching = query.isNotBlank())
-                    }
-                } else {
-                    groups.forEachIndexed { index, group ->
-                        val collapsible = group.section == ConversationDrawerSection.Pinned
-                        val collapsed = collapsible && pinnedSectionCollapsed
-                        item(key = "section-${group.section}") {
-                            ConversationSectionHeader(
-                                group = group,
-                                collapsible = collapsible,
-                                collapsed = collapsed,
-                                onToggleCollapse = { pinnedCollapsed = !pinnedCollapsed },
+                PaneFixedRegion {
+                    Column(
+                        modifier = Modifier
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
                             )
-                        }
-                        if (!collapsed) {
-                            items(
-                                items = group.items,
-                                key = { it.id },
-                            ) { conversation ->
-                                ConversationTextRow(
-                                    conversation = conversation,
-                                    selected = conversation.id == state.selectedConversationId,
-                                    onClick = { onConversationSelected(conversation.id) },
-                                    onRename = { onConversationRename(conversation) },
-                                    onTogglePinned = {
-                                        onConversationPinnedChange(conversation, !conversation.isPinned)
-                                    },
-                                    onExport = { onConversationExport(conversation) },
-                                    onDelete = { onConversationDelete(conversation) },
-                                )
-                            }
-                        }
-                        // 置顶区与日期区之间补一条分割线，分组标题样式保持原有日期分隔方式。
-                        // 置顶区收起时不再补线，避免标题下直接跟一条悬空的分割线。
-                        if (collapsible && index < groups.lastIndex && !collapsed) {
-                            item(key = "section-divider-pinned") {
-                                ConversationSectionDivider()
-                            }
-                        }
+                            .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
+                    ) {
+                        Spacer(Modifier.height(ConversationPanelMetrics.DockTopGap))
+                        PaneDock(
+                            onOpenSettings = onOpenSettings,
+                            onOpenModelProviders = onOpenModelProviders,
+                            onOpenTools = onOpenTools,
+                            onOpenSkills = onOpenSkills,
+                            onOpenCharacters = onOpenCharacters,
+                            onOpenPermissions = onOpenPermissions,
+                        )
+                        Spacer(Modifier.height(ConversationPanelMetrics.BottomInset))
                     }
                 }
             }
-            PaneFixedRegion {
+        }
+
+        when (val target = workspaceNameTarget) {
+            null -> Unit
+            is WorkspaceNameTarget.Create -> WorkspaceNameDialog(
+                title = stringResource(R.string.workspace_create_title),
+                initialName = target.defaultName,
+                onDismiss = { workspaceNameTarget = null },
+                onConfirm = { name ->
+                    onCreateWorkspace(name)
+                    workspaceNameTarget = null
+                },
+            )
+
+            is WorkspaceNameTarget.Rename -> WorkspaceNameDialog(
+                title = stringResource(R.string.action_rename_workspace),
+                initialName = target.currentName,
+                onDismiss = { workspaceNameTarget = null },
+                onConfirm = { name ->
+                    onRenameWorkspace(target.id, name)
+                    workspaceNameTarget = null
+                },
+            )
+        }
+
+        workspaceDeleteTarget?.let { workspace ->
+            EtaWindowDialog(
+                show = true,
+                title = stringResource(R.string.workspace_delete_title),
+                summary = stringResource(R.string.workspace_delete_message, workspace.name),
+                onDismissRequest = { workspaceDeleteTarget = null },
+            ) {
+                MiuixDialogActions(
+                    confirmText = stringResource(R.string.action_delete),
+                    destructive = true,
+                    onCancel = { workspaceDeleteTarget = null },
+                    onConfirm = {
+                        onDeleteWorkspace(workspace.id)
+                        workspaceDeleteTarget = null
+                    },
+                )
+            }
+        }
+
+        workspaceMoveTarget?.let { conversation ->
+            EtaWindowDialog(
+                show = true,
+                title = stringResource(R.string.workspace_move_title),
+                summary = conversation.title.ifBlank { conversation.preview }.take(48),
+                onDismissRequest = { workspaceMoveTarget = null },
+            ) {
                 Column(
-                    modifier = Modifier
-                        .windowInsetsPadding(
-                            WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
-                        )
-                        .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Spacer(Modifier.height(ConversationPanelMetrics.DockTopGap))
-                    PaneSearchAndSettings(
-                        query = state.searchQuery,
-                        onSearchChange = onSearchChange,
-                        onOpenSettings = onOpenSettings,
+                    if (state.workspaces.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.workspace_move_empty),
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (conversation.workspaceId != null) {
+                        EtaTextButton(
+                            text = stringResource(R.string.action_remove_from_workspace),
+                            onClick = {
+                                onConversationMoveToWorkspace(conversation.id, null)
+                                workspaceMoveTarget = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    state.workspaces
+                        .filterNot { it.id == conversation.workspaceId }
+                        .forEach { workspace ->
+                            EtaTextButton(
+                                text = workspace.name,
+                                onClick = {
+                                    onConversationMoveToWorkspace(conversation.id, workspace.id)
+                                    workspaceMoveTarget = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    EtaTextButton(
+                        text = stringResource(R.string.action_cancel),
+                        onClick = { workspaceMoveTarget = null },
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(Modifier.height(ConversationPanelMetrics.BottomInset))
                 }
+            }
+        }
+    }
+}
+
+/** 命名弹窗的两种入口：新建工作区、重命名工作区。 */
+private sealed interface WorkspaceNameTarget {
+    data class Create(val defaultName: String) : WorkspaceNameTarget
+
+    data class Rename(val id: String, val currentName: String) : WorkspaceNameTarget
+}
+
+@Composable
+private fun WorkspaceNameDialog(
+    title: String,
+    initialName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var input by remember(initialName) { mutableStateOf(initialName) }
+    EtaWindowDialog(
+        show = true,
+        title = title,
+        onDismissRequest = onDismiss,
+    ) {
+        Column {
+            TextField(
+                value = input,
+                onValueChange = { input = it },
+                label = stringResource(R.string.workspace_name_hint),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.action_save),
+                confirmEnabled = input.isNotBlank(),
+                onCancel = onDismiss,
+                onConfirm = { onConfirm(input.trim()) },
+                modifier = Modifier.padding(top = 16.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 置顶分组上方的「工作区」栏：标题行右侧的加号新建工作区，下面的每一行就是一个文件夹，
+ * 点击标题行展开或折叠，长按弹菜单可重命名或删除。
+ */
+@Composable
+private fun WorkspacesSection(
+    workspaces: List<ConversationWorkspaceUi>,
+    selectedConversationId: String?,
+    onCreateWorkspace: () -> Unit,
+    onToggle: (ConversationWorkspaceUi) -> Unit,
+    onRenameRequest: (ConversationWorkspaceUi) -> Unit,
+    onDeleteRequest: (ConversationWorkspaceUi) -> Unit,
+    onConversationSelected: (String) -> Unit,
+    onConversationRename: (ConversationSummaryUi) -> Unit,
+    onConversationPinnedChange: (ConversationSummaryUi, Boolean) -> Unit,
+    onConversationExport: (ConversationSummaryUi) -> Unit,
+    onConversationDelete: (ConversationSummaryUi) -> Unit,
+    onConversationMove: (ConversationSummaryUi) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(ConversationPanelMetrics.RowGap),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    top = ConversationPanelMetrics.SectionTopPadding,
+                    bottom = ConversationPanelMetrics.SectionBottomPadding,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.FolderOpen,
+                contentDescription = null,
+                modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+            Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionIconGap))
+            Text(
+                text = stringResource(R.string.workspace_section_title),
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionCountGap))
+            Text(
+                text = workspaces.size.toString(),
+                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(
+                onClick = onCreateWorkspace,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.action_create_workspace),
+                    modifier = Modifier.size(20.dp),
+                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                )
+            }
+        }
+        if (workspaces.isEmpty()) {
+            Text(
+                text = stringResource(R.string.workspace_empty_hint),
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(
+                    horizontal = ConversationPanelMetrics.RowHorizontalPadding,
+                    vertical = 6.dp,
+                ),
+            )
+        }
+        workspaces.forEach { workspace ->
+            WorkspaceRow(workspace = workspace, onToggle = { onToggle(workspace) }, onRenameRequest = onRenameRequest, onDeleteRequest = onDeleteRequest)
+            if (!workspace.collapsed) {
+                workspace.conversations.forEach { conversation ->
+                    ConversationTextRow(
+                        conversation = conversation,
+                        selected = conversation.id == selectedConversationId,
+                        onClick = { onConversationSelected(conversation.id) },
+                        onRename = { onConversationRename(conversation) },
+                        onTogglePinned = { onConversationPinnedChange(conversation, !conversation.isPinned) },
+                        onMoveToWorkspace = { onConversationMove(conversation) },
+                        onExport = { onConversationExport(conversation) },
+                        onDelete = { onConversationDelete(conversation) },
+                        modifier = Modifier.padding(start = ConversationPanelMetrics.WorkspaceIndent),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(ConversationPanelMetrics.SectionBottomPadding))
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WorkspaceRow(
+    workspace: ConversationWorkspaceUi,
+    onToggle: () -> Unit,
+    onRenameRequest: (ConversationWorkspaceUi) -> Unit,
+    onDeleteRequest: (ConversationWorkspaceUi) -> Unit,
+) {
+    var showActionMenu by remember { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
+    // 折叠时箭头朝下、展开时朝上；旋转而不是换图标，和置顶分组的折叠观感一致。
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (workspace.collapsed) 0f else 180f,
+        animationSpec = tween(durationMillis = 180),
+        label = "workspaceChevron",
+    )
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ConversationPanelMetrics.RowMinHeight)
+                .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+                .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                .combinedClickable(
+                    onClick = onToggle,
+                    onLongClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showActionMenu = true
+                    },
+                )
+                .padding(
+                    horizontal = ConversationPanelMetrics.RowHorizontalPadding,
+                    vertical = ConversationPanelMetrics.RowVerticalPadding,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.FolderOpen,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = workspace.name,
+                color = MiuixTheme.colorScheme.onSurface,
+                style = MiuixTheme.textStyles.body1,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = workspace.conversations.size.toString(),
+                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.width(ConversationPanelMetrics.SectionIconGap))
+            Icon(
+                imageVector = Icons.Rounded.ExpandMore,
+                contentDescription = stringResource(
+                    if (workspace.collapsed) {
+                        R.string.workspace_expand
+                    } else {
+                        R.string.workspace_collapse
+                    },
+                ),
+                modifier = Modifier
+                    .size(ConversationPanelMetrics.SectionIconSize)
+                    .rotate(chevronRotation),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+        }
+
+        WindowListPopup(
+            show = showActionMenu,
+            popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
+            alignment = PopupPositionProvider.Align.BottomEnd,
+            onDismissRequest = { showActionMenu = false },
+        ) {
+            val renameText = stringResource(R.string.action_rename_workspace)
+            val deleteText = stringResource(R.string.action_delete_workspace)
+            val renameItem = remember(renameText) {
+                DropdownItem(
+                    text = renameText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                        )
+                    },
+                )
+            }
+            val deleteItem = remember(deleteText) {
+                DropdownItem(
+                    text = deleteText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                            tint = MiuixTheme.colorScheme.error,
+                        )
+                    },
+                )
+            }
+            val deleteColors = DropdownDefaults.dropdownColors(
+                contentColor = MiuixTheme.colorScheme.error,
+                selectedContentColor = MiuixTheme.colorScheme.error,
+                selectedIndicatorColor = MiuixTheme.colorScheme.error,
+            )
+            ListPopupColumn {
+                DropdownImpl(
+                    item = renameItem,
+                    optionSize = 2,
+                    isSelected = false,
+                    index = 0,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onRenameRequest(workspace)
+                    },
+                )
+                DropdownImpl(
+                    item = deleteItem,
+                    optionSize = 2,
+                    isSelected = false,
+                    index = 1,
+                    dropdownColors = deleteColors,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onDeleteRequest(workspace)
+                    },
+                )
             }
         }
     }
@@ -336,15 +685,13 @@ private fun PaneFixedRegion(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun PaneSearchAndSettings(
+private fun PaneActionBar(
     query: String,
     onSearchChange: (String) -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SearchBar(
             modifier = Modifier.weight(1f),
@@ -366,13 +713,6 @@ private fun PaneSearchAndSettings(
             },
             content = {},
         )
-        IconButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.size(48.dp).clip(CircleShape)
-                .background(MiuixTheme.colorScheme.surfaceContainerHighest),
-        ) {
-            Icon(MiuixIcons.Settings, contentDescription = stringResource(R.string.sidebar_settings), modifier = Modifier.size(22.dp))
-        }
     }
 }
 
@@ -447,9 +787,7 @@ private fun ConversationSectionHeader(
 @Composable
 private fun ConversationSectionDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(
-            vertical = ConversationPanelMetrics.SectionDividerVerticalPadding,
-        ),
+        modifier = Modifier.padding(vertical = 6.dp),
         thickness = 0.33.dp,
         color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
     )
@@ -463,13 +801,15 @@ private fun ConversationTextRow(
     onClick: () -> Unit,
     onRename: () -> Unit,
     onTogglePinned: () -> Unit,
+    onMoveToWorkspace: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var showActionMenu by remember { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -554,6 +894,7 @@ private fun ConversationTextRow(
             val pinText = stringResource(
                 if (conversation.isPinned) R.string.action_unpin else R.string.action_pin,
             )
+            val moveText = stringResource(R.string.action_move_to_workspace)
             val renameText = stringResource(R.string.action_rename)
             val exportText = stringResource(R.string.action_export)
             val deleteText = stringResource(R.string.action_delete)
@@ -569,12 +910,24 @@ private fun ConversationTextRow(
                     },
                 )
             }
+            val moveItem = remember(moveText) {
+                DropdownItem(
+                    text = moveText,
+                    icon = { modifier ->
+                        Icon(
+                            imageVector = Icons.Rounded.FolderOpen,
+                            contentDescription = null,
+                            modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
+                        )
+                    },
+                )
+            }
             val renameItem = remember(renameText) {
                 DropdownItem(
                     text = renameText,
                     icon = { modifier ->
                         Icon(
-                            imageVector = MiuixIcons.Rename,
+                            imageVector = Icons.Rounded.Edit,
                             contentDescription = null,
                             modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
                         )
@@ -586,7 +939,7 @@ private fun ConversationTextRow(
                     text = exportText,
                     icon = { modifier ->
                         Icon(
-                            imageVector = MiuixIcons.Download,
+                            imageVector = Icons.Rounded.Download,
                             contentDescription = null,
                             modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
                         )
@@ -598,7 +951,7 @@ private fun ConversationTextRow(
                     text = deleteText,
                     icon = { modifier ->
                         Icon(
-                            imageVector = MiuixIcons.Delete,
+                            imageVector = Icons.Rounded.Delete,
                             contentDescription = null,
                             modifier = modifier.size(ConversationPanelMetrics.ActionIconSize),
                             tint = MiuixTheme.colorScheme.error,
@@ -614,7 +967,7 @@ private fun ConversationTextRow(
             ListPopupColumn {
                 DropdownImpl(
                     item = pinItem,
-                    optionSize = 4,
+                    optionSize = 5,
                     isSelected = false,
                     index = 0,
                     onSelectedIndexChange = {
@@ -623,10 +976,20 @@ private fun ConversationTextRow(
                     },
                 )
                 DropdownImpl(
-                    item = renameItem,
-                    optionSize = 4,
+                    item = moveItem,
+                    optionSize = 5,
                     isSelected = false,
                     index = 1,
+                    onSelectedIndexChange = {
+                        showActionMenu = false
+                        onMoveToWorkspace()
+                    },
+                )
+                DropdownImpl(
+                    item = renameItem,
+                    optionSize = 5,
+                    isSelected = false,
+                    index = 2,
                     onSelectedIndexChange = {
                         showActionMenu = false
                         onRename()
@@ -634,9 +997,9 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = exportItem,
-                    optionSize = 4,
+                    optionSize = 5,
                     isSelected = false,
-                    index = 2,
+                    index = 3,
                     onSelectedIndexChange = {
                         showActionMenu = false
                         onExport()
@@ -644,9 +1007,9 @@ private fun ConversationTextRow(
                 )
                 DropdownImpl(
                     item = deleteItem,
-                    optionSize = 4,
+                    optionSize = 5,
                     isSelected = false,
-                    index = 3,
+                    index = 4,
                     dropdownColors = deleteColors,
                     onSelectedIndexChange = {
                         showActionMenu = false
@@ -675,18 +1038,77 @@ private fun EmptyConversations(isSearching: Boolean) {
 }
 
 @Composable
-private fun PaneShortcut(
+private fun PaneDock(
+    onOpenSettings: () -> Unit,
+    onOpenModelProviders: () -> Unit,
+    onOpenTools: () -> Unit,
+    onOpenSkills: () -> Unit,
+    onOpenCharacters: () -> Unit,
+    onOpenPermissions: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        DockEntry(
+            icon = Icons.Rounded.Settings,
+            label = stringResource(R.string.sidebar_settings),
+            onClick = onOpenSettings,
+            modifier = Modifier.weight(1f),
+        )
+        DockEntry(
+            icon = Icons.Rounded.Cloud,
+            label = stringResource(R.string.sidebar_models),
+            onClick = onOpenModelProviders,
+            modifier = Modifier.weight(1f),
+        )
+        DockEntry(
+            icon = Icons.Rounded.Dashboard,
+            label = stringResource(R.string.ui_tool_ability_9f0f80),
+            onClick = onOpenTools,
+            modifier = Modifier.weight(1f),
+        )
+        DockEntry(
+            icon = Icons.Rounded.ImportContacts,
+            label = stringResource(R.string.sidebar_skills),
+            onClick = onOpenSkills,
+            modifier = Modifier.weight(1f),
+        )
+        DockEntry(
+            icon = Icons.Rounded.Lock,
+            label = stringResource(R.string.sidebar_permissions),
+            onClick = onOpenPermissions,
+            modifier = Modifier.weight(1f),
+        )
+        DockEntry(
+            icon = Icons.Rounded.SportsBar,
+            label = stringResource(R.string.sidebar_characters),
+            onClick = onOpenCharacters,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun DockEntry(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
-        .clickable(onClickLabel = label, onClick = onClick).padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MiuixTheme.colorScheme.onSurface)
-        Text(label, style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium, color = MiuixTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Box(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(ConversationPanelMetrics.DockEntryCornerRadius))
+            .clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(ConversationPanelMetrics.DockEntryIconSize),
+            tint = MiuixTheme.colorScheme.onSurface,
+        )
     }
 }
 
