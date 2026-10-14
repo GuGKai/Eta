@@ -1580,8 +1580,6 @@
     <string name="sidebar_skills">技能</string>
     <string name="sidebar_characters">角色</string>
     <string name="sidebar_permissions">权限</string>
-    <string name="sidebar_more_expanded">已展开</string>
-    <string name="sidebar_more_collapsed">已收起</string>
     <string name="automation_triggers_title">触发器</string>
     <string name="automation_triggers_count">%1$d / %2$d 可用 · 点击查看条件</string>
     <string name="automation_triggers_time">时间计划</string>
@@ -1671,4 +1669,22 @@
     <string name="virtual_screen_floating_dismiss">本次任务隐藏预览</string>
     <string name="chat_interject_hint">输入消息，实时插话调整当前任务…</string>
     <string name="chat_interject_unavailable">尚未确认当前任务收到插话，已保留草稿；请确认任务状态后再发送。</string>
+
+  <!-- 侧栏工作区（会话文件夹） -->
+  <string name="workspace_section_title">工作区</string>
+  <string name="workspace_default_name">工作区 %1$d</string>
+  <string name="workspace_empty_hint">还没有工作区，点右侧加号新建一个。</string>
+  <string name="workspace_create_title">新建工作区</string>
+  <string name="workspace_name_hint">工作区名称</string>
+  <string name="workspace_delete_title">删除工作区</string>
+  <string name="workspace_delete_message">删除「%1$s」？里面的会话会回到普通列表。</string>
+  <string name="workspace_move_title">移动到工作区</string>
+  <string name="workspace_move_empty">还没有工作区。</string>
+  <string name="workspace_expand">展开工作区</string>
+  <string name="workspace_collapse">折叠工作区</string>
+  <string name="action_create_workspace">新建工作区</string>
+  <string name="action_rename_workspace">重命名工作区</string>
+  <string name="action_delete_workspace">删除工作区</string>
+  <string name="action_move_to_workspace">移动到工作区</string>
+  <string name="action_remove_from_workspace">移出工作区</string>
 </resources>
