@@ -240,6 +240,8 @@ private fun AgentTopBar(
     }
     val actions: @Composable RowScope.() -> Unit = {
         if (isHome) {
+            // DeepSeek 余额/累计消费胶囊的落点：上游重构顶栏后它只剩参数、没有渲染处，胶囊整块消失（2026-10-15 修）。
+            conversationStatus?.invoke()
             // 新建对话移到顶栏，与「更多选项」并排，省一层点击；自动朗读开关已由上游移入菜单。
             IconButton(onClick = onNewConversation) {
                 Icon(
