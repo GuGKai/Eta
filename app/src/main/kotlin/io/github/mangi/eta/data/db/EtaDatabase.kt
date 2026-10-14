@@ -27,7 +27,6 @@ import androidx.room.migration.Migration
         UserPersonaEntity::class,
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
-        LearningProposalEntity::class,
     ],
     version = 28,
     exportSchema = false,
@@ -40,7 +39,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
     abstract fun mcpServerDao(): McpServerDao
     abstract fun characterDao(): CharacterDao
     abstract fun agentTaskDao(): AgentTaskDao
-    abstract fun learningProposalDao(): LearningProposalDao
 
     companion object {
         @Volatile
