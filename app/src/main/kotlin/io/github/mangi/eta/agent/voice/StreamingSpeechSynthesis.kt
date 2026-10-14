@@ -34,6 +34,11 @@ internal suspend fun streamSpeech(
         TtsProvider.NONE -> throw SpeechFailure(SpeechErrorCode.CONFIGURATION, "请先选择语音播报服务")
         TtsProvider.GEMINI, TtsProvider.MINIMAX ->
             throw SpeechFailure(SpeechErrorCode.CONFIGURATION, "当前语音服务使用逐段流式合成")
+        // 系统语音由设备 TTS 引擎直接朗读，没有流式合成接口。
+        TtsProvider.SYSTEM -> throw SpeechFailure(
+            SpeechErrorCode.CONFIGURATION,
+            "系统语音由设备语音引擎播放，不支持流式合成",
+        )
     }
 }
 

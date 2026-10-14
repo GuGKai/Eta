@@ -1,11 +1,37 @@
 # Eta 本地改动清单（fork: GuGKai/Eta）
 
-- 上游基线：**v3.3.0**（`Mangi-11/Eta` @ `4d760b8`，2026-10-07 合并；2026-10-11 快进到 `9de3a3f`）
+- 上游基线：**v3.3.1**（`Mangi-11/Eta` @ `213e8ed`，2026-10-14 合并；`v3.3.1` 标签指向 `a7fdfc2`）
 - 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
-- 最后更新：2026-10-12
-- 出包版本：versionCode `2026101201`，versionName `3.3.1-beta.1`（2026-10-12 出包：虚拟屏通知语义修正，产物 `/workspace/eta-3.3.1-beta.1-2026101201-dispnotify.apk`，待装机验证）
-- 本次同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（同步前的 `feat/local`＝`e61cce4`，按用户要求长期保留）
-- 本次合并备份分支：`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
+- 最后更新：2026-10-14
+- 出包版本：versionCode `2026101402`，versionName `3.3.1`（2026-10-14 出包：合并上游 3.3.1，产物 `/workspace/eta-3.3.1-2026101402-sync-3.3.1.apk`）
+- 历史同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（`e61cce4`）、`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
+- 本次同步备份分支：`backup/pre-sync-20261014-1555-feat-local`（同步前的 `feat/local`＝`d0a5840`，按用户要求长期保留）
+
+## 零之一、本次同步（2026-10-14，上游 3.3.0 → 3.3.1）
+
+上游新增 16 个提交（`3b21d9f`…`213e8ed`）：终端 PTY 重构与持久后台命令、工具执行简化、模型选择器与提供商弹窗重做、
+聊天自动朗读与整篇流式语音合成、角色头像与酒馆界面重构、外部入口结果卡片回到对应会话、手势经过状态胶囊自动让路、
+公式预处理死循环修复等；`v3.3.1` 标签指向 `a7fdfc2`。
+
+本地 38 个提交（PR #142 剩余部分 + 本地特性）重放到新 `main` 上，逐条解决冲突，**没有丢弃任何本地提交**。
+
+关键取舍：
+
+| 区域 | 处理 |
+|---|---|
+| 运行浮层 / 通知（`AgentRuntimeService`、`AgentExecutionService`） | 以上游 3.3.1 为新基线（胶囊 + 边缘流光重写），本地只并回「虚拟屏任务不在手机上显示叠层」的判定与本地阈值放宽（36.1 → 36.0） |
+| 终端 / 工具目录 | 全取上游（`runMessageProjector` 统一事件投影、`AgentToolCallValidator` 已删、批量执行保留） |
+| `AgentLoop` | 本地插话与虚拟屏恢复保留；工具校验改成「是否在本轮能力目录中」；虚拟屏恢复改走 `executeToolBatch` |
+| `AgentPromptBuilder` / `AgentModelClient` | 上游新增 `executionContext`（终端执行上下文）与 PR 的 `virtualScreenEnabled` / `virtualScreenFallbackEnabled` 撞同一参数位 → 三者并存、调用点一并串上 |
+| 记忆页 | 上游重做为 `MemorySettingsGroup` + `AgentMemoryStore`，本地的自动记忆 / 自动技能开关并进该结构，`setAutomaticReview` 落在 store |
+| 会话状态 | 上游 `modelId` / `contextDeferred` 与 PR 的 `lastModelUsage`（顶栏胶囊）并存；记忆页不再搬回 `AgentAppState` |
+| 输入栏 | 上游结构为准，只并回插话提示与停止按钮；语音 / 模型按钮按补丁 #21 保持移除 |
+| 侧栏 / 工具页 | 本地折叠分组、模式徽标保留；`AgentToolsScreen` 取上游版本 |
+| 数据库 | PR 迁移重排到本地 v23 之后：23→24 自动任务表、24→25 请求耗时、25→26 模型用量、26→27 `error_code`；新增 **27→28 兼容迁移**（逐列 / 逐表补齐 `pinned`、`model_id`、`last_model_usage_json`、`request_duration_ms`、`error_code`、自动任务表），兼容装过 PR 自带包（`user_version` 25 / 27）的库。`EtaDatabase.version = 28` |
+| 经验学习 / 通知中心 | PR 那部分本地不保留，随本地 `chore(pr142)` 提交移除；合并 3.3.1 后清掉残留引用（`LearningProposalEntity` 注册、`learningProposalDao`） |
+| 语音 | 上游整篇流式合成保留；本地补丁 #5 的系统 TTS 分支在 `streamSpeech` 里补出 `TtsProvider.SYSTEM`（系统引擎不走流式合成） |
+
+出包：versionCode `2026101402`（上游 3.3.1 已占用 `2026101401`），versionName `3.3.1`。
 
 > 本文件记录 fork 相对上游原版的全部改动。上游每发新版、本地提交重放（rebase）之后
 > 提交号会变化，**请以「提交标题」为准**；SHA 只对应当前基线。

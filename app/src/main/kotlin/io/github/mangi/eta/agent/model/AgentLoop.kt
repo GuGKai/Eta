@@ -270,6 +270,8 @@ internal class AgentLoop(
                 append("请修改或删除触发拦截的请求后重试，或换用其他模型。")
             },
         )
+    }
+
     private fun recoverVirtualUi(round: Int, stop: AgentModelClient.ToolStop) {
         val restart = AgentModelClient.ToolCall("$operationId-ui-restart-$round", "virtual_screen",
             JSONObject().put("action", "restart").toString())
@@ -295,12 +297,19 @@ internal class AgentLoop(
         publishTranscript()
         val recoverySucceeded = restarted.stop == null &&
             runCatching { JSONObject(restarted.content).optBoolean("ok") }.getOrDefault(false)
-        val observation = if (recoverySucceeded) executeTool(round, observe) else rejectedToolOutcome(
-            round, observe, "UI_EXECUTION_PAUSED", "应用重启未完成，任务已暂停并保留现场。",
-        )
-        appendMessage(AgentConversationCodec.toolResultMessage(observation.call, observation.result))
-        appendToolImages(round, listOf(observation))
-        publishTranscript()
+        val observation = if (recoverySucceeded) {
+            val outcome = executeToolBatch(round, listOf(observe), AssistantStopReason.TOOL_USE).first.first()
+            appendToolImages(round, listOf(outcome))
+            publishTranscript()
+            outcome
+        } else {
+            val outcome = rejectedToolOutcome(
+                round, observe, "UI_EXECUTION_PAUSED", "应用重启未完成，任务已暂停并保留现场。",
+            )
+            appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
+            publishTranscript()
+            outcome
+        }
         if (!recoverySucceeded || observation.result.stop != null ||
             !runCatching { JSONObject(observation.result.content).optBoolean("ok") }.getOrDefault(false)) {
             throw AgentUiExecutionPausedException(stop.copy(message =
@@ -444,7 +453,11 @@ internal class AgentLoop(
             // Workers only execute the existing routed tool handler.
             val jobs = toolCalls.map { call ->
                 runController.throwIfCancelled()
-                val validation = toolCallValidator.validate(call)
+                val validation = if (call.name !in availableToolNames) {
+                    "工具未在本轮能力目录中提供，请使用当前可用工具"
+                } else {
+                    null
+                }
                 if (runController.hasPendingSteering) {
                     null to rejectedToolOutcome(round, call, "USER_SUPPLEMENT_RECEIVED",
                         "用户已插话调整指令；此项尚未开始，未执行。")
@@ -509,7 +522,8 @@ internal class AgentLoop(
                     call.name == AgentBatchToolCatalog.NAME -> "不能在 batch 中嵌套 batch"
                     !sequential && call.name !in AgentToolBatchPlanner.batchTools ->
                         "auto 模式只支持只读查询；需要执行此工具时请设置 mode=sequential"
-                    else -> toolCallValidator.validate(call)
+                    call.name !in availableToolNames -> "工具未在本轮能力目录中提供，请使用当前可用工具"
+                    else -> null
                 }
                 if (validation != null) return rejectedToolOutcome(round, toolCall,
                     "INVALID_TOOL_ARGUMENTS", "calls[$index]: $validation")
