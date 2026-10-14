@@ -1582,10 +1582,6 @@
     <string name="sidebar_permissions">权限</string>
     <string name="sidebar_more_expanded">已展开</string>
     <string name="sidebar_more_collapsed">已收起</string>
-    <string name="sidebar_mode_root">Root</string>
-    <string name="sidebar_mode_accessibility">无障碍</string>
-    <string name="sidebar_mode_basic">基础</string>
-    <string name="sidebar_mode_description">运行模式：%1$s</string>
     <string name="automation_triggers_title">触发器</string>
     <string name="automation_triggers_count">%1$d / %2$d 可用 · 点击查看条件</string>
     <string name="automation_triggers_time">时间计划</string>
@@ -1620,9 +1616,8 @@
     <string name="virtual_screen_text_toggle">文本输入</string>
     <string name="virtual_screen_text_placeholder">输入文本</string>
     <string name="virtual_screen_text_insert">插入文本</string>
-    <string name="deepseek_capsule_balance">余额 %1$s</string>
-    <string name="deepseek_capsule_spend">累计 %1$s</string>
-    <string name="deepseek_capsule_description">DeepSeek 余额 %1$s，累计消耗 %2$s；点击刷新</string>
+    <string name="deepseek_capsule_description">DeepSeek 余额 %1$s，累计消费 %2$s；点击刷新</string>
+    <string name="deepseek_capsule_pair">%1$s/%2$s</string>
     <string name="deepseek_capsule_unavailable">DeepSeek 余额暂不可用，点击重试</string>
     <string name="deepseek_capsule_reseed_hint">长按可校准累计消费</string>
     <string name="deepseek_seed_title">校准累计消费</string>
@@ -1636,7 +1631,6 @@
     <string name="default_prompt_save">保存提示词</string>
     <string name="default_prompt_load_failed">默认提示词读取失败，请重试</string>
     <string name="default_prompt_save_failed">默认提示词保存失败，请重试</string>
-    <string name="inbox_title">通知中心</string>
     <string name="inbox_description">查看会话沉淀的记忆与技能方案，同意后才会生效。</string>
     <string name="inbox_all">全部</string>
     <string name="inbox_pending_count">待审批（%1$d）</string>
