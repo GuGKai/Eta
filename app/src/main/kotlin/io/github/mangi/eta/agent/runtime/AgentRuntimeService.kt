@@ -1392,9 +1392,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = null
     }
 
-    private fun dismissAndStop() {
-        // stopSelf 不会销毁仍被客户端绑定的服务；窗口关闭后不再保留完整请求与结果历史。
-        lastCompletedRunContext = null
+    private fun removeOverlayWindows() {
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
         unregisterResultCardBack()
@@ -1411,6 +1409,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun dismissAndStop() {
+        // stopSelf 不会销毁仍被客户端绑定的服务；窗口关闭后不再保留完整请求与结果历史。
+        lastCompletedRunContext = null
         removeOverlayWindows()
         stopSelf()
     }

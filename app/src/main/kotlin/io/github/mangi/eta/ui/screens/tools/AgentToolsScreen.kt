@@ -1,27 +1,28 @@
 package io.github.mangi.eta.ui.screens.tools
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
-import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
-import androidx.compose.foundation.lazy.staggeredgrid.items
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaCard
@@ -31,17 +32,25 @@ import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.model.AgentToolsAction
 import io.github.mangi.eta.ui.model.AgentToolsUiState
+import io.github.mangi.eta.ui.model.ToolItemUi
 import io.github.mangi.eta.ui.model.projectToolGroups
 import top.yukonga.miuix.kmp.basic.TabRow
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private object ToolsMetrics {
+    val GridHorizontalPadding = 16.dp
+    val GridGap = 12.dp
+}
 
 @Composable
-fun AgentToolsScreen(state: AgentToolsUiState, onAction: (AgentToolsAction) -> Unit, modifier: Modifier = Modifier) {
+fun AgentToolsScreen(
+    state: AgentToolsUiState,
+    onAction: (AgentToolsAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val capabilities = rememberDeviceCapabilities()
     var showAll by rememberSaveable { mutableStateOf(false) }
-    val currentGridState = rememberLazyStaggeredGridState()
-    val allGridState = rememberLazyStaggeredGridState()
+    val currentListState = rememberLazyListState()
+    val allListState = rememberLazyListState()
     val groups = projectToolGroups(state.groups, showAll, capabilities.root.isGranted, capabilities.tools.colorOs)
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_tool_ability_9f0f80),
@@ -65,20 +74,72 @@ fun AgentToolsScreen(state: AgentToolsUiState, onAction: (AgentToolsAction) -> U
                     onClick = { onAction(AgentToolsAction.OpenEnhancements) },
                 )
             }
-            item(key = "capability-discovery", span = StaggeredGridItemSpan.FullLine) {
-                EtaCard {
-                    EtaArrowPreference(title = stringResource(R.string.capability_enhancements),
-                        summary = stringResource(R.string.capability_enhancements_summary),
-                        onClick = { onAction(AgentToolsAction.OpenEnhancements) })
+        }
+        groups.forEach { group ->
+            item(key = "${group.id}-title") {
+                EtaPreferenceGroupTitle(group.title)
+            }
+            items(
+                items = group.tools.chunked(2),
+                key = { row -> "${group.id}-${row.joinToString(separator = "-") { it.id }}" },
+            ) { row ->
+                ToolGridRow(
+                    tools = row,
+                    rootGranted = capabilities.root.isGranted,
+                    capabilities = capabilities.tools,
+                    onAction = onAction,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolGridRow(
+    tools: List<ToolItemUi>,
+    rootGranted: Boolean,
+    capabilities: AgentToolCapabilities,
+    onAction: (AgentToolsAction) -> Unit,
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ToolsMetrics.GridHorizontalPadding)
+            .padding(bottom = ToolsMetrics.GridGap),
+    ) {
+        val useSingleColumn = maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.3f
+        if (useSingleColumn) {
+            Column(verticalArrangement = Arrangement.spacedBy(ToolsMetrics.GridGap)) {
+                tools.forEach { tool ->
+                    ToolCard(
+                        tool = tool,
+                        rootGranted = rootGranted,
+                        capabilities = capabilities,
+                        onAction = onAction,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
-            groups.forEach { group ->
-                item(key = "group-" + group.id, span = StaggeredGridItemSpan.FullLine) {
-                    Text(group.title, style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(ToolsMetrics.GridGap),
+            ) {
+                tools.forEach { tool ->
+                    ToolCard(
+                        tool = tool,
+                        rootGranted = rootGranted,
+                        capabilities = capabilities,
+                        onAction = onAction,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
                 }
-                items(group.tools, key = { group.id + "-" + it.id }) { tool ->
-                    ToolCard(tool, capabilities.root.isGranted, capabilities.tools, onAction, Modifier.fillMaxWidth())
+                if (tools.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
