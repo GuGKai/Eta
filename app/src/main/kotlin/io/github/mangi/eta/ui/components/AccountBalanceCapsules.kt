@@ -3,7 +3,6 @@ package io.github.mangi.eta.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.app.DeepSeekBalanceStore
-import java.text.NumberFormat
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,10 +38,11 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /**
- * 顶栏账号胶囊：DeepSeek 余额 + 平台口径的累计消费。不显示任何百分比。
+ * 顶栏账号胶囊：**一枚**胶囊里并排显示「余额/累计消费」（例：`43.83/306.56`），前后不带任何文字标签。
  *
- * - 点击任一胶囊立即刷新；
- * - **长按「累计」**弹出校准输入框，可把累计改成平台上的数字（之后的增量自动接上）；
+ * - 斜杠前是 DeepSeek 余额，斜杠后是平台口径的累计消费；
+ * - 点击立即刷新；
+ * - **长按**弹出校准输入框，可把累计消费改成平台上的数字（之后的增量自动接上）；
  * - 没有可用的 DeepSeek Key 时整块不出现。
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -53,37 +54,29 @@ internal fun AccountBalanceCapsules(
 ) {
     if (!state.configured) return
     var editing by remember { mutableStateOf(false) }
-    val symbol = if (state.currency.equals("USD", ignoreCase = true)) "$" else "¥"
-    val money = NumberFormat.getNumberInstance().apply {
-        minimumFractionDigits = 2
-        maximumFractionDigits = 2
-    }
-    val balanceValue = state.total?.let { symbol + money.format(it) } ?: "—"
-    val spentValue = state.spent?.let { symbol + money.format(it) } ?: "—"
+    val balanceValue = state.total?.let { plainAmount(it) } ?: "—"
+    val spentValue = state.spent?.let { plainAmount(it) } ?: "—"
     val fetchedAt = state.fetchedAtMillis
         ?.let { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it)) }
-    val balanceDescription = if (state.total == null) {
-        stringResource(R.string.deepseek_capsule_unavailable)
-    } else {
-        stringResource(R.string.deepseek_capsule_description, balanceValue, spentValue) +
-            (fetchedAt?.let { " · $it" } ?: "")
+    val description = buildString {
+        append(
+            if (state.total == null) {
+                stringResource(R.string.deepseek_capsule_unavailable)
+            } else {
+                stringResource(R.string.deepseek_capsule_description, balanceValue, spentValue)
+            },
+        )
+        fetchedAt?.let { append(" · ").append(it) }
+        append(" · ").append(stringResource(R.string.deepseek_capsule_reseed_hint))
     }
-    val spendDescription = balanceDescription + " · " + stringResource(R.string.deepseek_capsule_reseed_hint)
 
     Row(
         modifier = Modifier.widthIn(max = 232.dp).padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         AccountCapsule(
-            text = stringResource(R.string.deepseek_capsule_balance, balanceValue),
-            modifier = Modifier.weight(1f, fill = false),
-            description = balanceDescription,
-            onClick = onRefresh,
-        )
-        AccountCapsule(
-            text = stringResource(R.string.deepseek_capsule_spend, spentValue),
+            text = stringResource(R.string.deepseek_capsule_pair, balanceValue, spentValue),
             modifier = Modifier,
-            description = spendDescription,
+            description = description,
             onClick = onRefresh,
             onLongClick = { editing = true },
         )
@@ -155,4 +148,4 @@ private fun parseAmount(raw: String): Double? =
         ?.takeIf { it >= 0.0 && it < 10_000_000.0 }
 
 private fun plainAmount(value: Double): String =
-    java.math.BigDecimal(value).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+    BigDecimal(value).setScale(2, RoundingMode.HALF_UP).toPlainString()

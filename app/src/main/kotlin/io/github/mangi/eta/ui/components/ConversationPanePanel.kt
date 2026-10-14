@@ -10,7 +10,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,7 +31,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.AddComment
 import androidx.compose.material.icons.rounded.Search
@@ -66,9 +64,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -77,7 +73,6 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
-import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
@@ -167,15 +162,11 @@ internal fun ConversationPanePanel(
     onOpenSkills: () -> Unit,
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
-    onOpenTasks: () -> Unit,
-    onOpenNotifications: () -> Unit = {},
-    notificationCount: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
     var moreExpanded by rememberSaveable { mutableStateOf(false) }
-    val capabilities = rememberDeviceCapabilities()
     val groups = remember(state.conversations) { state.conversations.groupForDrawer() }
     // 置顶分组可折叠：点击置顶分组的标题行收起/展开，只影响置顶区，日期分组照旧。
     // 搜索期间强制展开，避免命中项被折叠藏起来。
@@ -216,14 +207,6 @@ internal fun ConversationPanePanel(
                                 color = MiuixTheme.colorScheme.onSurface,
                                 maxLines = 1,
                             )
-                            PaneModeBadges(
-                                rootGranted = capabilities.root.isGranted,
-                                accessibilityAvailable = capabilities.accessibilityAvailable,
-                                onOpenRootSettings = onOpenRootSettings,
-                                onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-                                onOpenSettings = onOpenSettings,
-                                modifier = Modifier.weight(1f),
-                            )
                         }
                         IconButton(onClick = onNewConversation, modifier = Modifier.clip(CircleShape).background(MiuixTheme.colorScheme.surfaceContainerHighest)) {
                             Icon(MiuixIcons.Messages, contentDescription = stringResource(R.string.action_new_conversation), modifier = Modifier.size(22.dp))
@@ -251,9 +234,6 @@ internal fun ConversationPanePanel(
                 if (query.isBlank()) {
                     item(key = "shortcuts") {
                         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            PaneShortcut(Icons.Rounded.NotificationsNone, stringResource(R.string.inbox_title),
-                                onOpenNotifications, badgeCount = notificationCount)
-                            PaneShortcut(MiuixIcons.Alarm, stringResource(R.string.automation_title), onOpenTasks)
                             PaneShortcut(MiuixIcons.Contacts, stringResource(R.string.sidebar_characters), onOpenCharacters)
                             PaneShortcut(MiuixIcons.Lock, stringResource(R.string.sidebar_permissions), onOpenPermissions)
                             val expansionDescription = stringResource(
@@ -472,44 +452,6 @@ private fun ConversationSectionDivider() {
         ),
         thickness = 0.33.dp,
         color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-    )
-}
-
-@Composable
-private fun PaneModeBadges(
-    rootGranted: Boolean,
-    accessibilityAvailable: Boolean,
-    onOpenRootSettings: () -> Unit,
-    onOpenAccessibilitySettings: () -> Unit,
-    onOpenSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    FlowRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (rootGranted) PaneModeBadge(stringResource(R.string.sidebar_mode_root), onClick = onOpenRootSettings)
-        if (accessibilityAvailable) PaneModeBadge(stringResource(R.string.sidebar_mode_accessibility), onClick = onOpenAccessibilitySettings)
-        if (!rootGranted && !accessibilityAvailable) PaneModeBadge(stringResource(R.string.sidebar_mode_basic), onClick = onOpenSettings, active = false)
-    }
-}
-
-@Composable
-private fun PaneModeBadge(label: String, onClick: () -> Unit, active: Boolean = true) {
-    val description = stringResource(R.string.sidebar_mode_description, label)
-    val color = if (active) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary
-    Text(
-        text = label,
-        modifier = Modifier.clip(CircleShape).background(color.copy(alpha = 0.12f))
-            .semantics { contentDescription = description }
-            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.sidebar_settings), onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 3.dp),
-        color = color,
-        style = MiuixTheme.textStyles.footnote1,
-        fontSize = 11.sp,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -738,7 +680,6 @@ private fun PaneShortcut(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    badgeCount: Int = 0,
 ) {
     Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
         .clickable(onClickLabel = label, onClick = onClick).padding(horizontal = 12.dp, vertical = 12.dp),
@@ -746,9 +687,6 @@ private fun PaneShortcut(
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MiuixTheme.colorScheme.onSurface)
         Text(label, style = MiuixTheme.textStyles.body1, fontWeight = FontWeight.Medium, color = MiuixTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (badgeCount > 0) Text(badgeCount.coerceAtMost(99).toString(), style = MiuixTheme.textStyles.footnote1,
-            color = MiuixTheme.colorScheme.onPrimary, modifier = Modifier.clip(CircleShape)
-                .background(MiuixTheme.colorScheme.primary).padding(horizontal = 7.dp, vertical = 2.dp))
     }
 }
 

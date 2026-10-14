@@ -1503,10 +1503,6 @@
     <string name="sidebar_permissions">Permissions</string>
     <string name="sidebar_more_expanded">Expanded</string>
     <string name="sidebar_more_collapsed">Collapsed</string>
-    <string name="sidebar_mode_root">Root</string>
-    <string name="sidebar_mode_accessibility">Accessibility</string>
-    <string name="sidebar_mode_basic">Basic</string>
-    <string name="sidebar_mode_description">Operating mode: %1$s</string>
     <string name="automation_triggers_title">Available triggers</string>
     <string name="automation_triggers_count">%1$d of %2$d available · tap for details</string>
     <string name="automation_triggers_time">Time</string>
@@ -1541,9 +1537,8 @@
     <string name="virtual_screen_text_toggle">Text input</string>
     <string name="virtual_screen_text_placeholder">Text</string>
     <string name="virtual_screen_text_insert">Insert text</string>
-    <string name="deepseek_capsule_balance">Balance %1$s</string>
-    <string name="deepseek_capsule_spend">Spent %1$s</string>
-    <string name="deepseek_capsule_description">DeepSeek balance %1$s, spent %2$s. Tap to refresh.</string>
+    <string name="deepseek_capsule_description">DeepSeek balance %1$s, cumulative spend %2$s. Tap to refresh.</string>
+    <string name="deepseek_capsule_pair">%1$s/%2$s</string>
     <string name="deepseek_capsule_unavailable">DeepSeek balance unavailable. Tap to retry.</string>
     <string name="deepseek_capsule_reseed_hint">Long press to calibrate the cumulative spend</string>
     <string name="deepseek_seed_title">Calibrate cumulative spend</string>
@@ -1557,7 +1552,6 @@
     <string name="default_prompt_save">Save prompt</string>
     <string name="default_prompt_load_failed">Could not load the default prompt</string>
     <string name="default_prompt_save_failed">Could not save the default prompt</string>
-    <string name="inbox_title">Notification center</string>
     <string name="inbox_description">Review proposed memories and skills. Changes take effect only after approval.</string>
     <string name="inbox_all">All</string>
     <string name="inbox_pending_count">Pending (%1$d)</string>
