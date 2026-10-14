@@ -110,7 +110,6 @@ internal fun AgentAppShell(
     onOpenRootSettings: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
-    onOpenTasks: () -> Unit,
     conversationStatus: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     homeCharacter: RoleplayChatUi? = null,
@@ -185,7 +184,6 @@ internal fun AgentAppShell(
                 onOpenSkills = onOpenSkills,
                 onOpenCharacters = onOpenCharacters,
                 onOpenPermissions = onOpenPermissions,
-                onOpenTasks = onOpenTasks,
             ) {
                 pageContent()
             }
