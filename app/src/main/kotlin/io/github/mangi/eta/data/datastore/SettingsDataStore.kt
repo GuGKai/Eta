@@ -18,6 +18,7 @@ import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.data.model.WebToolsSettings
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
 import java.io.IOException
@@ -25,6 +26,26 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+
+/**
+ * 一个工作区（会话文件夹）的持久化记录。
+ *
+ * 侧栏里工作区就是文件夹：可重命名、可删除，可展开/折叠；折叠状态一并持久化，
+ * 重启后保持用户上次的展开状态。
+ */
+@Serializable
+data class ConversationWorkspaceRecord(
+    val id: String,
+    val name: String,
+    val collapsed: Boolean = false,
+)
+
+/** 工作区列表与「会话 → 工作区」归属；一条会话最多属于一个工作区。 */
+@Serializable
+data class ConversationWorkspaceState(
+    val workspaces: List<ConversationWorkspaceRecord> = emptyList(),
+    val assignments: Map<String, String> = emptyMap(),
+)
 
 internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
@@ -64,6 +85,27 @@ internal object SettingsDataStore {
     suspend fun setWebToolsSettings(settings: WebToolsSettings) {
         ensureInitialized()
         dataStore.edit { it[WEB_TOOLS_SETTINGS] = speechJson.encodeToString(settings) }
+    }
+
+    private val CONVERSATION_WORKSPACES = stringPreferencesKey("conversation_workspaces_v1")
+
+    private val workspaceJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /** 侧栏工作区（会话文件夹）与「会话 → 工作区」归属。 */
+    fun conversationWorkspacesFlow(): Flow<ConversationWorkspaceState> {
+        ensureInitialized()
+        return dataStore.data.map { prefs ->
+            prefs[CONVERSATION_WORKSPACES]?.let { raw ->
+                runCatching { workspaceJson.decodeFromString<ConversationWorkspaceState>(raw) }.getOrNull()
+            } ?: ConversationWorkspaceState()
+        }
+    }
+
+    suspend fun conversationWorkspaces(): ConversationWorkspaceState = conversationWorkspacesFlow().first()
+
+    suspend fun setConversationWorkspaces(state: ConversationWorkspaceState) {
+        ensureInitialized()
+        dataStore.edit { it[CONVERSATION_WORKSPACES] = workspaceJson.encodeToString(state) }
     }
 
     private const val STORE_NAME = "eta_settings"
