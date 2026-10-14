@@ -1387,11 +1387,6 @@ class MainActivity : ComponentActivity() {
         getSystemService(UiModeManager::class.java).setApplicationNightMode(mode)
     }
 
-    companion object {
-        const val ACTION_VIEW_EXECUTION = "io.github.mangi.eta.action.VIEW_EXECUTION"
-        const val EXTRA_EXECUTION_SOURCE = "io.github.mangi.eta.extra.EXECUTION_SOURCE"
-    }
-
     private fun updateSystemBars(isDark: Boolean) {
         val style = if (isDark) {
             SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -1430,5 +1425,7 @@ class MainActivity : ComponentActivity() {
         const val ACTION_OPEN_ARCHIVED_CONVERSATION = "io.github.mangi.eta.action.OPEN_ARCHIVED_CONVERSATION"
         const val EXTRA_HANDOFF_SOURCE = "io.github.mangi.eta.extra.HANDOFF_SOURCE"
         const val EXTRA_CONVERSATION_KEY = "io.github.mangi.eta.extra.CONVERSATION_KEY"
+        const val ACTION_VIEW_EXECUTION = "io.github.mangi.eta.action.VIEW_EXECUTION"
+        const val EXTRA_EXECUTION_SOURCE = "io.github.mangi.eta.extra.EXECUTION_SOURCE"
     }
 }

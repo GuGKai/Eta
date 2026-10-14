@@ -8,6 +8,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
@@ -68,6 +69,33 @@ internal class AgentMemoryStore(
             draftBytes = content.toByteArray(Charsets.UTF_8).size,
             notice = null,
         )
+    }
+
+    /** 自动记忆 / 自动学习技能开关：设置页与记忆页共用。 */
+    fun setAutomaticReview(memory: Boolean? = null, skills: Boolean? = null) {
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                SettingsDataStore.updateSettings { current -> current.copy(
+                    autoMemoryEnabled = memory ?: current.autoMemoryEnabled,
+                    autoSkillsEnabled = skills ?: current.autoSkillsEnabled,
+                ) }
+                SettingsDataStore.settings()
+            }.onSuccess { settings ->
+                withContext(Dispatchers.Main) {
+                    memoryState = memoryState.copy(
+                        autoMemoryEnabled = settings.autoMemoryEnabled,
+                        autoSkillsEnabled = settings.autoSkillsEnabled,
+                        notice = null,
+                    )
+                }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    memoryState = memoryState.copy(
+                        notice = appContext.getString(R.string.state_ui_memory_switch_failed_to_save_83b5d6),
+                    )
+                }
+            }
+        }
     }
 
     fun setMemoryEnabled(enabled: Boolean) {
