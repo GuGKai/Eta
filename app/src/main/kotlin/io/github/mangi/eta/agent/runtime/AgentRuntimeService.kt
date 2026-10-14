@@ -1356,7 +1356,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = null
     }
 
-    private fun dismissAndStop() {
+    private fun removeOverlayWindows() {
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
         unregisterResultCardBack()

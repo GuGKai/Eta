@@ -27,6 +27,11 @@ internal suspend fun streamSpeech(
         TtsProvider.QWEN -> streamQwen(settings, credentials, chunks, onAudio)
         TtsProvider.DOUBAO -> streamDoubao(settings, credentials, chunks, onAudio)
         TtsProvider.NONE -> throw SpeechFailure(SpeechErrorCode.CONFIGURATION, "请先选择语音播报服务")
+        // 系统语音由设备 TTS 引擎直接朗读，没有流式合成接口。
+        TtsProvider.SYSTEM -> throw SpeechFailure(
+            SpeechErrorCode.CONFIGURATION,
+            "系统语音由设备语音引擎播放，不支持流式合成",
+        )
     }
 }
 
