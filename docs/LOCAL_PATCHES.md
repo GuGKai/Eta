@@ -3,7 +3,7 @@
 - 上游基线：**v3.3.1**（`Mangi-11/Eta` @ `213e8ed`，2026-10-14 合并；`v3.3.1` 标签指向 `a7fdfc2`）
 - 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
 - 最后更新：2026-10-14
-- 出包版本：versionCode `2026101403`，versionName `3.3.1`（2026-10-14 第二次出包：侧栏清掉 PR 入口 + 顶栏余额胶囊合一，产物 `/workspace/eta-3.3.1-2026101403-sidebar-clean-capsule.apk`；上一次 `2026101402` 为合并上游 3.3.1）
+- 出包版本：versionCode `2026101404`，versionName `3.3.1`（2026-10-15 出包：侧栏清 PR 入口 + 顶栏余额胶囊合一 + 顶栏渲染点修复，产物 `/workspace/eta-3.3.1-2026101404-topbar-capsule-fix.apk`；前两次 `2026101403` 为侧栏清理、`2026101402` 为合并上游 3.3.1）
 - 历史同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（`e61cce4`）、`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
 - 本次同步备份分支：`backup/pre-sync-20261014-1555-feat-local`（同步前的 `feat/local`＝`d0a5840`，按用户要求长期保留）
 
@@ -22,6 +22,12 @@
 | 顶栏账号胶囊 | `AccountBalanceCapsules` 由「余额、累计」两枚改为**一枚**，文本为 `余额/累计消费`（如 `43.83/306.56`，两位小数、不带货币符号与文字标签）；点击刷新，**长按**弹出校准累计消费；无障碍描述仍说明两个数字的含义 |
 
 出包：versionCode `2026101403`，产物 `/workspace/eta-3.3.1-2026101403-sidebar-clean-capsule.apk`。
+
+**2026-10-15 追加修复（出包 `2026101404`）**：合并上游 3.3.1 时顶栏被重写，`conversationStatus` 只剩参数，
+`AgentTopBar` 里**没有任何渲染处**，胶囊整块消失（这就是用户说的「余额胶囊没有了」，与 Key、快照无关：
+`builtin-deepseek` 有 35 字符 Key、DataStore 里有 `deepseek_balance_snapshot_v1` 快照）。
+已在首页顶栏 `actions` 首位补回 `conversationStatus?.invoke()`，出包
+`/workspace/eta-3.3.1-2026101404-topbar-capsule-fix.apk`（versionCode `2026101404`），已覆盖安装并实测顶栏显示。
 
 ## 零之一、本次同步（2026-10-14，上游 3.3.0 → 3.3.1）
 
