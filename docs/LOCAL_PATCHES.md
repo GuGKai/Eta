@@ -3,9 +3,25 @@
 - 上游基线：**v3.3.1**（`Mangi-11/Eta` @ `213e8ed`，2026-10-14 合并；`v3.3.1` 标签指向 `a7fdfc2`）
 - 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
 - 最后更新：2026-10-14
-- 出包版本：versionCode `2026101402`，versionName `3.3.1`（2026-10-14 出包：合并上游 3.3.1，产物 `/workspace/eta-3.3.1-2026101402-sync-3.3.1.apk`）
+- 出包版本：versionCode `2026101403`，versionName `3.3.1`（2026-10-14 第二次出包：侧栏清掉 PR 入口 + 顶栏余额胶囊合一，产物 `/workspace/eta-3.3.1-2026101403-sidebar-clean-capsule.apk`；上一次 `2026101402` 为合并上游 3.3.1）
 - 历史同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（`e61cce4`）、`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
 - 本次同步备份分支：`backup/pre-sync-20261014-1555-feat-local`（同步前的 `feat/local`＝`d0a5840`，按用户要求长期保留）
+
+## 零之三、侧栏清掉 PR #142 入口 + 顶栏余额胶囊合一（2026-10-14，出包 `2026101403`）
+
+用户要求：侧边栏里 PR #142 引入的东西一律移除，通知中心与经验学习也一并清掉；顶栏两枚胶囊合并为一枚、
+只显示「余额/累计消费」，长按可改累计消费。
+
+| 位置 | 处理 |
+|---|---|
+| 侧栏「通知中心」入口 | 删除。该入口在 PR 部分合并时被带回，但 `ConversationSidePaneScaffold` 从未传 `onOpenNotifications`，落到默认 `{}`，点了没反应，是死链 |
+| 侧栏「任务」入口 | 删除（PR 的自动任务入口）；自动任务页本体保留，仍可从**设置 → 自动任务**进入 |
+| 侧栏 Root / 无障碍 / 基础 模式徽标 | 删除（`PaneModeBadges`、`PaneModeBadge` 及 `sidebar_mode_*` 字符串） |
+| 参数链 | `onOpenTasks` / `onOpenNotifications` / `notificationCount` 从 `ConversationPanePanel`、`ConversationSidePaneScaffold`、`AgentAppShell`、`AgentAppRoot` 一并删除；`PaneShortcut` 去掉角标参数 |
+| 经验学习 / 通知中心残留 | 本轮再核对：`LearningProposal*`、`AgentExperienceReview`、`NotificationCenter*`、`AppRoute.Notifications` 均已无引用；剩余字符串 `inbox_title` 一并删除 |
+| 顶栏账号胶囊 | `AccountBalanceCapsules` 由「余额、累计」两枚改为**一枚**，文本为 `余额/累计消费`（如 `43.83/306.56`，两位小数、不带货币符号与文字标签）；点击刷新，**长按**弹出校准累计消费；无障碍描述仍说明两个数字的含义 |
+
+出包：versionCode `2026101403`，产物 `/workspace/eta-3.3.1-2026101403-sidebar-clean-capsule.apk`。
 
 ## 零之一、本次同步（2026-10-14，上游 3.3.0 → 3.3.1）
 
@@ -64,7 +80,7 @@
 
 | 文件 | 取舍 |
 |---|---|
-| 侧栏 `ConversationPanePanel` | 保留本地设计（置顶折叠、分组标题、底部 Dock、精简输入栏），补入 PR 的模式徽标 + 「任务」入口 |
+| 侧栏 `ConversationPanePanel` | 保留本地设计（置顶折叠、分组标题、底部 Dock、精简输入栏）；PR 的模式徽标 + 「任务」入口当时补入，**2026-10-14 已全部移除**（见零之三） |
 | `AgentChatInputBar` | 保留本地的聚焦/退后台清焦点效果，补入 PR 的插话停止按钮；**不恢复**语音/模型按钮（本地补丁 #21） |
 | `AgentAppShell` | 新建对话按钮（本地）与运行状态胶囊（PR）并存 |
 | `AgentExecutionService` | 保留本地通知样式（去重/节流/固定 when） |
