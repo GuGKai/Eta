@@ -35,13 +35,9 @@ internal class NativeSystemOperations(
     // 权限被拒时由 PhoneOperations 统一映射为 PHONE_ACCESS_DENIED。
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
-    @SuppressLint("MissingPermission")
     private fun mobileData(tool: String, args: JSONObject): JSONObject {
+        // 参数白名单在 PhoneOperations 层统一校验；这里只额外确认调用者确实是 Root 身份。
         if (Process.myUid() != 0) PhoneOperation.error("ROOT_REQUIRED", "移动数据操作需要 Root 身份")
-        PhoneOperation.allowed(
-            args,
-            if (tool == "set_mobile_data") setOf("enabled") else emptySet(),
-        )
         val subscription = android.telephony.SubscriptionManager.getDefaultDataSubscriptionId()
         if (!android.telephony.SubscriptionManager.isValidSubscriptionId(subscription))
             PhoneOperation.error("MOBILE_DATA_UNAVAILABLE", "没有可用的默认数据 SIM 卡")

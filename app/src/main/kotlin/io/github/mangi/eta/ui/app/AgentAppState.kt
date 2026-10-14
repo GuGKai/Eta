@@ -67,6 +67,7 @@ import io.github.mangi.eta.ui.model.QueuedMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
+import io.github.mangi.eta.ui.model.TokenUsageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.contentMatches
