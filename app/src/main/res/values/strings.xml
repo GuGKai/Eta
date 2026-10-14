@@ -1501,8 +1501,6 @@
     <string name="sidebar_skills">Skills</string>
     <string name="sidebar_characters">Characters</string>
     <string name="sidebar_permissions">Permissions</string>
-    <string name="sidebar_more_expanded">Expanded</string>
-    <string name="sidebar_more_collapsed">Collapsed</string>
     <string name="automation_triggers_title">Available triggers</string>
     <string name="automation_triggers_count">%1$d of %2$d available · tap for details</string>
     <string name="automation_triggers_time">Time</string>
@@ -1688,4 +1686,23 @@
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>
+  <string name="conversation_context_loading">Loading conversation history…</string>
+
+  <!-- 侧栏工作区（会话文件夹） -->
+  <string name="workspace_section_title">Workspaces</string>
+  <string name="workspace_default_name">Workspace %1$d</string>
+  <string name="workspace_empty_hint">No workspaces yet. Tap + on the right to create one.</string>
+  <string name="workspace_create_title">New workspace</string>
+  <string name="workspace_name_hint">Workspace name</string>
+  <string name="workspace_delete_title">Delete workspace</string>
+  <string name="workspace_delete_message">Delete "%1$s"? Conversations inside go back to the normal list.</string>
+  <string name="workspace_move_title">Move to workspace</string>
+  <string name="workspace_move_empty">No workspaces yet.</string>
+  <string name="workspace_expand">Expand workspace</string>
+  <string name="workspace_collapse">Collapse workspace</string>
+  <string name="action_create_workspace">New workspace</string>
+  <string name="action_rename_workspace">Rename workspace</string>
+  <string name="action_delete_workspace">Delete workspace</string>
+  <string name="action_move_to_workspace">Move to workspace</string>
+  <string name="action_remove_from_workspace">Remove from workspace</string>
 </resources>
