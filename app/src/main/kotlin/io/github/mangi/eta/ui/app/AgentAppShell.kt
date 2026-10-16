@@ -114,6 +114,8 @@ internal fun AgentAppShell(
     onOpenSettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
     conversationStatus: (@Composable () -> Unit)? = null,
+    /** 顶栏会话标题；Home 路由用它取代原来的空标题。 */
+    conversationTitle: String? = null,
     modifier: Modifier = Modifier,
     homeCharacter: RoleplayChatUi? = null,
     onOpenCharacter: () -> Unit = {},
@@ -148,6 +150,7 @@ internal fun AgentAppShell(
                             homeCharacter = homeCharacter,
                             onOpenCharacter = onOpenCharacter,
                             conversationStatus = conversationStatus,
+                            conversationTitle = conversationTitle,
                         )
                     }
                 }
@@ -216,6 +219,7 @@ private fun AgentTopBar(
     homeCharacter: RoleplayChatUi?,
     onOpenCharacter: () -> Unit,
     conversationStatus: (@Composable () -> Unit)?,
+    conversationTitle: String?,
 ) {
     val isHome = route is AppRoute.Home
     val navigationIcon: @Composable () -> Unit = {
@@ -227,6 +231,20 @@ private fun AgentTopBar(
                         modifier = Modifier.size(24.dp),
                         contentDescription = stringResource(R.string.action_conversation_history),
                     )
+                }
+                // 会话标题：紧跟侧边栏按钮、正文同号、单行。
+                // 严格限制在 TOP_BAR_TITLE_MAX_CHARS 个字符内（末位给省略号），
+                // 这样无论标题多长都不会顶到右侧的语音播报等按钮。
+                conversationTitle?.takeIf { it.isNotBlank() }?.let { title ->
+                    Text(
+                        text = topBarTitleText(title),
+                        modifier = Modifier.widthIn(max = 192.dp),
+                        style = MiuixTheme.textStyles.body1,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                 }
                 // 角色对话的身份标识放在顶栏左侧，点按进入角色详情；普通对话保持空标题。
                 homeCharacter?.let { character ->
@@ -426,6 +444,16 @@ private fun TopBarOverflowMenu(
         }
     }
 }
+
+/** 顶栏会话标题最多显示的字符数。 */
+private const val TOP_BAR_TITLE_MAX_CHARS = 11
+
+/**
+ * 顶栏标题文案：严格不超过 [TOP_BAR_TITLE_MAX_CHARS] 个字符；
+ * 超出时在第 [TOP_BAR_TITLE_MAX_CHARS] 个字符处截断并显示省略号。
+ */
+private fun topBarTitleText(raw: String): String =
+    if (raw.length <= TOP_BAR_TITLE_MAX_CHARS) raw else raw.take(TOP_BAR_TITLE_MAX_CHARS - 1) + "…"
 
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {

@@ -127,10 +127,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     this@AgentRuntimeService,
                     next.status.takeIf { activeSession?.isTerminal == false },
                     next.completedSteps,
+                    paused = next.phase == AgentOverlayPhase.PAUSED,
                 )
             }
     }
     private val capsuleExpanded = mutableStateOf(false)
+    /**
+     * 边缘彩虹光是否点亮：只在实际操作屏幕时亮，动作结束后再停留 [GLOW_LINGER_MS] 才淡出。
+     */
+    private val glowActive = mutableStateOf(false)
+    private val hideGlow = Runnable { glowActive.value = false }
     /** Agent 手势穿过胶囊时为 true：窗口不可触摸，胶囊淡出让路。 */
     private val capsuleYielded = mutableStateOf(false)
     private val restoreCapsule = Runnable { setCapsuleYielded(false) }
@@ -172,6 +178,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -234,6 +241,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowParams = null
         windowManager = null
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        if (instance === this) instance = null
         super.onDestroy()
     }
 
@@ -446,6 +454,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         state.value = AgentOverlayState.Initial
         capsuleExpanded.value = false
+        mainHandler.removeCallbacks(hideGlow)
+        glowActive.value = false
         setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
         hasExecutedForegroundTool = false
         resultConversationId = request.handoff
@@ -548,8 +558,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (session.isTerminal) return@post
             runCatching {
                 state.value = state.value.applyEvent(event)
+                refreshGlowFor(event, virtualUi)
                 if (revealsForegroundOperation && entrySurfaceReady) {
-                    if (capsuleView == null) {
+                    // 只在首次把叠层挂出来时给一次触感；判据与 showOverlay 一致，
+                    // 否则每个操作事件都会重新震一下、并把叠层窗口越叠越多。
+                    if (glowView == null) {
                         AgentHapticFeedback.perform(
                             this,
                             AgentHapticFeedback.Type.RUN_STARTED,
@@ -986,11 +999,36 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         showOverlay()
     }
 
+    /**
+     * 边缘光的活跃期。
+     *
+     * 只有真正操作屏幕的工具才点亮；动作结束（[AgentEvent.ToolFinished] 或工具截图回传）后
+     * 再停留 [GLOW_LINGER_MS] 才淡出，期间任何新的操作都会重新点亮并取消这次淡出。
+     * 任务跑在虚拟屏上时手机上不显示运行叠层，直接保持熄灭。
+     */
+    private fun refreshGlowFor(event: AgentEvent, virtualUi: Boolean) {
+        if (virtualUi) {
+            mainHandler.removeCallbacks(hideGlow)
+            glowActive.value = false
+            return
+        }
+        if (!AgentOverlayVisibilityPolicy.shouldRevealFor(event)) return
+        mainHandler.removeCallbacks(hideGlow)
+        if (event is AgentEvent.ToolFinished || event is AgentEvent.ToolImagesAttached) {
+            mainHandler.postDelayed(hideGlow, GLOW_LINGER_MS)
+        } else {
+            glowActive.value = true
+        }
+    }
+
     private fun usesVirtualUi(session: AgentRuntimeSession, virtualScreenEnabled: Boolean = false): Boolean =
         (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
 
     private fun showOverlay() {
-        if (capsuleView != null) return
+        // 「叠层已挂出」的判据必须是边缘光窗口，不是胶囊。胶囊停用后 capsuleView 恒为 null，
+        // 若继续拿它当判据，每次屏幕操作都会重新走完这里、往 WindowManager 再叠一层全屏光效窗口：
+        // 边框越叠越宽、多份 Compose + 无限旋转动画把帧率拖垮，且任务结束后也不会消失。
+        if (glowView != null) return
         // 任务跑在虚拟屏上时不在手机上显示运行叠层。
         if (activeSession?.let { session ->
                 usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)
@@ -1002,7 +1040,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         // ── 氛围光窗口：全屏触摸穿透，彩虹光圈，截图时被 takeScreenshotOfWindow 过滤 ─
         val glow = createOverlayComposeView {
-            AgentOverlayGlow(state = state.value, corners = screenCornerRadii())
+            AgentOverlayGlow(
+                state = state.value,
+                corners = screenCornerRadii(),
+                active = glowActive.value,
+            )
         }
         val glowLp = glowLayoutParams()
         runCatching { wm.addView(glow, glowLp) }.onFailure { throwable ->
@@ -1013,7 +1055,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowView = glow
         glowParams = glowLp
 
-        // ── 状态胶囊窗口：状态栏下方居中，收起时一句状态，点击展开控制 ─────
+        // ── 状态胶囊窗口：已按用户要求停用（2026-10-16）─────────────────────
+        // 屏幕上的执行胶囊不再挂出：终止入口由执行通知的「停止任务」按钮承担，
+        // 补充/暂停/恢复也搬到了执行通知上（见 AgentExecutionService 的通知动作）。
+        // 相关窗口辅助函数保持原样，保留 capsuleView 为空时的全部空值保护，便于随时回退。
+        if (!CAPSULE_OVERLAY_ENABLED) return
         val capsule = createOverlayComposeView {
             AgentOverlayCapsule(
                 state = state.value,
@@ -1409,9 +1455,35 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         )
     }
 
-    private companion object {
+    companion object {
         const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"
         const val HIDE_DELAY_MS = 2_500L
+        /** 边缘彩虹光在最后一次屏幕操作结束后继续停留的时长。 */
+        private const val GLOW_LINGER_MS = 10_000L
+        /** 屏幕上常驻的执行胶囊开关：停用后终止/补充/暂停全部由执行通知承担。 */
+        private const val CAPSULE_OVERLAY_ENABLED = false
+        @Volatile private var instance: AgentRuntimeService? = null
+
+        /**
+         * 执行通知的「暂停」入口：直接落到当前会话的 run controller 上。
+         *
+         * 返回 false 表示此刻没有正在跑的会话（runtime 服务不在、或任务已到终态），
+         * 调用方据此不把通知切成暂停态。
+         */
+        fun pauseFromNotification(): Boolean {
+            val service = instance ?: return false
+            if (service.activeSession?.isTerminal != false) return false
+            service.mainHandler.post { service.requestPause() }
+            return true
+        }
+
+        /** 执行通知的「恢复」入口；只有确实处于暂停态才需要恢复。 */
+        fun resumeFromNotification(): Boolean {
+            val service = instance ?: return false
+            if (service.state.value.phase != AgentOverlayPhase.PAUSED) return false
+            service.mainHandler.post { service.requestResume() }
+            return true
+        }
         const val RESULT_REVIEW_DELAY_MS = 120_000L
         const val RESULT_CARD_HEIGHT_RATIO = 0.5f
         private const val RESULT_OPEN_REQUEST_CODE = 1108

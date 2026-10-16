@@ -37,6 +37,8 @@ class MainActivity : ComponentActivity() {
     private var appliedPredictiveBackEnabled = true
     private var speechSettingsRequested by mutableStateOf(false)
     private var terminalRequested by mutableStateOf(false)
+    /** 执行通知的「补充」按钮：回到主界面后把输入框拉起键盘，等界面消费掉再清空。 */
+    private var interjectRequested by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +83,8 @@ class MainActivity : ComponentActivity() {
                         requestedArchivedConversation = requestedArchivedConversation,
                         onArchivedConversationOpened = { requestedArchivedConversation = null; intent?.action = null },
                         assistantConversationSource = assistantConversationSource,
+                        interjectRequested = interjectRequested,
+                        onInterjectHandled = { interjectRequested = false; intent?.action = null },
                         openSpeechSettings = speechSettingsRequested,
                         openTerminal = terminalRequested,
                         onTerminalOpened = { terminalRequested = false; intent?.action = null },
@@ -143,6 +147,10 @@ class MainActivity : ComponentActivity() {
             }
             return
         }
+        if (intent?.action == ACTION_INTERJECT) {
+            interjectRequested = true
+            return
+        }
         if (intent?.action != EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION) return
         assistantConversationSource = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE
         assistantConversationKey = intent.getStringExtra(
@@ -200,5 +208,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_CONVERSATION_KEY = "io.github.mangi.eta.extra.CONVERSATION_KEY"
         const val ACTION_VIEW_EXECUTION = "io.github.mangi.eta.action.VIEW_EXECUTION"
         const val EXTRA_EXECUTION_SOURCE = "io.github.mangi.eta.extra.EXECUTION_SOURCE"
+        /** 执行通知的「补充」：回到主聊天舞台并把输入框拉起键盘，用户直接插话。 */
+        const val ACTION_INTERJECT = "io.github.mangi.eta.action.INTERJECT"
     }
 }

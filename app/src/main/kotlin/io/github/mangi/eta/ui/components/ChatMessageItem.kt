@@ -688,6 +688,16 @@ private fun AgentMessageBlock(
                             enabled = messageActionsEnabled,
                         )
                     }
+                    // 本轮消耗：整轮完整结束后写入；老会话没有这个值就不显示。
+                    message.roundCost?.let { cost ->
+                        Text(
+                            text = stringResource(R.string.chat_round_cost, plainCost(cost)),
+                            modifier = Modifier.padding(start = 6.dp),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            style = MiuixTheme.textStyles.footnote1,
+                            maxLines = 1,
+                        )
+                    }
                     if (message.characterEditable && message.candidateCount > 1) {
                         Spacer(Modifier.weight(1f))
                         CandidateSwitcher(
@@ -705,6 +715,12 @@ private fun AgentMessageBlock(
 
 /** 开场白消息由开始对话时写入，标识前缀与写入方保持一致。 */
 private const val GreetingMessagePrefix = "greeting-"
+
+/** 消耗金额按分显示，去掉多余的 0（0.10 → 0.1）。 */
+private fun plainCost(value: Double): String = java.math.BigDecimal(value)
+    .setScale(2, java.math.RoundingMode.HALF_UP)
+    .stripTrailingZeros()
+    .toPlainString()
 
 /**
  * 角色回复的署名行：小头像加角色名，开场白额外标注“故事开始”。

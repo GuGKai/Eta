@@ -184,6 +184,9 @@
   <string name="appearance_chat_text_scale_summary" formatted="false">Adjust the size of my messages and reply text in conversations; thinking text stays unchanged (80%–140%)</string>
   <string name="conversation_unnamed">New conversation</string>
   <string name="conversation_search_hint">Search conversations</string>
+  <string name="conversation_search_action">Search</string>
+  <string name="conversation_top_bar_placeholder">New task</string>
+  <string name="chat_round_cost">Spent ¥%1$s</string>
   <string name="conversation_empty">No conversations yet</string>
   <string name="conversation_no_results">No matching conversations</string>
   <string name="conversation_rename_title">Rename conversation</string>
@@ -1370,6 +1373,8 @@
   <string name="speech_auto_read_off">Auto read-aloud off, tap to turn on</string>
   <string name="read_aloud_channel">Read aloud</string>
   <string name="read_aloud_notification_title">Eta is reading aloud</string>
+  <!-- 状态栏实时活动胶囊右侧文字：固定 4 个字符宽度以内，超出会被截断。 -->
+  <string name="read_aloud_live_short_text">Reading</string>
   <string name="speech_mic_permission">Allow Eta to use the microphone</string>
   <string name="speech_open_settings">Speech settings</string>
   <string name="speech_test_result">Recognition result: %1$s</string>

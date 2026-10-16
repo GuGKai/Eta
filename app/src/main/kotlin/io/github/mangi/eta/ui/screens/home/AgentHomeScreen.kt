@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.ui.components.AgentChatBody
+import io.github.mangi.eta.ui.components.LocalChatInputBalanceCapsule
 import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
@@ -31,10 +32,15 @@ internal fun AgentHomeScreen(
     isDrawerOpen: Boolean = false,
     focusInputRequest: Boolean = false,
     onFocusInputHandled: () -> Unit = {},
+    /** 输入栏正中的余额胶囊，由外壳注入；组件本身不感知余额状态。 */
+    balanceCapsule: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     key(chatConversationCompositionKey(conversationKey)) {
-        CompositionLocalProvider(LocalRoleplayChat provides state.roleplayChatUi()) {
+        CompositionLocalProvider(
+            LocalRoleplayChat provides state.roleplayChatUi(),
+            LocalChatInputBalanceCapsule provides balanceCapsule,
+        ) {
         AgentChatBody(
             messages = state.messages,
             modelPickerState = modelPickerState,

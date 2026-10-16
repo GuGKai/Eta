@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
+import android.os.Build
 import android.os.IBinder
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AndroidAgentLogger
@@ -51,15 +53,28 @@ internal class ReadAloudPlaybackService : Service() {
             Intent(this, ReadAloudPlaybackService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_notification)
+        // 通知与实时活动卡片都按原样绘制这个小图标：用应用彩色图标，而不是单色通知图标。
+        val iconRes = if (Build.VERSION.SDK_INT >= 36 && applicationInfo.icon != 0) {
+            applicationInfo.icon
+        } else {
+            R.drawable.ic_notification
+        }
+        val builder = Notification.Builder(this, CHANNEL)
+            .setSmallIcon(Icon.createWithResource(this, iconRes))
             .setContentTitle(getString(R.string.read_aloud_notification_title))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .addAction(Notification.Action.Builder(null, getString(R.string.speech_read_stop), stop).build())
-            .build()
+        // 抬成 ColorOS 的实时活动（流体云）：系统只认「ongoing + 主动申请 promoted」的通知，
+        // 与执行通知同一条判据——上游用的 BAKLAVA_1(36.1) 在本机（sdk_full=36.0）恒假，必须收到 36.0。
+        if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA) {
+            builder
+                .setShortCriticalText(getString(R.string.read_aloud_live_short_text))
+                .setRequestPromotedOngoing(true)
+        }
+        return builder.build()
     }
 
     companion object {

@@ -12,6 +12,7 @@ import io.github.mangi.eta.data.repository.ProviderRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,6 +68,53 @@ internal class DeepSeekBalanceStore(
 
     /** 手动刷新（点击胶囊），最短间隔 [MANUAL_INTERVAL_MS]。 */
     fun refreshNow() = request(force = true)
+
+    /**
+     * 绕过最短间隔立刻抓一次余额。
+     *
+     * 结算「本轮消耗」用：发消息前抓一次、整轮跑完再抓一次，两次相减。
+     */
+    fun fetchImmediately() {
+        lastAttemptAt = System.currentTimeMillis()
+        job?.cancel()
+        job = scope.launch(Dispatchers.IO) { fetch() }
+    }
+
+    /**
+     * 立刻抓一次并等新值落地（[timeoutMs] 内没拿到就返回 null）。
+     * 没配置 Key 或网络失败时返回 null，调用方据此不显示消耗。
+     */
+    suspend fun refreshAndAwaitTotal(timeoutMs: Long = 8_000L): Double? {
+        if (!state.configured) return null
+        val previousStamp = state.fetchedAtMillis
+        fetchImmediately()
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val stamp = state.fetchedAtMillis
+            if (stamp != null && stamp != previousStamp) return state.total
+            delay(FETCH_POLL_MS)
+        }
+        return null
+    }
+
+    /**
+     * 整轮结束后结算「本轮消耗」：按 [delaysMs] 补抓几次余额，直到它相对 [previousTotal] 真的变了。
+     *
+     * DeepSeek 侧余额更新有几十秒延迟（实测 45s 内落地）。刚回复完立刻抓多半还是同一个数，
+     * 直接相减只会得到 0，所以隔一段时间再抓；几次都一样就返回 null，调用方不显示消耗。
+     */
+    suspend fun settleBalanceChange(
+        previousTotal: Double?,
+        delaysMs: List<Long> = SETTLE_RETRY_DELAYS_MS,
+    ): Double? {
+        if (!state.configured) return null
+        for (delayMs in delaysMs) {
+            delay(delayMs)
+            val current = refreshAndAwaitTotal() ?: state.total ?: continue
+            if (previousTotal == null || current != previousTotal) return current
+        }
+        return null
+    }
 
     /** 长按校准：把累计改成平台上的数字，随后立即按新余额重建基线。 */
     fun reseed(cumulativeSpent: Double) {
@@ -180,5 +228,16 @@ internal class DeepSeekBalanceStore(
         const val DEFAULT_SEED_SPENT = 306.56
         const val AUTO_INTERVAL_MS = 60_000L
         const val MANUAL_INTERVAL_MS = 5_000L
+
+        /** 等待余额刷新落地时的轮询间隔。 */
+        const val FETCH_POLL_MS = 120L
+
+        /**
+         * 「本轮消耗」结算时补抓余额的时刻（相对整轮结束）。
+         *
+         * 余额结算慢（实测 45s 内落地），所以隔一段时间抓一次；19s/45s/70s 三次都没变就放弃，
+         * 避免像过去那样每 5s 轮询几十次打接口。
+         */
+        val SETTLE_RETRY_DELAYS_MS = listOf(19_000L, 26_000L, 25_000L)
     }
 }

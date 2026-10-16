@@ -86,12 +86,18 @@ internal class AgentRuntimeClient(
             return resultRef.get()?.let(AgentRuntimeWire::runResultFromBundle) ?: AgentRuntimeWire.RunResult("", false, "", "Agent Runtime 未返回结果")
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
-            runCatching {
-                val cancelMessage = Message.obtain(null, AgentRuntimeWire.MSG_CANCEL)
-                cancelMessage.data = AgentRuntimeWire.ackBundle(request.runId)
-                serviceMessenger.send(cancelMessage)
-            }
-            return AgentRuntimeWire.RunResult(request.runId, false, "", "Agent Runtime 等待被中断", contextSnapshotRef = request.runId)
+            // 等待被中断只代表「用户界面走了」（Activity/ViewModel 被回收、切后台被系统回收等），
+            // 不代表用户要取消任务：这里不发 MSG_CANCEL，让 runtime 继续跑完并落盘，
+            // 下次进入界面时由 AgentRunRecoveryCoordinator 把结果接管回会话。
+            // 真正的中止走 stopCurrentRun() -> cancelRun()。
+            return AgentRuntimeWire.RunResult(
+                runId = request.runId,
+                ok = false,
+                content = "",
+                error = "",
+                errorCode = AgentRuntimeWire.ERROR_RUN_DETACHED,
+                contextSnapshotRef = request.runId,
+            )
         } catch (throwable: Throwable) {
             logger.warn("Agent runtime start request failed: type=${throwable.safeLogType()}")
             return AgentRuntimeWire.RunResult(

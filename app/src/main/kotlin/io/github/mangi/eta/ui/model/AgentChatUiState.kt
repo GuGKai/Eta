@@ -61,6 +61,8 @@ data class AgentMessageUi(
     val characterEditable: Boolean = false,
     val candidateCount: Int = 1,
     val selectedCandidate: Int = 0,
+    /** 本轮消耗金额（首尾余额差）；老消息为 null，底部操作栏不显示这一项。 */
+    val roundCost: Double? = null,
 ) : AgentChatMessageUi
 
 enum class SystemNoticeCode(val wireValue: String) {

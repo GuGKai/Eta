@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -74,6 +74,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_25_26,
                         MIGRATION_26_27,
                         MIGRATION_27_28,
+                        MIGRATION_28_29,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -205,6 +206,17 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 }
             }
             MIGRATION_23_24.migrate(database)
+        }
+
+        /**
+         * 28 → 29：消息表加「本轮消耗」列。
+         *
+         * 只加列、不回填：老会话该列为 null，界面据此不显示这一栏（用户要求历史会话不显示）。
+         */
+        internal val MIGRATION_28_29 = Migration(28, 29) { database ->
+            if (!database.columnExists("conversation_messages", "round_cost")) {
+                database.execSQL("ALTER TABLE conversation_messages ADD COLUMN round_cost REAL")
+            }
         }
 
         private fun androidx.sqlite.db.SupportSQLiteDatabase.conversationColumnExists(column: String): Boolean =
