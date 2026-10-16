@@ -42,9 +42,12 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
@@ -239,13 +242,26 @@ private fun AgentTopBar(
                     )
                 }
                 // 会话标题：紧跟侧边栏按钮、正文同号、单行。
-                // 严格限制在 TOP_BAR_TITLE_MAX_CHARS 个字符内（末位给省略号），
-                // 这样无论标题多长都不会顶到右侧的语音播报等按钮。
+                // 宽度上限按「[TOP_BAR_TITLE_CJK_WIDTH] 个中文字符」在当前字号下的实测宽度算，
+                // 超出交给 Compose 加省略号：英文、数字、空格本来就比中文窄，
+                // 按字符个数截断会把半个标题白白砍掉。
                 conversationTitle?.takeIf { it.isNotBlank() }?.let { title ->
+                    val titleMeasurer = rememberTextMeasurer()
+                    val titleStyle = MiuixTheme.textStyles.body1
+                    val density = LocalDensity.current
+                    val titleMaxWidth = remember(titleMeasurer, titleStyle, density) {
+                        with(density) {
+                            titleMeasurer.measure(
+                                text = AnnotatedString("中".repeat(TOP_BAR_TITLE_CJK_WIDTH)),
+                                style = titleStyle,
+                                maxLines = 1,
+                            ).size.width.toDp()
+                        }
+                    }
                     Text(
-                        text = topBarTitleText(title),
-                        modifier = Modifier.widthIn(max = 192.dp),
-                        style = MiuixTheme.textStyles.body1,
+                        text = title,
+                        modifier = Modifier.widthIn(max = titleMaxWidth),
+                        style = titleStyle,
                         color = MiuixTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -478,15 +494,8 @@ private fun TopBarOverflowMenu(
     }
 }
 
-/** 顶栏会话标题最多显示的字符数。 */
-private const val TOP_BAR_TITLE_MAX_CHARS = 11
-
-/**
- * 顶栏标题文案：严格不超过 [TOP_BAR_TITLE_MAX_CHARS] 个字符；
- * 超出时在第 [TOP_BAR_TITLE_MAX_CHARS] 个字符处截断并显示省略号。
- */
-private fun topBarTitleText(raw: String): String =
-    if (raw.length <= TOP_BAR_TITLE_MAX_CHARS) raw else raw.take(TOP_BAR_TITLE_MAX_CHARS - 1) + "…"
+/** 顶栏会话标题的宽度上限：按当前字号实测出的 11 个中文字符宽度。 */
+private const val TOP_BAR_TITLE_CJK_WIDTH = 11
 
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
