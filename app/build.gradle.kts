@@ -41,6 +41,7 @@ android {
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
         versionCode = 2026102501
         versionName = "3.3.4"
+>>>>>>> 357bfa98 (feat(local): 一批本地改动（后台运行保活、会话命名、通知实时活动、UI 细节）)
         testInstrumentationRunner = "io.github.mangi.eta.validation.DeviceValidationRunner"
 >>>>>>> 8f23acc4 (feat(sidebar): 侧栏回归原作者版式 + 新增工作区（会话文件夹）)
 

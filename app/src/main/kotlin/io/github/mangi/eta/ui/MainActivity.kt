@@ -68,6 +68,11 @@ class MainActivity : ComponentActivity() {
                             launchRequests = launchRequests.copy(conversationId = null)
                             intent?.action = null
                         },
+                        interjectRequested = launchRequests.interject,
+                        onInterjectHandled = {
+                            launchRequests = launchRequests.copy(interject = false)
+                            intent?.action = null
+                        },
                         requestedArchivedConversation = launchRequests.archivedConversation,
                         onArchivedConversationOpened = {
                             launchRequests = launchRequests.copy(archivedConversation = null)
@@ -171,6 +176,8 @@ class MainActivity : ComponentActivity() {
         const val ACTION_OPEN_ARCHIVED_CONVERSATION = "io.github.mangi.eta.action.OPEN_ARCHIVED_CONVERSATION"
         const val EXTRA_HANDOFF_SOURCE = "io.github.mangi.eta.extra.HANDOFF_SOURCE"
         const val EXTRA_CONVERSATION_KEY = "io.github.mangi.eta.extra.CONVERSATION_KEY"
+        /** 执行通知的「补充」：回到主聊天舞台并把输入框拉起键盘，用户直接插话。 */
+        const val ACTION_INTERJECT = "io.github.mangi.eta.action.INTERJECT"
     }
 }
 
