@@ -76,11 +76,16 @@ internal class AgentExecutionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopTasks()
-        } else {
-            ensureForeground()
-            refreshNotification()
+        when (intent?.action) {
+            ACTION_STOP -> stopTasks()
+            // 通知上的「暂停/恢复」：直接落到 runtime 的 run controller。
+            // runtime 不在或任务已结束时什么都不做，通知保持原样。
+            ACTION_PAUSE -> AgentRuntimeService.pauseFromNotification()
+            ACTION_RESUME -> AgentRuntimeService.resumeFromNotification()
+            else -> {
+                ensureForeground()
+                refreshNotification()
+            }
         }
         return START_NOT_STICKY
     }
@@ -90,8 +95,9 @@ internal class AgentExecutionService : Service() {
     override fun onDestroy() {
         floatingPreview?.close(); floatingPreview = null
         if (instance === this) instance = null
-        // 销毁时同样收回本服务拥有的任务。回收在独立有界工作线程上完成，不阻塞 Main。
-        stopQueue.close(leases.drainOwner(owner))
+        // 服务被停不等于用户取消任务：用户任务租约只解除归属，runtime 侧继续跑完，
+        // 下次进入界面由恢复流程接管；保活/终端租约照旧回收。回收在独立工作线程上完成，不阻塞 Main。
+        stopQueue.close(leases.detachOwner(owner))
         super.onDestroy()
     }
 
@@ -181,6 +187,24 @@ internal class AgentExecutionService : Service() {
             this, 1, Intent(this, AgentExecutionService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // 「补充」：跳回 Eta 主界面并唤起键盘，用户插话不打断当前操作。
+        val supplement = PendingIntent.getActivity(
+            this, 2,
+            Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_INTERJECT),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        // 暂停/恢复用不同 request code 各自持有，避免同一码复用同一个 PendingIntent。
+        val togglePause = if (runPaused) {
+            PendingIntent.getService(
+                this, 4, Intent(this, AgentExecutionService::class.java).setAction(ACTION_RESUME),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        } else {
+            PendingIntent.getService(
+                this, 3, Intent(this, AgentExecutionService::class.java).setAction(ACTION_PAUSE),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
         // 通知与流体云胶囊按原样绘制这个小图标：用应用彩色图标，而不是单色通知图标。
         val iconRes = if (Build.VERSION.SDK_INT >= 36 && applicationInfo.icon != 0) {
             applicationInfo.icon
@@ -198,6 +222,16 @@ internal class AgentExecutionService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .addAction(
+                Notification.Action.Builder(null, getString(R.string.execution_supplement), supplement).build(),
+            )
+            .addAction(
+                Notification.Action.Builder(
+                    null,
+                    getString(if (runPaused) R.string.execution_resume else R.string.execution_pause),
+                    togglePause,
+                ).build(),
+            )
             .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
@@ -226,6 +260,8 @@ internal class AgentExecutionService : Service() {
         private const val CHANNEL = "eta_execution"
         private const val NOTIFICATION_ID = 1107
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
+        private const val ACTION_PAUSE = "io.github.mangi.eta.action.PAUSE_USER_EXECUTION"
+        private const val ACTION_RESUME = "io.github.mangi.eta.action.RESUME_USER_EXECUTION"
 
         /** 状态栏胶囊右侧文字：固定 4 个中文字符宽度。 */
         private const val LIVE_TEXT_LIMIT = 4

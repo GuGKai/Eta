@@ -62,8 +62,8 @@ import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffold
 import io.github.mangi.eta.ui.layout.horizontalCutoutPadding
+import io.github.mangi.eta.ui.markdown.LazyStaticMarkdown
 import io.github.mangi.eta.ui.markdown.MarkdownTone
-import io.github.mangi.eta.ui.markdown.StaticMarkdown
 import io.github.mangi.eta.ui.model.AgentMemoryAction
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import java.text.NumberFormat
@@ -326,14 +326,14 @@ private fun MemoryPreview(content: String, onStartEditing: () -> Unit) {
         }
         return
     }
-    Box(
+    // 整份 MEMORY.md 可能上千个块：分页懒加载，进页面只组合可见的几页。
+    LazyStaticMarkdown(
+        content = content,
+        tone = MarkdownTone.Answer,
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        StaticMarkdown(content = content, tone = MarkdownTone.Answer, modifier = Modifier.fillMaxWidth())
-    }
+    )
 }
 
 /** 无边框整页编辑：与卡片同色，不再嵌一层灰色输入框；点到空白处也能把光标落进正文。 */

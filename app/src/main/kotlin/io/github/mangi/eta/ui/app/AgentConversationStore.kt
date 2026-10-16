@@ -432,6 +432,7 @@ internal object AgentConversationStore {
                         reasoningTokens = usage?.reasoningTokens,
                         cachedTokens = usage?.cachedTokens,
                         requestDurationMs = usage?.requestDurationMs,
+                        roundCost = roundCost,
                     )
                 }
             }
@@ -503,6 +504,7 @@ internal object AgentConversationStore {
                     cachedTokens = cachedTokens,
                     requestDurationMs = requestDurationMs,
                 ).takeUnless { it.isEmpty },
+                roundCost = roundCost,
             )
 
             TYPE_SYSTEM_NOTICE -> SystemNoticeCode.fromWireValue(content)?.let { code ->

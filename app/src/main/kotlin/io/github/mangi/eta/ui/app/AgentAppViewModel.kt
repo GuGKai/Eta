@@ -21,14 +21,16 @@ import kotlinx.coroutines.withContext
 
 /** Activity 级状态所有者；配置变更只重建 UI，不替换正在运行的 Agent 会话。 */
 internal class AgentAppViewModel(application: Application) : AndroidViewModel(application) {
+    val deepSeekBalance = DeepSeekBalanceStore(application, viewModelScope)
     val state = AgentAppState(
         context = application,
         scope = viewModelScope,
+        // 结算「本轮消耗」用：发消息前抓一次余额、整轮跑完再抓一次。
+        balanceStore = deepSeekBalance,
     )
     val skills = AgentSkillsStore(application, viewModelScope)
     val memory = AgentMemoryStore(application, viewModelScope)
     val permissionHealth = PermissionHealthStore(application, viewModelScope)
-    val deepSeekBalance = DeepSeekBalanceStore(application, viewModelScope)
     private val terminalHost = TerminalSessionHost.get(application)
     val terminalStore = terminalHost.terminal
     val consoleStore = terminalHost.console

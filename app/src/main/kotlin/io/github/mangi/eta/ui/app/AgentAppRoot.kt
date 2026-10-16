@@ -123,6 +123,8 @@ fun AgentAppRoot(
     assistantConversationKey: String? = null,
     requestedConversationId: String? = null,
     onRequestedConversationOpened: () -> Unit = {},
+    interjectRequested: Boolean = false,
+    onInterjectHandled: () -> Unit = {},
     requestedArchivedConversation: ArchivedConversationRequest? = null,
     onArchivedConversationOpened: () -> Unit = {},
     assistantConversationSource: String = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
@@ -240,6 +242,16 @@ fun AgentAppRoot(
         onRequestedConversationOpened()
     }
 
+    // 执行通知的「补充」：回到主聊天舞台并把输入框拉起键盘，用户直接插话；
+    // 插话走 PR 里的 steering 通道，不会打断当前正在执行的操作。
+    LaunchedEffect(interjectRequested) {
+        if (!interjectRequested) return@LaunchedEffect
+        conversationPaneOpen = false
+        navigator.popToHome()
+        agentState.requestComposerFocus()
+        onInterjectHandled()
+    }
+
     LaunchedEffect(requestedArchivedConversation) {
         val request = requestedArchivedConversation ?: return@LaunchedEffect
         // 外部入口的结果要先导入归档才有会话；找不到时停在当前界面，不切到无关的会话。
@@ -317,13 +329,11 @@ fun AgentAppRoot(
             isCurrentRoute = backStack.lastOrNull() == route,
             conversationPaneState = agentState.conversationPaneState,
             isConversationPaneOpen = conversationPaneOpen,
-            conversationStatus = {
-                io.github.mangi.eta.ui.components.AccountBalanceCapsules(
-                    state = deepSeekBalance.state,
-                    onRefresh = deepSeekBalance::refreshNow,
-                    onReseed = deepSeekBalance::reseed,
-                )
-            },
+            // 顶栏状态位：余额胶囊已移到输入栏正中；标题走 conversationTitle。
+            conversationStatus = {},
+            conversationTitle = agentState.topBarConversationTitle(
+                agentState.conversationPaneState.selectedConversationId,
+            ) ?: stringResource(R.string.conversation_top_bar_placeholder),
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
@@ -437,6 +447,14 @@ fun AgentAppRoot(
                 RoutedShell(route = AppRoute.Home) { padding ->
                     AgentHomeScreen(
                         topInset = padding.calculateTopPadding(),
+                        balanceCapsule = {
+                            io.github.mangi.eta.ui.components.AccountBalanceCapsules(
+                                state = deepSeekBalance.state,
+                                onRefresh = deepSeekBalance::refreshNow,
+                                onReseed = deepSeekBalance::reseed,
+                                maxWidth = 112.dp,
+                            )
+                        },
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
                         conversationKey = agentState.conversationPaneState.selectedConversationId,

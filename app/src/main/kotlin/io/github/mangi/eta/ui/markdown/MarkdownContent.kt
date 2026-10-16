@@ -88,6 +88,28 @@ internal fun MarkdownContent(
     MarkdownBlockColumn(blocks = document.blocks, scope = scope, compact = false, modifier = modifier)
 }
 
+/**
+ * 只渲染一段块，供大文档做分页懒加载（例如整份 MEMORY.md）。
+ *
+ * 不给显现协调器：分页视图只用于已完成内容的静态阅读。
+ */
+@Composable
+internal fun MarkdownBlockPage(
+    blocks: List<MarkdownBlock>,
+    style: MarkdownStyle,
+    modifier: Modifier = Modifier,
+    previousBlock: MarkdownBlock? = null,
+) {
+    val scope = remember(style) { MarkdownRenderScope(style, null) }
+    MarkdownBlockColumn(
+        blocks = blocks,
+        scope = scope,
+        compact = false,
+        modifier = modifier,
+        leadingPrevious = previousBlock,
+    )
+}
+
 @Immutable
 private class MarkdownRenderScope(
     val style: MarkdownStyle,
@@ -105,12 +127,14 @@ private fun MarkdownBlockColumn(
     scope: MarkdownRenderScope,
     compact: Boolean,
     modifier: Modifier = Modifier,
+    /** 分页渲染时上一页的最后一个块：块间距按相邻块计算，跨页边界也要接上。 */
+    leadingPrevious: MarkdownBlock? = null,
 ) {
     val density = LocalDensity.current
     Column(modifier) {
         blocks.forEachIndexed { index, block ->
             key(block.offset) {
-                val previous = blocks.getOrNull(index - 1)
+                val previous = if (index == 0) leadingPrevious else blocks.getOrNull(index - 1)
                 val gap = if (compact) {
                     markdownCompactGap(previous, scope.style.tone)
                 } else {

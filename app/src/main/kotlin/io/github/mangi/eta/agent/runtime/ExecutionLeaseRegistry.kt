@@ -55,6 +55,27 @@ internal class ExecutionLeaseRegistry {
         return owned.values.map { it.onStop }
     }
 
+    /**
+     * 服务被系统停止（而非用户主动停止）时的收尾。
+     *
+     * [Kind.TASK] 是用户正在等待的回答：服务没了不代表你想要它停，所以只解除归属、不触发 onStop，
+     * 任务在 runtime 侧继续跑完，下次进入界面由恢复流程接管结果；保活/终端这类租约照旧回收。
+     */
+    @Synchronized fun detachOwner(owner: Long): List<() -> Unit> {
+        if (activeOwner == owner) activeOwner = null
+        val callbacks = mutableListOf<() -> Unit>()
+        for ((id, lease) in leases.entries.toList()) {
+            if (lease.owner != owner) continue
+            if (lease.kind == Kind.TASK) {
+                leases[id] = lease.copy(owner = null)
+            } else {
+                leases.remove(id)
+                callbacks += lease.onStop
+            }
+        }
+        return callbacks
+    }
+
     @Synchronized fun drain(startFailed: Boolean = false): List<() -> Unit> = leases.values
         .filterNot { startFailed && it.allowBoundFallback }
         .map { it.onStop }

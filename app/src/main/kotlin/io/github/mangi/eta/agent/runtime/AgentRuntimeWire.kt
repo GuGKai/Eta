@@ -48,6 +48,12 @@ internal object AgentRuntimeWire {
     const val AGENT_UI_HANDOFF_SOURCE = "agent_ui"
     const val ETA_VOICE_HANDOFF_SOURCE = "eta_voice"
 
+    /**
+     * 客户端「等待被中断」的结果标记：界面走了，但任务没有被取消，runtime 侧仍在继续，
+     * 结果由下次进入界面的恢复流程接管，不能按失败/已停止处理。
+     */
+    const val ERROR_RUN_DETACHED = "RUN_DETACHED"
+
     internal class PayloadTooLargeException(sizeBytes: Int) : IllegalArgumentException(
         "Agent Runtime 请求元数据过大（$sizeBytes bytes）；请缩短输入或会话历史后重试"
     )
