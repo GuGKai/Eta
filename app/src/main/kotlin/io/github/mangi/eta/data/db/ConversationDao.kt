@@ -197,6 +197,15 @@ internal interface ConversationDao : ChunkedTextDao {
     @Upsert
     suspend fun insertMessageRow(message: ConversationMessageEntity)
 
+    /**
+     * 只更新单条消息的「本轮消耗」。
+     *
+     * 记一笔金额不应该触发整个会话重写：超大会话（几百条消息）重写很慢，
+     * 进程被系统杀掉时会把这笔记录一起丢掉。
+     */
+    @Query("UPDATE conversation_messages SET round_cost = :cost WHERE conversation_id = :conversationId AND id = :messageId")
+    suspend fun updateMessageRoundCost(conversationId: String, messageId: String, cost: Double)
+
     @Transaction
     suspend fun insertMessages(messages: List<ConversationMessageEntity>) {
         messages.forEach { row ->

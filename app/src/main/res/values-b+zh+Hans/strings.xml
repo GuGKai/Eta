@@ -186,6 +186,9 @@
   <string name="conversation_retry_earlier_messages">加载失败，点击重试</string>
   <string name="conversation_load_turn_start">请向上翻到这一轮的用户提问后再操作</string>
   <string name="conversation_search_hint">搜索对话</string>
+  <string name="conversation_search_action">搜索</string>
+  <string name="conversation_top_bar_placeholder">新任务</string>
+  <string name="chat_round_cost">本轮消耗¥%1$s</string>
   <string name="conversation_empty">还没有对话</string>
   <string name="conversation_no_results">没有匹配的对话</string>
   <string name="conversation_rename_title">重命名对话</string>
@@ -1351,6 +1354,8 @@
   <string name="speech_enable_auto_read">开启自动朗读</string>
   <string name="read_aloud_channel">朗读</string>
   <string name="read_aloud_notification_title">Eta 正在朗读</string>
+  <!-- 状态栏实时活动胶囊右侧文字：固定 4 个字符宽度以内，超出会被截断。 -->
+  <string name="read_aloud_live_short_text">朗读中</string>
   <string name="speech_mic_permission">请允许 Eta 使用麦克风</string>
   <string name="speech_open_settings">语音设置</string>
   <string name="speech_test_result">识别结果：%1$s</string>

@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -159,6 +160,14 @@ private fun screenBottomCornerRadiusPx(display: Display?): Float {
         else -> minOf(left, right)
     }
 }
+
+/**
+ * 输入栏正中的余额胶囊。
+ *
+ * 由外壳页面（AgentAppRoot）注入，避免把余额状态一路透传进输入栏组件；
+ * 放在独立的居中层里，胶囊变长时向两侧对称延伸，不会把右侧按钮挤偏。
+ */
+internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
 
 /**
  * Agent 输入器始终保持同一空间结构，聚焦、输入和执行过程只改变状态，不搬动操作入口。
@@ -387,48 +396,35 @@ internal fun AgentChatInputBar(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                        if (isEditingMessage) {
-                            IconButton(
-                                onClick = onCancelMessageEdit,
-                                minWidth = ChatInputActionSize,
-                                minHeight = ChatInputActionSize,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.ui_cancel_edit_c698df),
-                                    modifier = Modifier.size(ChatInputActionIconSize),
-                                    tint = MiuixTheme.colorScheme.onSurface,
-                                )
-                            }
-                        } else {
-                            AgentAttachmentPickerButton(
-                                popupAnchorTopPx = inputContainerTopPx,
-                                popupMaxHeight = thinkingPopupMaxHeight,
-                                onAttachImage = onAttachImage,
-                                onAttachFiles = onAttachFiles,
-                                onAttachFolder = onAttachFolder,
-                                onAttachFilePath = onAttachFilePath,
-                            )
-
-                            Spacer(modifier = Modifier.width(2.dp))
-
-                            if (availableReasoningEfforts.isNotEmpty()) {
-                                ThinkingEffortChip(
-                                    effort = reasoningEffort,
-                                    options = availableReasoningEfforts,
-                                    enabled = !isStreaming,
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                            if (isEditingMessage) {
+                                IconButton(
+                                    onClick = onCancelMessageEdit,
+                                    minWidth = ChatInputActionSize,
+                                    minHeight = ChatInputActionSize,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.ui_cancel_edit_c698df),
+                                        modifier = Modifier.size(ChatInputActionIconSize),
+                                        tint = MiuixTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            } else {
+                                AgentAttachmentPickerButton(
                                     popupAnchorTopPx = inputContainerTopPx,
                                     popupMaxHeight = thinkingPopupMaxHeight,
-                                    onEffortChange = onReasoningEffortChange,
+                                    onAttachImage = onAttachImage,
+                                    onAttachFiles = onAttachFiles,
+                                    onAttachFolder = onAttachFolder,
+                                    onAttachFilePath = onAttachFilePath,
                                 )
-                            }
-                        }
 
-                        Spacer(modifier = Modifier.weight(1f))
+                                Spacer(modifier = Modifier.width(2.dp))
 
                         if (showContextUsage) {
                             AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
@@ -553,7 +549,97 @@ internal fun AgentChatInputBar(
                                     )
                                 }
                             }
-                        }
+
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            if (showContextUsage) {
+                                AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
+
+                                Spacer(modifier = Modifier.width(2.dp))
+                            }
+
+                            if (canInterject) IconButton(onClick = onStop, minWidth = ChatInputActionSize, minHeight = ChatInputActionSize) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Stop,
+                                    contentDescription = stringResource(R.string.chat_stop),
+                                    modifier = Modifier.size(StopIconSize),
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                )
+                            }
+
+                            IconButton(
+                                onClick = if (isStreaming && !canInterject) {
+                                    onStop
+                                } else {
+                                    {
+                                        if (canSend) {
+                                            val submittedText = textFieldState.text.toString()
+                                            textFieldState.clearText()
+                                            onSubmit(submittedText)
+                                        }
+                                    }
+                                },
+                                enabled = isStreaming || canSend,
+                                minWidth = ChatInputActionSize,
+                                minHeight = ChatInputActionSize,
+                            ) {
+                                // 保留统一的点击区域，仅让可见圆形与相邻操作图标保持同一尺寸。
+                                val sendButtonColor by animateColorAsState(
+                                    targetValue = when {
+                                        isStreaming && !canInterject -> MiuixTheme.colorScheme.onSurface
+                                        canSend -> MiuixTheme.colorScheme.primary
+                                        else -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                    animationSpec = tween(durationMillis = 160),
+                                    label = "send_button_color",
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(SendButtonVisualSize)
+                                        .clip(CircleShape)
+                                        .background(sendButtonColor),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    AnimatedContent(
+                                        targetState = isStreaming && !canInterject,
+                                        transitionSpec = {
+                                            (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
+                                                .togetherWith(
+                                                    fadeOut(tween(90)) +
+                                                        scaleOut(tween(110), targetScale = 0.72f)
+                                                )
+                                        },
+                                        label = "send_stop_icon",
+                                    ) { streaming ->
+                                        Icon(
+                                            imageVector = if (streaming) {
+                                                Icons.Rounded.Stop
+                                            } else {
+                                                Icons.Rounded.ArrowUpward
+                                            },
+                                            contentDescription = when {
+                                                streaming -> stringResource(R.string.chat_stop)
+                                                canInterject -> stringResource(R.string.overlay_supplement)
+                                                isEditingMessage && preserveFollowingMessages -> stringResource(R.string.chat_save_message)
+                                                else -> stringResource(R.string.chat_send)
+                                            },
+                                            modifier = Modifier.size(
+                                                if (streaming) StopIconSize else SendIconSize
+                                            ),
+                                            tint = when {
+                                                streaming -> MiuixTheme.colorScheme.surface
+                                                canSend -> MiuixTheme.colorScheme.onPrimary
+                                                else -> MiuixTheme.colorScheme.onSurfaceVariantActions
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                    }
+                        // 余额胶囊相对整行绝对居中：变长时向两侧对称延伸，不会把右侧按钮挤偏。
+                    LocalChatInputBalanceCapsule.current?.let { capsule ->
+                        Box(modifier = Modifier.align(Alignment.Center)) { capsule() }
+                    }
                 }
             }
         }

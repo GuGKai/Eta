@@ -11,11 +11,14 @@ internal data class MainActivityLaunchRequests(
     val conversationId: String? = null,
     val archivedConversation: ArchivedConversationRequest? = null,
     val speechSettings: Boolean = false,
+    /** 执行通知的「补充」：回到主界面后把输入框拉起键盘，用户直接插话。 */
+    val interject: Boolean = false,
     val terminal: Boolean = false,
 ) {
     fun accept(intent: Intent?): MainActivityLaunchRequests = when (intent?.action) {
         MainActivity.ACTION_OPEN_TERMINAL -> copy(terminal = true)
         ACTION_SPEECH_SETTINGS -> copy(speechSettings = true)
+        MainActivity.ACTION_INTERJECT -> copy(interject = true)
         MainActivity.ACTION_OPEN_CONVERSATION_ID -> copy(
             conversationId = intent.nonBlankExtra(MainActivity.EXTRA_CONVERSATION_ID),
         )
@@ -41,6 +44,7 @@ internal data class MainActivityLaunchRequests(
             putString("archive_source", archivedConversation?.source)
             putString("archive_conversation_key", archivedConversation?.conversationKey)
             putBoolean("speech_settings", speechSettings)
+            putBoolean("interject", interject)
             putBoolean("terminal", terminal)
         })
     }
@@ -61,6 +65,7 @@ internal data class MainActivityLaunchRequests(
                     ArchivedConversationRequest(source, key)
                 } else null,
                 speechSettings = saved.getBoolean("speech_settings"),
+                interject = saved.getBoolean("interject"),
                 terminal = saved.getBoolean("terminal"),
             )
         }

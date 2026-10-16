@@ -22,6 +22,7 @@ import io.github.mangi.eta.agent.model.AgentFileReferenceKind
 import io.github.mangi.eta.agent.model.AgentFileReferencePolicy
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.ConversationTitleGenerator
 import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.CharacterMacros
 import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
@@ -42,6 +43,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.ConversationWorkspaceRecord
 import io.github.mangi.eta.data.datastore.ConversationWorkspaceState
 import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
@@ -98,6 +100,8 @@ internal class AgentAppState(
     context: Context,
     private val scope: CoroutineScope,
     initialConversations: AgentConversationStore.Snapshot = AgentConversationStore.load(context),
+    /** 余额数据源：用来结算「本轮消耗」（首尾余额差）。为空时不做结算。 */
+    private val balanceStore: DeepSeekBalanceStore? = null,
 ) {
     private val appContext = context.applicationContext
     private val runConversationIds = mutableMapOf<String, String>()
@@ -136,6 +140,11 @@ internal class AgentAppState(
     var historyLoadState by mutableStateOf(ConversationHistoryLoadState.Idle)
         private set
     val isLoadingEarlierMessages: Boolean get() = historyLoadState == ConversationHistoryLoadState.Loading
+
+    /** 第一轮还没命名完的会话：顶栏在这期间显示「新任务」。 */
+    private val autoNamingPending = mutableSetOf<String>()
+    /** 正在补命名的外部入口会话（语音浮窗／小布／小爱／定时任务）：同一会话不重复请求。 */
+    private val externalNamingInFlight = mutableSetOf<String>()
 
     private var selectedConversationId: String? = initialConversations.selectedConversationId
     private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
@@ -624,6 +633,57 @@ internal class AgentAppState(
                 true
             }
             if (!saved) break
+            autoNameImportedExternalRuns(archivedRuns)
+        }
+    }
+
+    /**
+     * 外部入口（语音浮窗、小布、小爱、定时任务）发起的会话也要自动命名。
+     *
+     * 这些 run 由 Runtime 直接归档，不经过 [finishRound]，导入后标题一直是提问原文。
+     * 只在导入时补一次：标题已经不是导入时的占位原文就不再改它。
+     * */
+    private fun autoNameImportedExternalRuns(runs: List<AgentRunArchiveStore.ArchivedRun>) {
+        val targets = runs.asSequence()
+            .sortedByDescending { it.createdAt }
+            .mapNotNull { run ->
+                val payload = AgentExternalArchivePayload.from(run.handoff.payload) ?: return@mapNotNull null
+                if (run.result.operation != AgentRuntimeWire.OP_CHAT) return@mapNotNull null
+                val answer = run.result.content.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val id = archiveConversationId(run.handoff.source, payload.conversationKey)
+                if (conversationTitles[id] != payload.title) return@mapNotNull null
+                if (id in externalNamingInFlight) return@mapNotNull null
+                id to (payload.userText to answer)
+            }
+            .distinctBy { it.first }
+            // 一次导入最多补这么多，避免积压很多语音会话时开机就发一串命名请求。
+            .take(8)
+            .toList()
+        if (targets.isEmpty()) return
+        targets.forEach { (id, _) -> externalNamingInFlight += id }
+        scope.launch(Dispatchers.IO) {
+            targets.forEach { (conversationId, promptAnswer) ->
+                try {
+                    val title = ConversationTitleGenerator()
+                        .generate(promptAnswer.first, promptAnswer.second)
+                    if (!title.isNullOrBlank()) {
+                        withContext(Dispatchers.Main.immediate) {
+                            conversationTitles = conversationTitles + (conversationId to title)
+                            refreshConversationSummaries()
+                        }
+                        withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                        AndroidAgentLogger.info("External conversation auto named: chars=${title.length}")
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    AndroidAgentLogger.warn("External conversation naming failed: type=${throwable.safeLogType()}")
+                } finally {
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        externalNamingInFlight -= conversationId
+                    }
+                }
+            }
         }
     }
 
@@ -993,6 +1053,11 @@ internal class AgentAppState(
     fun consumeComposerFocusRequest() {
         composerFocusPending = false
     }
+    }
+
+    /** 执行通知的「补充」按钮：回到主界面后把输入框聚焦并拉起键盘。 */
+    fun requestComposerFocus() {
+        composerFocusPending = true
     }
 
     fun startCharacterConversation(binding: RoleplayBinding, greeting: String) {
@@ -1410,6 +1475,8 @@ internal class AgentAppState(
             currentTitle?.takeIf(String::isNotBlank) ?: nextAutoTitle
         }
 
+        // 这个会话还没有正式名字：等第一轮回答完整结束后按语义命名，期间顶栏显示占位。
+        if (currentTitle.isNullOrBlank()) autoNamingPending += conversationId
         conversationTitles = conversationTitles + (conversationId to title)
         if (selectedConversationId == conversationId) {
             conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
@@ -1657,6 +1724,11 @@ internal class AgentAppState(
         val initialPersistence = persistConversations()
 
         val preparationJob = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            // 本轮消耗 = 开跑前的余额 − 整轮跑完后的余额。起点快照立刻发起、不阻塞这一轮，
+            // 到收尾时再 await；挂在 scope 上，不会随本协程被取消而丢掉。
+            val roundStartBalance: Deferred<Double?>? = balanceStore?.let { store ->
+                scope.async(Dispatchers.IO) { store.refreshAndAwaitTotal() }
+            }
             // write-ahead：用户消息未提交前不把可能产生副作用的 run 交给 Runtime。
             if (!initialPersistence.await()) {
                 withContext(Dispatchers.Main) {
@@ -1747,27 +1819,43 @@ internal class AgentAppState(
                 }
                 return@launch
             }
-            val result = runInterruptible {
-                AgentRuntimeClient(appContext, AndroidAgentLogger).run(
-                    request = AgentRuntimeWire.RunRequest(
-                        operation = operation,
-                        rewriteTargetMessageId = rewriteTargetMessageId,
-                        runId = runId,
-                        prompt = prompt,
-                        config = config,
-                        images = modelImages,
-                        history = history,
-                        handoff = AgentRuntimeWire.EntryHandoff(
-                            id = runId,
-                            source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
-                            payload = conversationId,
+            val result = try {
+                runInterruptible {
+                    AgentRuntimeClient(appContext, AndroidAgentLogger).run(
+                        request = AgentRuntimeWire.RunRequest(
+                            operation = operation,
+                            rewriteTargetMessageId = rewriteTargetMessageId,
+                            runId = runId,
+                            prompt = prompt,
+                            config = config,
+                            images = modelImages,
+                            history = history,
+                            handoff = AgentRuntimeWire.EntryHandoff(
+                                id = runId,
+                                source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
+                                payload = conversationId,
+                            ),
                         ),
-                    ),
-                    onEvent = { event -> enqueueRunEvent(runId, event) },
-                )
+                        onEvent = { event -> enqueueRunEvent(runId, event) },
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                // 界面被回收（切后台被系统回收 Activity/ViewModel）导致的协程取消，不再传染给 runtime：
+                // 只清本地运行句柄，任务继续跑，下次进入界面由恢复流程把结果接管回会话。
+                withContext(NonCancellable + Dispatchers.Main.immediate) { detachLocalRun(runId) }
+                throw cancelled
+            }
+            if (result.errorCode == AgentRuntimeWire.ERROR_RUN_DETACHED) {
+                // 客户端等待被中断、但任务并未取消：同样交回恢复流程，不能写成“已停止”。
+                withContext(NonCancellable + Dispatchers.Main.immediate) { detachLocalRun(runId) }
+                return@launch
             }
             withContext(Dispatchers.Main) {
                 applyRunResult(runId, result, acknowledgeRuntimeResult = true)
+            }
+            if (result.ok) {
+                // 只有整轮完整结束（不是中途回答）才命名 + 结算这一轮的消耗。
+                finishRound(conversationId, prompt, result.content, roundStartBalance)
             }
         }
         currentRunJob = preparationJob
@@ -2013,6 +2101,112 @@ internal class AgentAppState(
         if (!stopRequestedRunIds.add(runId)) return
         scope.launch(Dispatchers.IO) {
             AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+        }
+    }
+
+    /**
+     * 界面侧脱钩（不取消任务）。
+     *
+     * 切后台被系统回收、Activity/ViewModel 销毁等都会取消本界面协程；这不是用户要停任务。
+     * 这里只清掉本地运行句柄，任务继续在 runtime 侧跑完，结果由下次进入界面的恢复流程接管。
+     */
+    private fun detachLocalRun(runId: String) {
+        runConversationIds.remove(runId)
+        if (currentRunId == runId) currentRunId = null
+        if (currentRunJob?.isActive != true) currentRunJob = null
+    }
+
+    /** 顶栏标题：还没命名（第一轮未完成）时返回 null，由界面显示「新任务」。 */
+    fun topBarConversationTitle(conversationId: String?): String? {
+        val id = conversationId ?: return null
+        if (id in autoNamingPending) return null
+        return conversationTitles[id]?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 整轮完整结束后的收尾：先按语义命名（它的花费也算进本轮），再结算本轮消耗。
+     * 两步都在 IO 上跑，任何失败只影响这两项显示，不影响正文与落库。
+     */
+    private fun finishRound(
+        conversationId: String,
+        prompt: String,
+        answer: String,
+        startBalance: Deferred<Double?>?,
+    ) {
+        val needsNaming = answer.isNotBlank() && conversationId in autoNamingPending
+        // 这一轮不参与命名（空回答等）就立刻解除占位，别让顶栏一直停在「新任务」。
+        if (!needsNaming) autoNamingPending.remove(conversationId)
+        val store = balanceStore
+        if (!needsNaming && store == null) return
+        scope.launch(Dispatchers.IO) {
+            if (needsNaming) {
+                try {
+                    val title = ConversationTitleGenerator().generate(prompt, answer)
+                    if (!title.isNullOrBlank()) {
+                        withContext(Dispatchers.Main.immediate) {
+                            conversationTitles = conversationTitles + (conversationId to title)
+                            // 侧栏读的是摘要列表；不主动刷新的话标题要等下一次别的刷新才同步。
+                            refreshConversationSummaries()
+                        }
+                        withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                        AndroidAgentLogger.info("Conversation auto named by model: chars=${title.length}")
+                    }
+                } finally {
+                    // 命名真的结束（成功或失败）才解除占位。提前解除会让顶栏在「新任务」和
+                    // 最终标题之间闪一下本轮提问的原文——列表里的占位标题就是那句原文。
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        autoNamingPending.remove(conversationId)
+                    }
+                }
+            }
+            if (store == null) return@launch
+            // 起点用发消息时抓的快照；抓失败时退回最近一次已知余额，并记日志。
+            val before = startBalance?.await() ?: store.state.total
+            if (before == null) {
+                AndroidAgentLogger.info("Round cost skipped: balance unavailable")
+                return@launch
+            }
+            // DeepSeek 余额有几十秒延迟（实测 45s 内落地），立刻抓第二次只会读到同一个数，
+            // 所以隔一会儿补抓几次（见 DeepSeekBalanceStore.SETTLE_RETRY_DELAYS_MS）。
+            val after = store.settleBalanceChange(before)
+            if (after == null) {
+                AndroidAgentLogger.info("Round cost skipped: balance did not settle in time")
+                return@launch
+            }
+            val cost = before - after
+            AndroidAgentLogger.info("Round cost settled: before=$before after=$after cost=$cost")
+            if (cost <= 0.0) return@launch
+            // 结算期间又开了一轮的话，这次余额变化不再只属于本轮，放弃以免记错。
+            val busy = withContext(Dispatchers.Main.immediate) {
+                currentRunId != null || currentRunJob?.isActive == true
+            }
+            if (busy) {
+                AndroidAgentLogger.info("Round cost skipped: another run is active")
+                return@launch
+            }
+            withContext(Dispatchers.Main.immediate) { attachRoundCost(conversationId, cost) }
+        }
+    }
+
+    /** 把本轮消耗写到该会话最后一条回答上，随消息一起落库；老会话没有这一列就不显示。 */
+    private fun attachRoundCost(conversationId: String, cost: Double) {
+        val conversation = conversationsById[conversationId] ?: return
+        val index = conversation.messages.indexOfLast { it is AgentMessageUi }
+        if (index < 0) return
+        val message = conversation.messages[index] as? AgentMessageUi ?: return
+        if (message.roundCost != null) return
+        val messages = conversation.messages.toMutableList().apply {
+            this[index] = message.copy(roundCost = cost)
+        }
+        updateConversation(conversationId, conversation.copy(messages = messages))
+        // 只精确更新这一行：整会话重写在超大会话里很慢，进程被杀会把记录一起丢掉。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                EtaDatabase.get(appContext).conversationDao()
+                    .updateMessageRoundCost(conversationId, message.id, cost)
+            }.onFailure { failure ->
+                AndroidAgentLogger.warn("Round cost persist failed: type=${failure.safeLogType()}")
+            }
         }
     }
 

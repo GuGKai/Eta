@@ -183,6 +183,9 @@
   <string name="conversation_retry_earlier_messages">載入失敗，點按重試</string>
   <string name="conversation_load_turn_start">請向上捲動到這一輪的使用者提問後再操作</string>
   <string name="conversation_search_hint">搜尋對話</string>
+  <string name="conversation_search_action">搜尋</string>
+  <string name="conversation_top_bar_placeholder">新任務</string>
+  <string name="chat_round_cost">本輪消耗¥%1$s</string>
   <string name="conversation_empty">尚無對話</string>
   <string name="conversation_no_results">找不到相符的對話</string>
   <string name="conversation_rename_title">重新命名對話</string>
@@ -1337,6 +1340,8 @@
   <string name="speech_enable_auto_read">開啟自動朗讀</string>
   <string name="read_aloud_channel">朗讀</string>
   <string name="read_aloud_notification_title">Eta 正在朗讀</string>
+  <!-- 狀態欄實時活動膠囊右側文字：固定 4 個字符寬度以內，超出會被截斷。 -->
+  <string name="read_aloud_live_short_text">朗讀中</string>
   <string name="speech_mic_permission">請允許 Eta 使用麥克風</string>
   <string name="speech_open_settings">語音設定</string>
   <string name="speech_test_result">識別結果：%1$s</string>

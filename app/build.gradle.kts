@@ -42,8 +42,6 @@ android {
 <<<<<<< HEAD
         versionCode = 2026102202
         versionName = "3.3.3"
-=======
-        versionCode = 2026101501
         versionName = "3.3.1"
 >>>>>>> 1089e26d (feat(sidebar): 侧栏回归原作者版式 + 新增工作区（会话文件夹）)
         testInstrumentationRunner = "io.github.mangi.eta.validation.DeviceValidationRunner"
