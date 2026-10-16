@@ -132,14 +132,24 @@ internal data class ScreenCornerRadii(val topLeft: Float, val topRight: Float, v
 }
 
 @Composable
-internal fun AgentOverlayGlow(state: AgentOverlayState, corners: ScreenCornerRadii) {
+internal fun AgentOverlayGlow(
+    state: AgentOverlayState,
+    corners: ScreenCornerRadii,
+    /** 只在真正操作屏幕（含动作结束后的一段停留）时为 true，由调用方控制。 */
+    active: Boolean,
+) {
     val phase = state.phase
     if (phase != AgentOverlayPhase.RUNNING && phase != AgentOverlayPhase.PAUSED) return
     val running = phase == AgentOverlayPhase.RUNNING
     val pausedAccent = overlayPhaseAccent(AgentOverlayPhase.PAUSED)
-    var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { shown = true }
-    val reveal by animateFloatAsState(if (shown) 1f else 0f, tween(420), label = "edge_reveal")
+    // 出现快、消失慢：点亮 320ms，淡出 620ms。
+    val reveal by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(if (active) 320 else 620),
+        label = "edge_reveal",
+    )
+    // 完全透明时连路径都不构建，避免空转绘图。
+    if (reveal <= 0.002f) return
 
     val rotation = if (running) {
         val transition = rememberInfiniteTransition(label = "edge_light")

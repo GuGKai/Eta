@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -22,6 +24,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
@@ -51,6 +54,8 @@ internal fun AccountBalanceCapsules(
     state: DeepSeekBalanceStore.UiState,
     onRefresh: () -> Unit,
     onReseed: (Double) -> Unit,
+    /** 放进输入栏那一行时收紧上限，保证居中后不会压到左右两边的按钮。 */
+    maxWidth: Dp = 232.dp,
 ) {
     if (!state.configured) return
     var editing by remember { mutableStateOf(false) }
@@ -71,7 +76,7 @@ internal fun AccountBalanceCapsules(
     }
 
     Row(
-        modifier = Modifier.widthIn(max = 232.dp).padding(horizontal = 4.dp),
+        modifier = Modifier.widthIn(max = maxWidth).padding(horizontal = 4.dp),
     ) {
         AccountCapsule(
             text = stringResource(R.string.deepseek_capsule_pair, balanceValue, spentValue),
@@ -102,6 +107,10 @@ internal fun AccountBalanceCapsules(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                // 输入框与下面两个按钮之间留出间距，原来两者是贴在一起的。
+                Spacer(modifier = Modifier.height(12.dp))
+
                 MiuixDialogActions(
                     confirmText = stringResource(R.string.action_confirm),
                     confirmEnabled = parsed != null,

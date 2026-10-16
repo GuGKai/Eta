@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PushPin
@@ -689,6 +690,8 @@ private fun PaneActionBar(
     query: String,
     onSearchChange: (String) -> Unit,
 ) {
+    // 输入过程中不搜索：草稿只留在本地，点右侧搜索按钮（或键盘搜索键）才把过滤条件提交出去。
+    var draft by rememberSaveable(query) { mutableStateOf(query) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -700,9 +703,14 @@ private fun PaneActionBar(
             onExpandedChange = {},
             inputField = {
                 InputField(
-                    query = query,
-                    onQueryChange = onSearchChange,
-                    onSearch = onSearchChange,
+                    query = draft,
+                    onQueryChange = { value ->
+                        draft = value
+                        // 点输入框里的叉号（Miuix 的 SearchCleanup，回调就是 onQueryChange("")）
+                        // 即退出本次搜索：清掉已提交的过滤条件，列表回到默认视图。
+                        if (value.isBlank() && query.isNotBlank()) onSearchChange("")
+                    },
+                    onSearch = { onSearchChange(draft.trim()) },
                     expanded = false,
                     onExpandedChange = {},
                     label = stringResource(R.string.conversation_search_hint),
@@ -713,6 +721,18 @@ private fun PaneActionBar(
             },
             content = {},
         )
+        Spacer(modifier = Modifier.width(6.dp))
+        IconButton(
+            onClick = { onSearchChange(draft.trim()) },
+            modifier = Modifier.size(34.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = stringResource(R.string.conversation_search_action),
+                modifier = Modifier.size(20.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+        }
     }
 }
 
@@ -816,13 +836,9 @@ private fun ConversationTextRow(
                 .heightIn(min = ConversationPanelMetrics.RowMinHeight)
                 .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
                 .background(
-                    when {
-                        // 与侧栏背景保持一档亮度差；浅色下与 surfaceContainerHigh 相同。
-                        selected -> MiuixTheme.colorScheme.surfaceContainerHighest
-                        // 置顶行比侧栏底色深一档，未选中时也能与普通会话区分。
-                        conversation.isPinned -> MiuixTheme.colorScheme.surfaceContainerHigh
-                        else -> Color.Transparent
-                    },
+                    // 置顶 / 工作区里的会话不再单独铺底色，和下面的历史列表保持同一套样式；
+                    // 只有当前选中项仍用高一档的表面色区分。
+                    if (selected) MiuixTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
                 )
                 .combinedClickable(
                     onClick = onClick,

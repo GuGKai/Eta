@@ -194,6 +194,9 @@
   <string name="conversation_retry_earlier_messages">Load failed. Tap to retry</string>
   <string name="conversation_load_turn_start">Scroll up to the user message that started this turn before continuing</string>
   <string name="conversation_search_hint">Search conversations</string>
+  <string name="conversation_search_action">Search</string>
+  <string name="conversation_top_bar_placeholder">New task</string>
+  <string name="chat_round_cost">Spent ¥%1$s</string>
   <string name="conversation_empty">No conversations yet</string>
   <string name="conversation_no_results">No matching conversations</string>
   <string name="conversation_rename_title">Rename conversation</string>
@@ -1369,6 +1372,8 @@
   <string name="speech_enable_auto_read">Enable auto read-aloud</string>
   <string name="read_aloud_channel">Read aloud</string>
   <string name="read_aloud_notification_title">Eta is reading aloud</string>
+  <!-- 状态栏实时活动胶囊右侧文字：固定 4 个字符宽度以内，超出会被截断。 -->
+  <string name="read_aloud_live_short_text">Reading</string>
   <string name="speech_mic_permission">Allow Eta to use the microphone</string>
   <string name="speech_open_settings">Speech settings</string>
   <string name="speech_test_result">Recognition result: %1$s</string>
