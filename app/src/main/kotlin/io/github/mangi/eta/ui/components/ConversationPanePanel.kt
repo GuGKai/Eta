@@ -717,6 +717,10 @@ private fun PaneActionBar(
                     // 深色下侧栏已抬高到 surfaceContainer，搜索框需再高一档才能显出轮廓；
                     // 浅色的 surfaceContainerHigh 与 surfaceContainerHighest 相同，观感不变。
                     color = MiuixTheme.colorScheme.surfaceContainerHighest,
+                    // 框外右侧已经有一个搜索按钮，框内左侧再画放大镜就重复了；
+                    // 空槽位顶掉 Miuix 默认的 leadingIcon，只留 Miuix 原本的 16dp 起始内边距，
+                    // 否则文字和光标会贴到圆角边上被切掉。
+                    leadingIcon = { Spacer(modifier = Modifier.width(16.dp)) },
                 )
             },
             content = {},
