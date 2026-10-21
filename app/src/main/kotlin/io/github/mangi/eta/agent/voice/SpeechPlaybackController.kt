@@ -16,13 +16,19 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
-internal data class SpeechPlaybackState(val messageId: String? = null, val loading: Boolean = false, val error: String? = null)
+internal data class SpeechPlaybackState(
+    val messageId: String? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
+    /** 暂停中：已合成的音频与播放位置都保留，继续后从断点接着读。 */
+    val paused: Boolean = false,
+)
 
 internal class SpeechPlaybackController(
     private val context: Context,
@@ -30,6 +36,8 @@ internal class SpeechPlaybackController(
     private val beforePlayback: () -> Unit = {},
     private val interruptOnScreenOff: Boolean = true,
     private val afterPlayback: () -> Unit = {},
+    /** 暂停/继续后同步宿主（朗读卡片的按钮文案）。 */
+    private val onPauseChanged: (Boolean) -> Unit = {},
     private val synthesize: suspend (SpeechSettings, SpeechCredentials, String, (ByteArray) -> Unit) -> Unit = ::synthesizeSpeech,
     /** 整篇单会话流式合成；为 null 时只用逐段请求。 */
     private val streamSynthesize: (suspend (SpeechSettings, SpeechCredentials, List<String>, (ByteArray) -> Unit) -> Unit)? = ::streamSpeech,
@@ -65,12 +73,10 @@ internal class SpeechPlaybackController(
                     val player = createOutput()
                     output = player
                     playChunks(config, secrets, SpeechText.chunks(readable), player) {
-                        scope.launch(Dispatchers.Main.immediate) {
-                            if (session == generation) mutableState.value = SpeechPlaybackState(messageId)
-                        }
+                        markPlaying(session, messageId)
                     }
                     player.finish()
-                    withTimeout(180_000) { while (!player.drained()) delay(20) }
+                    awaitDrained(session, player)
                 }
                 if (session == generation) stop()
             } catch (error: Exception) {
@@ -85,6 +91,34 @@ internal class SpeechPlaybackController(
                 if (session == generation) stop()
             }
         }
+    }
+
+    /** 暂停：不关音轨、不丢已合成的音频，继续后从断点接着播。 */
+    fun pause() {
+        val current = mutableState.value
+        if (current.messageId == null || current.paused) return
+        mutableState.value = current.copy(paused = true)
+        output?.pause()
+        systemSpeaker?.interrupt()
+        onPauseChanged(true)
+    }
+
+    fun resume() {
+        val current = mutableState.value
+        if (current.messageId == null || !current.paused) return
+        mutableState.value = current.copy(paused = false)
+        output?.resume()
+        onPauseChanged(false)
+    }
+
+    /** 朗读卡片上的暂停与继续共用一枚按钮；返回切换后的暂停状态。 */
+    fun togglePause(): Boolean {
+        if (mutableState.value.paused) {
+            resume()
+            return false
+        }
+        pause()
+        return true
     }
 
     /**
@@ -140,6 +174,7 @@ internal class SpeechPlaybackController(
             var announced = false
             val fade = SpeechSegmentFade()
             // 音轨写满时 write 会休眠重试；可中断才能让宿主取消立即结束这里，随后关闭音轨。
+            // 暂停期间音轨不再消费，write 自己等待，不在这里重复轮询，恢复后写到哪就放到哪。
             suspend fun play(bytes: ByteArray) {
                 if (bytes.isNotEmpty()) runInterruptible { player.write(bytes) }
             }
@@ -165,20 +200,60 @@ internal class SpeechPlaybackController(
     ) {
         val speaker = createSystemSpeaker(config)
         systemSpeaker = speaker
+        val chunks = SpeechText.chunks(readable)
         val announced = java.util.concurrent.atomic.AtomicBoolean(false)
+        var index = 0
+        // 暂停打断当前段时，引擎最后回报的朗读位置；继续后只补读这一段剩下的字。
+        var offset = 0
         try {
-            for (chunk in SpeechText.chunks(readable)) {
+            while (index < chunks.size) {
+                awaitResume()
                 if (session != generation) throw CancellationException("Speech playback replaced")
-                speaker.speak(chunk, config.systemTtsVoice) {
+                val chunk = chunks[index]
+                if (offset >= chunk.length) {
+                    index++
+                    offset = 0
+                    continue
+                }
+                speaker.speak(chunk.substring(offset), config.systemTtsVoice) {
                     if (announced.compareAndSet(false, true)) scope.launch(Dispatchers.Main.immediate) {
-                        if (session == generation) mutableState.value = SpeechPlaybackState(messageId)
+                        markPlaying(session, messageId)
                     }
                 }
+                if (session != generation) throw CancellationException("Speech playback replaced")
+                if (mutableState.value.paused) {
+                    // 被暂停打断：不前进到下一段，恢复后从这段的断点续读。
+                    offset = (offset + speaker.spokenOffset).coerceAtMost(chunk.length)
+                    continue
+                }
+                index++
+                offset = 0
             }
         } finally {
             speaker.close()
             if (systemSpeaker === speaker) systemSpeaker = null
         }
+    }
+
+    /** 暂停期间挂起播放循环，继续后返回；停止朗读会随 job 取消一起退出。 */
+    private suspend fun awaitResume() {
+        mutableState.first { !it.paused }
+    }
+
+    /** 等音轨把已写入的音频放完；暂停的时间不计入超时，暂停多久都能接着读。 */
+    private suspend fun awaitDrained(session: Long, player: SpeechAudioOutput) {
+        var waited = 0L
+        while (!player.drained()) {
+            if (session != generation) throw CancellationException("Speech playback replaced")
+            if (mutableState.value.paused) waited = 0 else waited += DRAIN_POLL_MS
+            if (waited > DRAIN_TIMEOUT_MS) throw SpeechFailure(SpeechErrorCode.TIMEOUT, "朗读播放超时，请重试")
+            delay(DRAIN_POLL_MS)
+        }
+    }
+
+    private fun markPlaying(session: Long, messageId: String) {
+        if (session != generation) return
+        mutableState.value = mutableState.value.copy(messageId = messageId, loading = false)
     }
 
     fun stop() {
@@ -204,4 +279,12 @@ internal interface SpeechAudioOutput : Closeable {
     fun write(bytes: ByteArray)
     fun finish()
     fun drained(): Boolean
+
+    /** 就地暂停音轨，已缓冲的音频与播放位置都保留，继续时从断点接着放。 */
+    fun pause() {}
+
+    fun resume() {}
 }
+
+private const val DRAIN_POLL_MS = 20L
+private const val DRAIN_TIMEOUT_MS = 180_000L
