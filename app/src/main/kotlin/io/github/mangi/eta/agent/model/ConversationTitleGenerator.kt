@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.runtime.AgentRunController
+import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -23,8 +24,26 @@ internal class ConversationTitleGenerator(
     suspend fun generate(firstUserMessage: String, firstAnswer: String): String? {
         val prompt = firstUserMessage.trim().take(MAX_PROMPT_CHARS)
         if (prompt.isBlank()) return null
-        val config = loadConfig()?.let(::lightweight) ?: return null
-        return runCatching { withTimeout(TIMEOUT_MS) { request(config, prompt, firstAnswer) } }.getOrNull()
+        val config = loadConfig()?.let(::lightweight)
+        if (config == null) {
+            AndroidAgentLogger.warn("Conversation title skipped: model config unavailable")
+            return null
+        }
+        return try {
+            val title = withTimeout(TIMEOUT_MS) { request(config, prompt, firstAnswer) }
+            if (title.isNullOrBlank()) {
+                AndroidAgentLogger.warn("Conversation title skipped: model returned empty title")
+            }
+            title
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            AndroidAgentLogger.warn(
+                "Conversation title generation failed: type=${error.javaClass.simpleName}" +
+                    " message=${error.message?.take(120).orEmpty()}"
+            )
+            null
+        }
     }
 
     private suspend fun request(
@@ -66,9 +85,33 @@ internal class ConversationTitleGenerator(
         }
     }
 
-    /** 只做几十字的短输出，避免沿用用户给对话选的深度思考。 */
-    private fun lightweight(config: AgentModelClient.ModelConfig): AgentModelClient.ModelConfig =
-        config.copy(reasoningEffort = io.github.mangi.eta.data.model.ReasoningEffort.OFF, thinkingEnabled = false)
+    /**
+     * 只做几十字的短输出，避免沿用用户给对话选的深度思考。
+     *
+     * 不能无条件设 OFF：当前 deepseek-flash 解析出的能力表不允许关闭思考，
+     * 请求会被 validate 的 require 直接拒绝（IllegalArgumentException），命名于是全部失败。
+     * 按能力表挑最轻且真的可用的档位。
+     */
+    private fun lightweight(config: AgentModelClient.ModelConfig): AgentModelClient.ModelConfig {
+        val effort = run {
+            val capabilities = config.reasoningCapabilities
+                ?: return@run io.github.mangi.eta.data.model.ReasoningEffort.OFF
+            val selectable = capabilities.selectableEfforts
+            when {
+                io.github.mangi.eta.data.model.ReasoningEffort.OFF in selectable ->
+                    io.github.mangi.eta.data.model.ReasoningEffort.OFF
+                io.github.mangi.eta.data.model.ReasoningEffort.LOW in selectable ->
+                    io.github.mangi.eta.data.model.ReasoningEffort.LOW
+                io.github.mangi.eta.data.model.ReasoningEffort.DEFAULT in selectable ->
+                    io.github.mangi.eta.data.model.ReasoningEffort.DEFAULT
+                else -> config.effectiveReasoningEffort
+            }
+        }
+        return config.copy(
+            reasoningEffort = effort,
+            thinkingEnabled = effort.enablesReasoning,
+        )
+    }
 
     internal companion object {
         const val MAX_TITLE_CHARS = 13
