@@ -52,9 +52,17 @@ internal class SystemTtsSpeaker(context: Context, engine: String?) : Closeable {
     private var counter = 0
     private var closed = false
 
+    /** 引擎最后一次回报的朗读起点（相对当前这段文本）；暂停时用它从断点续读。 */
+    @Volatile var spokenOffset: Int = 0
+        private set
+
     private val progress = object : UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) {
             startListener?.invoke()
+        }
+
+        override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
+            spokenOffset = start.coerceAtLeast(0)
         }
 
         override fun onDone(utteranceId: String?) {
@@ -81,6 +89,7 @@ internal class SystemTtsSpeaker(context: Context, engine: String?) : Closeable {
         applyVoice(engine, voice)
         val utteranceId = "eta-tts-" + (++counter)
         startListener = onStart
+        spokenOffset = 0
         try {
             if (engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId) != TextToSpeech.SUCCESS) {
                 throw SpeechFailure(SpeechErrorCode.AUDIO, "系统语音引擎拒绝了这次播报")
@@ -98,6 +107,14 @@ internal class SystemTtsSpeaker(context: Context, engine: String?) : Closeable {
             settledBeforeWait = null
             utteranceWaiter = null
         }
+    }
+
+    /**
+     * 暂停：只让引擎停下当前这一段，等待中的 [speak] 会随 onStop 正常返回，
+     * 由调用方按 [spokenOffset] 决定从哪个字接着读。
+     */
+    fun interrupt() {
+        runCatching { instance?.stop() }
     }
 
     /** 读取当前引擎的音色名，供设置页展示；失败时由调用方按空列表处理。 */

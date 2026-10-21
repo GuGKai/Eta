@@ -333,8 +333,15 @@ internal fun SpeechPlaybackHost(content: @Composable () -> Unit) {
         created = SpeechPlaybackController(
             context = context,
             scope = scope,
-            beforePlayback = { ReadAloudPlaybackService.start(appContext) { created.stop() } },
+            beforePlayback = {
+                ReadAloudPlaybackService.start(
+                    appContext,
+                    onStop = { created.stop() },
+                    onTogglePause = { created.togglePause() },
+                )
+            },
             afterPlayback = { ReadAloudPlaybackService.stop(appContext) },
+            onPauseChanged = { paused -> ReadAloudPlaybackService.setPaused(appContext, paused) },
             interruptOnScreenOff = false,
         )
         created

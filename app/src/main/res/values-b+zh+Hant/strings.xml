@@ -1336,10 +1336,16 @@
   <string name="speech_read_stop">停止朗讀</string>
   <string name="speech_disable_auto_read">關閉自動朗讀</string>
   <string name="speech_enable_auto_read">開啟自動朗讀</string>
+  <string name="speech_read_pause">暫停朗讀</string>
+  <string name="speech_read_resume">繼續朗讀</string>
+  <string name="speech_auto_read_on">自動朗讀已開啟，點按關閉</string>
+  <string name="speech_auto_read_off">自動朗讀已關閉，點按開啟</string>
   <string name="read_aloud_channel">朗讀</string>
   <string name="read_aloud_notification_title">Eta 正在朗讀</string>
+  <string name="read_aloud_paused_title">Eta 朗讀已暫停</string>
   <!-- 狀態欄實時活動膠囊右側文字：固定 4 個字符寬度以內，超出會被截斷。 -->
   <string name="read_aloud_live_short_text">朗讀中</string>
+  <string name="read_aloud_paused_short_text">已暫停</string>
   <string name="speech_mic_permission">請允許 Eta 使用麥克風</string>
   <string name="speech_open_settings">語音設定</string>
   <string name="speech_test_result">識別結果：%1$s</string>

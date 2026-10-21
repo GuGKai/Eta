@@ -1370,10 +1370,16 @@
   <string name="speech_read_stop">Stop reading</string>
   <string name="speech_disable_auto_read">Disable auto read-aloud</string>
   <string name="speech_enable_auto_read">Enable auto read-aloud</string>
+  <string name="speech_read_pause">Pause reading</string>
+  <string name="speech_read_resume">Resume reading</string>
+  <string name="speech_auto_read_on">Auto read-aloud on, tap to turn off</string>
+  <string name="speech_auto_read_off">Auto read-aloud off, tap to turn on</string>
   <string name="read_aloud_channel">Read aloud</string>
   <string name="read_aloud_notification_title">Eta is reading aloud</string>
+  <string name="read_aloud_paused_title">Reading paused</string>
   <!-- 状态栏实时活动胶囊右侧文字：固定 4 个字符宽度以内，超出会被截断。 -->
   <string name="read_aloud_live_short_text">Reading</string>
+  <string name="read_aloud_paused_short_text">Paused</string>
   <string name="speech_mic_permission">Allow Eta to use the microphone</string>
   <string name="speech_open_settings">Speech settings</string>
   <string name="speech_test_result">Recognition result: %1$s</string>
