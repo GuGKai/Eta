@@ -134,17 +134,21 @@ internal class AgentExecutionService : Service() {
             )
         }
         if (status == null) {
-            val taskCount = leases.taskCount()
-            if (taskCount == 0) {
+            val tasks = leases.runningTasks()
+            if (tasks.isEmpty()) {
                 // 只剩虚拟屏会话这类保活租约：前台通知必须存在，但不能说成“任务正在运行”。
                 return RenderedText(
                     title = getString(R.string.execution_keepalive_title),
                     text = getString(R.string.execution_keepalive_summary),
                 )
             }
+            // 没有 Agent 回答在跑时，直接写清楚是哪条后台任务，而不是笼统的「N 项任务正在运行」。
+            val (rawLabel, startedAt) = tasks.first()
+            val label = rawLabel?.takeIf { it.isNotBlank() } ?: getString(R.string.execution_background_task)
             return RenderedText(
-                title = getString(R.string.execution_title),
-                text = resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount),
+                title = if (tasks.size == 1) label
+                else getString(R.string.execution_background_more, label, tasks.size),
+                text = getString(R.string.execution_background_since, formatClock(startedAt)),
             )
         }
         return RenderedText(
@@ -153,6 +157,13 @@ internal class AgentExecutionService : Service() {
             // 第二行：正向累计的已完成步骤数。
             text = resources.getQuantityString(R.plurals.work_completed_steps, runSteps, runSteps),
         )
+    }
+
+    /** 把 elapsedRealtime 意义上的开始时刻换算成墙钟 HH:mm，用于「从几点开始跑」。 */
+    private fun formatClock(elapsedStartedAt: Long): String {
+        val wallClock = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - elapsedStartedAt)
+        return java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(wallClock))
     }
 
     /**
@@ -242,17 +253,6 @@ internal class AgentExecutionService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(
-                Notification.Action.Builder(null, getString(R.string.execution_supplement), supplement).build(),
-            )
-            .addAction(
-                Notification.Action.Builder(
-                    null,
-                    getString(if (runPaused) R.string.execution_resume else R.string.execution_pause),
-                    togglePause,
-                ).build(),
-            )
-            .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         // 上游用 SDK_INT_FULL >= BAKLAVA_1(36.1) 判断；本机 ColorOS 16.1 上报 ro.build.version.sdk_full=36.0
         // （SDK_INT_FULL = 3600000 < 3600001），条件恒假 → 永不申请，流体云/实时活动不出现。
@@ -261,6 +261,25 @@ internal class AgentExecutionService : Service() {
             builder
                 .setShortCriticalText(liveTextLabel(content.title))
                 .setRequestPromotedOngoing(true)
+        }
+        if (status != null) {
+            // Agent 回答中：补充（插话）/ 暂停(恢复) / 停止任务，三个入口都接回。
+            builder.addAction(
+                Notification.Action.Builder(null, getString(R.string.execution_supplement), supplement).build(),
+            )
+            builder.addAction(
+                Notification.Action.Builder(
+                    null,
+                    getString(if (runPaused) R.string.execution_resume else R.string.execution_pause),
+                    togglePause,
+                ).build(),
+            )
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+        } else if (leases.taskCount() > 0) {
+            // 后台命令没有「插话」「暂停」的概念，只保留一个停止入口。
+            builder.addAction(
+                Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build(),
+            )
         }
         return builder.build()
     }
@@ -327,10 +346,11 @@ internal class AgentExecutionService : Service() {
             id: String,
             allowBoundFallback: Boolean = false,
             kind: ExecutionLeaseRegistry.Kind = ExecutionLeaseRegistry.Kind.TASK,
+            label: String? = null,
             onStop: () -> Unit,
         ): Boolean {
             if (instance?.startRejected == true) return false
-            if (!leases.acquire(id, kind, allowBoundFallback, onStop)) return true
+            if (!leases.acquire(id, kind, allowBoundFallback, label, onStop)) return true
             return try {
                 context.applicationContext.startForegroundService(Intent(context, AgentExecutionService::class.java))
                 true
@@ -344,6 +364,12 @@ internal class AgentExecutionService : Service() {
         fun release(id: String) {
             leases.release(id)
             mainHandler.post { instance?.let { service -> if (service.progressOwner == id) { service.progress = ""; service.progressOwner = "" }; service.refreshNotification() } }
+        }
+
+        /** 后台命令换了描述时更新租约上的名字，下一帧通知就会显示新的任务名。 */
+        fun updateLeaseLabel(id: String, label: String) {
+            leases.updateLabel(id, label)
+            mainHandler.post { instance?.let { it.refreshNotification() } }
         }
 
         fun updateProgress(id: String, event: AgentEvent) {

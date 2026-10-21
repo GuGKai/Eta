@@ -18,4 +18,7 @@
     <string name="execution_reply_done_fallback">Tap to view the reply</string>
     <string name="execution_keepalive_title">Virtual screen kept alive</string>
     <string name="execution_keepalive_summary">Tap to return to Eta</string>
+    <string name="execution_background_task">Background task</string>
+    <string name="execution_background_more">%1$s and %2$d more</string>
+    <string name="execution_background_since">Background command running since %1$s</string>
 </resources>
