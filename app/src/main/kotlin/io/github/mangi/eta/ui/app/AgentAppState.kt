@@ -145,6 +145,8 @@ internal class AgentAppState(
     private val autoNamingPending = mutableSetOf<String>()
     /** 正在补命名的外部入口会话（语音浮窗／小布／小爱／定时任务）：同一会话不重复请求。 */
     private val externalNamingInFlight = mutableSetOf<String>()
+    /** 正在补命名的恢复/导入会话：重复恢复时避免同一会话并发请求。 */
+    private val recoveredNamingInFlight = mutableSetOf<String>()
 
     private var selectedConversationId: String? = initialConversations.selectedConversationId
     private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
@@ -591,6 +593,10 @@ internal class AgentAppState(
                         result = outcome.result,
                         acknowledgeRuntimeResult = true,
                     )
+                    // 重新接管后才拿到终态的一轮同样不经过 finishRound。
+                    if (outcome.result.ok) {
+                        autoNameRecoveredRuns(listOf(conversationId to outcome.result.content))
+                    }
                 }
                 AgentRuntimeClient.AttachOutcome.NotActive -> {
                     withContext(Dispatchers.Main) {
@@ -681,6 +687,56 @@ internal class AgentAppState(
                 } finally {
                     withContext(Dispatchers.Main.immediate + NonCancellable) {
                         externalNamingInFlight -= conversationId
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 恢复/导入回填的那一轮不经过 [finishRound]，标题会停在第一轮提问原文。
+     *
+     * 这里只在标题仍是占位时补一次语义命名；已经命名的会话不动，重复恢复也不会重复请求。
+     */
+    private fun autoNameRecoveredRuns(candidates: List<Pair<String, String>>) {
+        val targets = candidates
+            .filter { (_, answer) -> answer.isNotBlank() }
+            .distinctBy { it.first }
+            .filterNot { (id, _) -> id in recoveredNamingInFlight }
+        if (targets.isEmpty()) return
+        targets.forEach { (id, _) -> recoveredNamingInFlight += id }
+        scope.launch(Dispatchers.IO) {
+            targets.forEach { (conversationId, answer) ->
+                try {
+                    val prompt = withContext(Dispatchers.Main.immediate) {
+                        conversationsById[conversationId]
+                            ?.messages
+                            ?.firstOrNull { it is UserMessageUi }
+                            ?.let { (it as UserMessageUi).content }
+                    }
+                    if (prompt.isNullOrBlank()) return@forEach
+                    val placeholder = prompt.defaultConversationTitleFromMessage()
+                    val currentTitle = withContext(Dispatchers.Main.immediate) {
+                        conversationTitles[conversationId]
+                    }
+                    if (!currentTitle.isNullOrBlank() && currentTitle != placeholder) return@forEach
+                    val title = ConversationTitleGenerator().generate(prompt, answer)
+                    if (title.isNullOrBlank()) return@forEach
+                    withContext(Dispatchers.Main.immediate) {
+                        conversationTitles = conversationTitles + (conversationId to title)
+                        refreshConversationSummaries()
+                    }
+                    withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                    AndroidAgentLogger.info("Recovered conversation auto named: chars=${title.length}")
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    AndroidAgentLogger.warn(
+                        "Recovered conversation naming failed: type=${throwable.javaClass.simpleName}"
+                    )
+                } finally {
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        recoveredNamingInFlight -= conversationId
                     }
                 }
             }
@@ -2133,13 +2189,22 @@ internal class AgentAppState(
         answer: String,
         startBalance: Deferred<Double?>?,
     ) {
-        val needsNaming = answer.isNotBlank() && conversationId in autoNamingPending
-        // 这一轮不参与命名（空回答等）就立刻解除占位，别让顶栏一直停在「新任务」。
-        if (!needsNaming) autoNamingPending.remove(conversationId)
         val store = balanceStore
-        if (!needsNaming && store == null) return
+        if (answer.isBlank() && store == null) return
         scope.launch(Dispatchers.IO) {
-            if (needsNaming) {
+            // 命名的判据是「标题仍是第一轮占位原文」；autoNamingPending 只是快路径，
+            // 界面重建或结果走恢复回填时集合会丢，这里仍然能补上。
+            val pendingNaming = withContext(Dispatchers.Main.immediate) {
+                conversationId in autoNamingPending
+            }
+            val needsNaming = answer.isNotBlank() &&
+                (pendingNaming || isPlaceholderTitle(conversationId))
+            if (!needsNaming) {
+                if (answer.isBlank()) {
+                    AndroidAgentLogger.info("Conversation naming skipped: empty answer")
+                }
+                withContext(Dispatchers.Main.immediate) { autoNamingPending.remove(conversationId) }
+            } else {
                 try {
                     val title = ConversationTitleGenerator().generate(prompt, answer)
                     if (!title.isNullOrBlank()) {
@@ -2185,6 +2250,26 @@ internal class AgentAppState(
                 return@launch
             }
             withContext(Dispatchers.Main.immediate) { attachRoundCost(conversationId, cost) }
+        }
+    }
+
+    /**
+     * 标题是否仍是第一轮提问的占位原文；用户手动改过名字的会话返回 false。
+     *
+     * 占位必须用**会话首条用户消息**算：标题占位是第一轮提问生成的。拿本轮 prompt 去比，
+     * 第二轮起永远对不上，就会把「还没命名」误判成「已有名字」，之后再也不会补命名。
+     */
+    private suspend fun isPlaceholderTitle(conversationId: String): Boolean {
+        val firstUser = withContext(Dispatchers.Main.immediate) {
+            conversationsById[conversationId]
+                ?.messages
+                ?.firstOrNull { it is UserMessageUi }
+                ?.let { (it as UserMessageUi).content }
+        } ?: return false
+        val placeholder = firstUser.defaultConversationTitleFromMessage()
+        return withContext(Dispatchers.Main.immediate) {
+            val current = conversationTitles[conversationId]
+            current.isNullOrBlank() || current == placeholder
         }
     }
 
