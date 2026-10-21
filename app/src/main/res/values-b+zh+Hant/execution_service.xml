@@ -17,4 +17,7 @@
     <string name="execution_reply_done_fallback">點擊查看回覆</string>
     <string name="execution_keepalive_title">虛擬螢幕保持中</string>
     <string name="execution_keepalive_summary">點按返回 Eta 對話</string>
+    <string name="execution_background_task">後台任務</string>
+    <string name="execution_background_more">%1$s 等 %2$d 項</string>
+    <string name="execution_background_since">後台命令執行中 · 從 %1$s 開始</string>
 </resources>
