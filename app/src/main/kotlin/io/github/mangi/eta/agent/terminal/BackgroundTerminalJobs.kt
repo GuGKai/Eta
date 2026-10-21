@@ -13,7 +13,8 @@ import org.json.JSONObject
 internal class BackgroundTerminalJobs(
     private val supervisor: DetachedTaskSupervisor,
     private val logger: AgentLogger,
-    private val acquireLease: (() -> Unit) -> Boolean = { true },
+    private val acquireLease: (String, () -> Unit) -> Boolean = { _, _ -> true },
+    private val updateLeaseLabel: (String) -> Unit = {},
     private val releaseLease: () -> Unit = {},
     private val onCompleted: (DetachedTask) -> Unit = {},
     private val completionNotificationsEnabled: () -> Boolean = { true },
@@ -38,7 +39,7 @@ internal class BackgroundTerminalJobs(
         timeoutMs: Long,
     ): String {
         if (closed) return failure("BACKGROUND_CLOSED", "后台命令宿主已关闭")
-        if (!lease()) return failure("BACKGROUND_START_NOT_ALLOWED", "系统未允许启动后台执行，请返回 Eta 后重试")
+        if (!lease(description)) return failure("BACKGROUND_START_NOT_ALLOWED", "系统未允许启动后台执行，请返回 Eta 后重试")
         return when (val result = launcher.start(command, cwd, identity, environment,
             commandTask = true, description = description, timeoutMs = timeoutMs.coerceAtLeast(0))) {
             is DaemonStartResult.Failed -> {
@@ -97,7 +98,8 @@ internal class BackgroundTerminalJobs(
     fun resume() {
         if (closed) return
         refresh()
-        if (supervisor.list().any { it.task.commandTask && it.task.completedAt == null } && lease()) monitor()
+        val running = supervisor.list().firstOrNull { it.task.commandTask && it.task.completedAt == null }
+        if (running != null && lease(running.task.description)) monitor()
     }
 
     @Synchronized
@@ -132,8 +134,8 @@ internal class BackgroundTerminalJobs(
         if (monitor == null) monitor = executor.scheduleWithFixedDelay(::refresh, 0, 1, TimeUnit.SECONDS)
     }
 
-    private fun lease(): Boolean {
-        if (!leased) leased = acquireLease { stopAll() }
+    private fun lease(label: String): Boolean {
+        if (!leased) leased = acquireLease(label) { stopAll() } else updateLeaseLabel(label)
         return leased
     }
 
