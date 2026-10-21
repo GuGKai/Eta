@@ -18,6 +18,8 @@ internal class SpeechPcmOutput : SpeechAudioOutput {
     private var started = false
     private var finished = false
 
+    @Volatile private var paused = false
+
     override fun write(bytes: ByteArray) {
         var offset = 0
         while (offset < bytes.size) {
@@ -36,7 +38,8 @@ internal class SpeechPcmOutput : SpeechAudioOutput {
                 count
             }
             offset += written
-            if (written == 0) Thread.sleep(5)
+            // 暂停时音轨不再消费，缓冲很快写满；放慢空转，恢复后继续写入。
+            if (written == 0) Thread.sleep(if (paused) PAUSED_POLL_MS else 5)
         }
     }
 
@@ -56,6 +59,19 @@ internal class SpeechPcmOutput : SpeechAudioOutput {
         finished && (it.playbackHeadPosition.toLong() and 0xffffffffL) >= frames
     } ?: true
 
+    /** 只停在这里，不清缓冲、不释放音轨：继续时从这一帧接着放。 */
+    @Synchronized override fun pause() {
+        paused = true
+        val audio = track ?: return
+        if (started) runCatching { audio.pause() }
+    }
+
+    @Synchronized override fun resume() {
+        paused = false
+        val audio = track ?: return
+        if (started) runCatching { audio.play() }
+    }
+
     @Synchronized override fun close() {
         track?.let { it.pause(); it.flush(); it.release() }
         track = null
@@ -64,5 +80,6 @@ internal class SpeechPcmOutput : SpeechAudioOutput {
     private companion object {
         const val SAMPLE_RATE = 24_000
         const val BYTES_PER_FRAME = 2
+        const val PAUSED_POLL_MS = 50L
     }
 }
