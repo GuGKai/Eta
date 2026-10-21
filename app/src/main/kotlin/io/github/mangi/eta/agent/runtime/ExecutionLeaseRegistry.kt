@@ -12,6 +12,8 @@ internal class ExecutionLeaseRegistry {
         val owner: Long?,
         val allowBoundFallback: Boolean,
         val kind: Kind,
+        val label: String?,
+        val startedAt: Long,
         val onStop: () -> Unit,
     )
 
@@ -22,11 +24,19 @@ internal class ExecutionLeaseRegistry {
         id: String,
         kind: Kind = Kind.TASK,
         allowBoundFallback: Boolean = false,
+        label: String? = null,
         onStop: () -> Unit,
     ): Boolean {
         require(id.isNotBlank())
         if (id in leases) return false
-        leases[id] = Lease(activeOwner, allowBoundFallback, kind, onStop)
+        leases[id] = Lease(
+            owner = activeOwner,
+            allowBoundFallback = allowBoundFallback,
+            kind = kind,
+            label = label,
+            startedAt = android.os.SystemClock.elapsedRealtime(),
+            onStop = onStop,
+        )
         return true
     }
 
@@ -35,6 +45,16 @@ internal class ExecutionLeaseRegistry {
 
     /** 仍在运行的任务数；保活租约不计入，避免空闲会话把「Eta 正在运行」钉在通知栏上。 */
     @Synchronized fun taskCount(): Int = leases.values.count { it.kind == Kind.TASK }
+
+    /** 正在运行的任务名与开始时刻（elapsedRealtime），用于通知上显示“到底在跑什么”。 */
+    @Synchronized fun runningTasks(): List<Pair<String?, Long>> = leases.values
+        .filter { it.kind == Kind.TASK }
+        .map { it.label to it.startedAt }
+
+    /** 后台命令换了描述时更新租约上的名字，不重新登记租约。 */
+    @Synchronized fun updateLabel(id: String, label: String) {
+        leases[id]?.let { leases[id] = it.copy(label = label) }
+    }
 
     @Synchronized fun attachOwner(owner: Long) {
         activeOwner = owner
