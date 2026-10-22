@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 29,
+    version = 30,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -75,6 +75,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_26_27,
                         MIGRATION_27_28,
                         MIGRATION_28_29,
+                        MIGRATION_29_30,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -220,6 +221,19 @@ internal abstract class EtaDatabase : RoomDatabase() {
         internal val MIGRATION_28_29 = Migration(28, 29) { database ->
             if (!database.columnExists("conversation_messages", "round_cost")) {
                 database.execSQL("ALTER TABLE conversation_messages ADD COLUMN round_cost REAL")
+            }
+        }
+
+        /**
+         * 29 → 30：补齐 model_providers.auth_mode。
+         *
+         * 上游 3.3.2/3.3.3 在同一个 v29 版本号里加了订阅登录方式这一列，装过 3.3.1 的库
+         * user_version 已经是 29 却没有该列，Room 打开时会因 identity hash 不一致抛
+         * IllegalStateException（界面表现为一进就闪退）。按列判断补齐，再升到 30。
+         */
+        internal val MIGRATION_29_30 = Migration(29, 30) { database ->
+            if (!database.columnExists("model_providers", "auth_mode")) {
+                database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
             }
         }
 
