@@ -153,6 +153,7 @@ internal fun AgentChatBody(
     canCompactContext: Boolean,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit = onSubmit,
+    onSteerSubmit: (String) -> Unit = onSubmit,
     onSteerQueuedMessage: (String) -> Unit = {},
     onRecallQueuedMessage: (String, String) -> Unit = { _, _ -> },
     onRemoveQueuedMessage: (String) -> Unit = {},
@@ -177,7 +178,7 @@ internal fun AgentChatBody(
     onLoadEarlierMessages: () -> Unit = {},
     onHistoryViewportChanged: (Boolean) -> Unit = {},
     isDrawerOpen: Boolean = false,
-    focusInputRequest: Boolean = false,
+    focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
     /** 顶栏高度：进入消息列表的顶部内容内边距，让正文能滑到顶栏毛玻璃下方。 */
     topInset: Dp = 0.dp,
@@ -269,6 +270,11 @@ internal fun AgentChatBody(
                 keepBottomAnchored = true
                 onInterruptAndSubmit(text)
             },
+            onSteerSubmit = { text ->
+                sentFromKeyboard = true
+                keepBottomAnchored = true
+                onSteerSubmit(text)
+            },
             onSteerQueuedMessage = { id ->
                 keepBottomAnchored = true
                 onSteerQueuedMessage(id)
@@ -329,6 +335,7 @@ private fun AgentChatScaffold(
     onBottomAnchorChanged: (Boolean) -> Unit,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit,
+    onSteerSubmit: (String) -> Unit,
     onSteerQueuedMessage: (String) -> Unit,
     onRecallQueuedMessage: (String, String) -> Unit,
     onRemoveQueuedMessage: (String) -> Unit,
@@ -356,7 +363,7 @@ private fun AgentChatScaffold(
     historyLoadState: ConversationHistoryLoadState,
     onLoadEarlierMessages: () -> Unit,
     onHistoryViewportChanged: (Boolean) -> Unit,
-    focusInputRequest: Boolean = false,
+    focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
     topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
@@ -396,6 +403,7 @@ private fun AgentChatScaffold(
                 messageEdit = messageEdit,
                 onSubmit = onSubmit,
                 onInterruptAndSubmit = onInterruptAndSubmit,
+                onSteerSubmit = onSteerSubmit,
                 onSteerQueuedMessage = onSteerQueuedMessage,
                 onRecallQueuedMessage = onRecallQueuedMessage,
                 onRemoveQueuedMessage = onRemoveQueuedMessage,
@@ -1197,6 +1205,7 @@ private fun AgentChatBottomBar(
     messageEdit: MessageEditUiState?,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit,
+    onSteerSubmit: (String) -> Unit,
     onSteerQueuedMessage: (String) -> Unit,
     onRecallQueuedMessage: (String, String) -> Unit,
     onRemoveQueuedMessage: (String) -> Unit,
@@ -1211,7 +1220,7 @@ private fun AgentChatBottomBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
-    focusInputRequest: Boolean = false,
+    focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
 ) {
     Column(
@@ -1294,6 +1303,7 @@ private fun AgentChatBottomBar(
                 preserveFollowingMessages = messageEdit?.preserveFollowingMessages == true,
                 onSubmit = onSubmit,
                 onInterruptAndSubmit = onInterruptAndSubmit,
+                onSteerSubmit = onSteerSubmit,
                 onSteerQueuedMessage = onSteerQueuedMessage,
                 onRecallQueuedMessage = onRecallQueuedMessage,
                 onRemoveQueuedMessage = onRemoveQueuedMessage,

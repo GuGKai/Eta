@@ -457,7 +457,7 @@ fun AgentAppRoot(
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
                         conversationKey = agentState.conversationPaneState.selectedConversationId,
-                        focusInputRequest = agentState.composerFocusPending,
+                        focusInputRequest = agentState.composerFocusRequestId,
                         onFocusInputHandled = { agentState.consumeComposerFocusRequest() },
                         onAction = { action ->
                             when (action) {
@@ -470,6 +470,7 @@ fun AgentAppRoot(
                                 is AgentHomeAction.ModelSelected -> agentState.selectModel(action.modelId)
                                 is AgentHomeAction.SubmitMessage -> { requestExecutionNotifications(); agentState.sendCurrentMessage(action.text) }
                                 is AgentHomeAction.InterruptAndSubmitMessage -> { requestExecutionNotifications(); agentState.interruptAndSendCurrentMessage(action.text) }
+                                is AgentHomeAction.SteerMessage -> { requestExecutionNotifications(); agentState.steerCurrentMessage(action.text) }
                                 is AgentHomeAction.SteerQueuedMessage -> { requestExecutionNotifications(); agentState.steerQueuedMessage(action.id) }
                                 is AgentHomeAction.RecallQueuedMessage -> agentState.recallQueuedMessage(action.id, action.currentDraftText)
                                 is AgentHomeAction.RemoveQueuedMessage -> agentState.removeQueuedMessage(action.id)
