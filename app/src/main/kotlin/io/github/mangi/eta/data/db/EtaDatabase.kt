@@ -130,6 +130,10 @@ internal abstract class EtaDatabase : RoomDatabase() {
             if (!database.hasColumn("conversations", "model_id")) {
                 database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
             }
+            // 上游 3.3.2 在同一版本号里补了订阅登录方式，混合库同样可能缺列。
+            if (!database.hasColumn("model_providers", "auth_mode")) {
+                database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
+            }
         }
 
         /** 23 → 24：自动任务表（PR #142 的迁移重排到本地 v23 之后）。 */
@@ -181,13 +185,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
             createTextChunkCleanup(database)
         }
 
-        internal val MIGRATION_21_22 = Migration(21, 22) { database ->
-            database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
-        }
-
-        internal val MIGRATION_22_23 = Migration(22, 23) { database ->
-            database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
-        }
         /**
          * 27 → 28：兼容装过早期贡献分支包的库（user_version 可能是 25/27）。
          *

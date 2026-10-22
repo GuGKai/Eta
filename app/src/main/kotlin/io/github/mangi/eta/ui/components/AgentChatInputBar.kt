@@ -1,7 +1,9 @@
 package io.github.mangi.eta.ui.components
 
-import android.view.Display
-import android.view.RoundedCorner
+import io.github.mangi.eta.ui.voice.SpeechDictationButton
+import io.github.mangi.eta.ui.voice.SpeechInputFeedback
+import io.github.mangi.eta.ui.voice.rememberSpeechInput
+import androidx.compose.ui.text.TextRange
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -54,7 +56,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,20 +71,15 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
@@ -110,64 +106,7 @@ private val SendButtonVisualSize = ChatInputActionIconSize
 private val SendIconSize = 16.dp
 private val StopIconSize = 10.dp
 private val ThinkingIconSize = 21.dp
-
-/** 设备不上报屏幕圆角信息时的回退圆角，保持改动前的观感。 */
-private val InputContainerFallbackRadius = 20.dp
-
-/**
- * miuix squircle 会把传入半径乘以该系数再绘制（miuix SquirclePath.addSquircleRect 里
- * `radius * extension`，默认值即 SquircleDefaults.Extension），所以要在传入前除回去，
- * 才能画出指定的视觉半径。miuix 升级后若角形状有变，需要重新核对这个值。
- */
-private const val SquircleVisualExtension = 1.1f
-
-/**
- * 输入框圆角：与屏幕圆角同心，即角弧半径 = 屏幕圆角半径 − 输入框到屏幕的外边距。
- *
- * 同心同时要求水平、垂直外边距相同，这里取 AgentChatBottomBar 三边共用的
- * [ChatInputOuterMargin]；屏幕圆角按当前旋转方向读取，设备不上报时用回退值。
- */
-@Composable
-private fun rememberInputContainerRadius(): Dp {
-    val density = LocalDensity.current
-    val view = LocalView.current
-    val orientation = LocalConfiguration.current.orientation
-    return remember(density, view, orientation) {
-        val marginPx = with(density) { ChatInputOuterMargin.toPx() }
-        val visualPx = screenBottomCornerRadiusPx(view.display) - marginPx
-        if (visualPx <= 1f) {
-            InputContainerFallbackRadius
-        } else {
-            with(density) { (visualPx / SquircleVisualExtension).toDp() }
-        }
-    }
-}
-
-/** 屏幕下方两角的圆角半径（px）；设备不上报圆角信息时返回 0。 */
-private fun screenBottomCornerRadiusPx(display: Display?): Float {
-    if (display == null) return 0f
-
-    fun radius(position: Int): Float = runCatching {
-        display.getRoundedCorner(position)?.radius?.toFloat()
-    }.getOrNull()?.coerceAtLeast(0f) ?: 0f
-
-    val left = radius(RoundedCorner.POSITION_BOTTOM_LEFT)
-    val right = radius(RoundedCorner.POSITION_BOTTOM_RIGHT)
-    // 两角一致时随便取；不一致时取小值，避免角弧越出屏幕圆角。
-    return when {
-        left <= 0f -> right
-        right <= 0f -> left
-        else -> minOf(left, right)
-    }
-}
-
-/**
- * 输入栏正中的余额胶囊。
- *
- * 由外壳页面（AgentAppRoot）注入，避免把余额状态一路透传进输入栏组件；
- * 放在独立的居中层里，胶囊变长时向两侧对称延伸，不会把右侧按钮挤偏。
- */
-internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+private val InputContainerShape = RoundedCornerShape(20.dp)
 
 /**
  * Agent 输入器始终保持同一空间结构，聚焦、输入和执行过程只改变状态，不搬动操作入口。
@@ -193,6 +132,7 @@ internal fun AgentChatInputBar(
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
+    onModelSelected: (String) -> Unit = {},
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit = onSubmit,
     onSteerQueuedMessage: (String) -> Unit = {},
@@ -206,27 +146,31 @@ internal fun AgentChatInputBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
+    /** 新建对话后的一次性聚焦信号。 */
     focusInputRequest: Boolean = false,
     onFocusInputHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val hapticFeedback = LocalHapticFeedback.current
-    val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val textFieldState = rememberTextFieldState(initialText = input)
+    val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
+    val recognitionEnabled = speechSettings?.recognitionEnabled == true
+    val dictation = rememberSpeechInput { recognized ->
+        textFieldState.edit {
+            val range = selection
+            replace(range.min, range.max, recognized)
+            selection = TextRange(range.min + recognized.length)
+        }
+    }
+    LaunchedEffect(isEditingMessage, recognitionEnabled) { dictation.cancel() }
     var wasEditingMessage by remember { mutableStateOf(isEditingMessage) }
     var syncedVersion by remember { mutableIntStateOf(inputSyncVersion) }
     val canSend = textFieldState.text.isNotBlank() ||
         pendingImages.isNotEmpty() ||
         pendingFileReferences.isNotEmpty()
-    val canInterject = isStreaming && !isCompacting && textFieldState.text.isNotBlank() &&
-        pendingImages.isEmpty() && pendingFileReferences.isEmpty()
     val density = LocalDensity.current
-    val inputContainerRadius = rememberInputContainerRadius()
-    val inputContainerShape = remember(inputContainerRadius) {
-        RoundedCornerShape(inputContainerRadius)
-    }
     val statusBarTopPx = WindowInsets.statusBars.getTop(density)
     var inputContainerTopPx by remember { mutableIntStateOf(0) }
     val thinkingPopupMaxHeight = with(density) {
@@ -260,29 +204,11 @@ internal fun AgentChatInputBar(
         }
     }
 
-    // 退到后台时丢掉输入框焦点：Android 会在窗口重新拿到焦点时把键盘按原样恢复，
-    // 从「回复完成」通知点进会话页就会莫名带着键盘。清掉焦点后，回前台要打字自己点输入框。
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        focusManager.clearFocus()
-    }
-
-    LaunchedEffect(input) {
-        // A delayed rejected interjection must not overwrite a newer draft typed while awaiting its ACK.
-        if (!isEditingMessage && textFieldState.text.isBlank()) textFieldState.setTextAndPlaceCursorAtEnd(input)
-    }
-
-    LaunchedEffect(isStreaming, isCompacting) {
-        if (isStreaming && !isCompacting) {
-            // 发送按钮、建议词和外部恢复都可能启动流式任务，统一清掉本地草稿。
-            textFieldState.clearText()
-        }
-    }
-    }
-
     Column(
         modifier = modifier
             .fillMaxWidth(),
     ) {
+        if (recognitionEnabled) SpeechInputFeedback(dictation)
         AnimatedVisibility(
             visible = pendingFileReferences.isNotEmpty(),
             enter = fadeIn(tween(160)),
@@ -338,7 +264,7 @@ internal fun AgentChatInputBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .dropShadow(
-                        shape = inputContainerShape,
+                        shape = InputContainerShape,
                         shadow = Shadow(
                             radius = 8.dp,
                             color = Color.Black,
@@ -347,12 +273,12 @@ internal fun AgentChatInputBar(
                     )
                     .squircleSurface(
                         color = MiuixTheme.colorScheme.surfaceContainer,
-                        cornerRadius = inputContainerRadius,
+                        cornerRadius = 20.dp,
                     )
                     .squircleBorder(
                         width = 0.5.dp,
                         color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                        cornerRadius = inputContainerRadius,
+                        cornerRadius = 20.dp,
                     )
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
@@ -373,7 +299,6 @@ internal fun AgentChatInputBar(
                                 character != null && isStreaming ->
                                     stringResource(R.string.chat_character_typing, character.characterName)
                                 character != null -> stringResource(R.string.chat_character_input_hint, character.characterName)
-                                canInterject -> stringResource(R.string.chat_interject_hint)
                                 isStreaming -> stringResource(R.string.chat_eta_working)
                                 else -> stringResource(R.string.chat_input_hint)
                             },
@@ -396,35 +321,48 @@ internal fun AgentChatInputBar(
                     )
                 }
 
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                            if (isEditingMessage) {
-                                IconButton(
-                                    onClick = onCancelMessageEdit,
-                                    minWidth = ChatInputActionSize,
-                                    minHeight = ChatInputActionSize,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = stringResource(R.string.ui_cancel_edit_c698df),
-                                        modifier = Modifier.size(ChatInputActionIconSize),
-                                        tint = MiuixTheme.colorScheme.onSurface,
-                                    )
-                                }
-                            } else {
-                                AgentAttachmentPickerButton(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                        if (isEditingMessage) {
+                            IconButton(
+                                onClick = onCancelMessageEdit,
+                                minWidth = ChatInputActionSize,
+                                minHeight = ChatInputActionSize,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.ui_cancel_edit_c698df),
+                                    modifier = Modifier.size(ChatInputActionIconSize),
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                )
+                            }
+                        } else {
+                            AgentAttachmentPickerButton(
+                                popupAnchorTopPx = inputContainerTopPx,
+                                popupMaxHeight = thinkingPopupMaxHeight,
+                                onAttachImage = onAttachImage,
+                                onAttachFiles = onAttachFiles,
+                                onAttachFolder = onAttachFolder,
+                                onAttachFilePath = onAttachFilePath,
+                            )
+
+                            Spacer(modifier = Modifier.width(2.dp))
+
+                            if (availableReasoningEfforts.isNotEmpty()) {
+                                ThinkingEffortChip(
+                                    effort = reasoningEffort,
+                                    options = availableReasoningEfforts,
+                                    enabled = !isStreaming,
                                     popupAnchorTopPx = inputContainerTopPx,
                                     popupMaxHeight = thinkingPopupMaxHeight,
-                                    onAttachImage = onAttachImage,
-                                    onAttachFiles = onAttachFiles,
-                                    onAttachFolder = onAttachFolder,
-                                    onAttachFilePath = onAttachFilePath,
+                                    onEffortChange = onReasoningEffortChange,
                                 )
+                            }
+                        }
 
-                                Spacer(modifier = Modifier.width(2.dp))
+                        Spacer(modifier = Modifier.weight(1f))
 
                         if (showContextUsage) {
                             AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
@@ -432,6 +370,18 @@ internal fun AgentChatInputBar(
                             Spacer(modifier = Modifier.width(2.dp))
                         }
 
+                        if (recognitionEnabled) {
+                            SpeechDictationButton(dictation, enabled = !isCompacting)
+                            Spacer(modifier = Modifier.width(2.dp))
+                        }
+
+                        AgentModelPickerButton(
+                            state = modelPickerState,
+                            isStreaming = isStreaming,
+                            popupAnchorTopPx = inputContainerTopPx,
+                            popupMaxHeight = thinkingPopupMaxHeight,
+                            onModelSelected = onModelSelected,
+                        )
 
                         val showStreamingSend = isStreaming && !isCompacting && canSend
                         val submitCurrentDraft: (Boolean) -> Unit = { interrupt ->
@@ -549,97 +499,7 @@ internal fun AgentChatInputBar(
                                     )
                                 }
                             }
-
-                            Spacer(modifier = Modifier.weight(1f))
-
-                            if (showContextUsage) {
-                                AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
-
-                                Spacer(modifier = Modifier.width(2.dp))
-                            }
-
-                            if (canInterject) IconButton(onClick = onStop, minWidth = ChatInputActionSize, minHeight = ChatInputActionSize) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Stop,
-                                    contentDescription = stringResource(R.string.chat_stop),
-                                    modifier = Modifier.size(StopIconSize),
-                                    tint = MiuixTheme.colorScheme.onSurface,
-                                )
-                            }
-
-                            IconButton(
-                                onClick = if (isStreaming && !canInterject) {
-                                    onStop
-                                } else {
-                                    {
-                                        if (canSend) {
-                                            val submittedText = textFieldState.text.toString()
-                                            textFieldState.clearText()
-                                            onSubmit(submittedText)
-                                        }
-                                    }
-                                },
-                                enabled = isStreaming || canSend,
-                                minWidth = ChatInputActionSize,
-                                minHeight = ChatInputActionSize,
-                            ) {
-                                // 保留统一的点击区域，仅让可见圆形与相邻操作图标保持同一尺寸。
-                                val sendButtonColor by animateColorAsState(
-                                    targetValue = when {
-                                        isStreaming && !canInterject -> MiuixTheme.colorScheme.onSurface
-                                        canSend -> MiuixTheme.colorScheme.primary
-                                        else -> MiuixTheme.colorScheme.surfaceContainerHigh
-                                    },
-                                    animationSpec = tween(durationMillis = 160),
-                                    label = "send_button_color",
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .size(SendButtonVisualSize)
-                                        .clip(CircleShape)
-                                        .background(sendButtonColor),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    AnimatedContent(
-                                        targetState = isStreaming && !canInterject,
-                                        transitionSpec = {
-                                            (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
-                                                .togetherWith(
-                                                    fadeOut(tween(90)) +
-                                                        scaleOut(tween(110), targetScale = 0.72f)
-                                                )
-                                        },
-                                        label = "send_stop_icon",
-                                    ) { streaming ->
-                                        Icon(
-                                            imageVector = if (streaming) {
-                                                Icons.Rounded.Stop
-                                            } else {
-                                                Icons.Rounded.ArrowUpward
-                                            },
-                                            contentDescription = when {
-                                                streaming -> stringResource(R.string.chat_stop)
-                                                canInterject -> stringResource(R.string.overlay_supplement)
-                                                isEditingMessage && preserveFollowingMessages -> stringResource(R.string.chat_save_message)
-                                                else -> stringResource(R.string.chat_send)
-                                            },
-                                            modifier = Modifier.size(
-                                                if (streaming) StopIconSize else SendIconSize
-                                            ),
-                                            tint = when {
-                                                streaming -> MiuixTheme.colorScheme.surface
-                                                canSend -> MiuixTheme.colorScheme.onPrimary
-                                                else -> MiuixTheme.colorScheme.onSurfaceVariantActions
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                    }
-                        // 余额胶囊相对整行绝对居中：变长时向两侧对称延伸，不会把右侧按钮挤偏。
-                    LocalChatInputBalanceCapsule.current?.let { capsule ->
-                        Box(modifier = Modifier.align(Alignment.Center)) { capsule() }
-                    }
+                        }
                 }
             }
         }

@@ -324,7 +324,7 @@ internal fun EtaVoicePanel(
                 maxContentHeightPx = maxContentHeightPx,
                 imeOverlapPx = imeOverlap,
                 onInputChange = onInputChange,
-                keyboardVisible = imeBottom > navigationBottom,
+                keyboardVisible = keyboardVisible,
                 onSubmit = {
                     keyboard?.hide()
                     onSubmit()

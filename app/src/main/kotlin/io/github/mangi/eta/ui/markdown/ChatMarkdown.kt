@@ -1,15 +1,10 @@
 package io.github.mangi.eta.ui.markdown
 
-import android.util.LruCache
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -51,51 +46,6 @@ internal fun StaticMarkdown(
         MarkdownContent(document = document, style = style, modifier = modifier)
     }
 }
-
-/**
- * 大文档的静态 Markdown（例如整份 MEMORY.md）。
- *
- * 与 [StaticMarkdown] 的区别：按块分页交给 LazyColumn，只组合可见的页。
- * 记忆页以前把上千个块一次性塞进 Column，进页面就要全部测量排版，会明显卡顿。
- */
-@Composable
-internal fun LazyStaticMarkdown(
-    content: String,
-    tone: MarkdownTone,
-    modifier: Modifier = Modifier,
-) {
-    val style = rememberMarkdownStyle(tone)
-    val document = produceState(
-        initialValue = StaticDocumentCache.get(content, style.inline),
-        content,
-        style.inline,
-    ) {
-        value = StaticDocumentCache.get(content, style.inline)
-            ?: withContext(Dispatchers.Default) { StaticDocumentCache.parse(content, style.inline) }
-    }.value
-    if (document == null) {
-        // 解析完成前先给可滚动的原文，避免整页排版卡在单个超长文本块上。
-        LazyColumn(modifier = modifier) {
-            item(key = "raw") { Text(text = content, style = style.body) }
-        }
-        return
-    }
-    val pages = remember(document) { document.blocks.chunked(LAZY_PAGE_BLOCKS) }
-    LazyColumn(modifier = modifier) {
-        itemsIndexed(items = pages, key = { _, page -> page.firstOrNull()?.offset ?: 0 }) { index, page ->
-            MarkdownBlockPage(
-                blocks = page,
-                style = style,
-                modifier = Modifier.fillMaxWidth(),
-                // 传上一页的末块，跨页边界的块间距才和页内一致。
-                previousBlock = pages.getOrNull(index - 1)?.lastOrNull(),
-            )
-        }
-    }
-}
-
-/** 分页粒度：块数。够大到每页排版不碎，够小到一屏只组合几次。 */
-private const val LAZY_PAGE_BLOCKS = 20
 
 /**
  * 流式内容的 Markdown。解析在后台串行进行，最新目标覆盖尚未开始的旧目标；

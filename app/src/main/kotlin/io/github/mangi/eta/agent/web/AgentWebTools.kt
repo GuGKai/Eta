@@ -73,7 +73,7 @@ internal class AgentWebTools(
                 maxResults = limit,
                 ensureActive = ::ensureActive,
             )
-            else -> searchBuiltInWithFallback(query, limit)
+            else -> error("unreachable") // BUILTIN 已在上方提前返回
         }
         return searchResult(page)
     }
