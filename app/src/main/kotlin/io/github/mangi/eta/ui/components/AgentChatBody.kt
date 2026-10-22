@@ -410,8 +410,6 @@ private fun AgentChatScaffold(
                 onAttachFilePath = onAttachFilePath,
                 onRemoveFileReference = onRemoveFileReference,
                 onCancelMessageEdit = onCancelMessageEdit,
-                focusInputRequest = focusInputRequest,
-                onFocusInputHandled = onFocusInputHandled,
             )
         },
     ) { innerPadding ->
