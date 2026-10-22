@@ -191,7 +191,6 @@ internal class AgentAppState(
             val workspaceState = runCatching { SettingsDataStore.conversationWorkspaces() }.getOrNull()
             if (workspaceState != null) applyWorkspaceState(workspaceState)
         }
-        }
         runtimeRecoveryInProgress.set(true)
         scope.launch(Dispatchers.IO) {
             try {
@@ -1108,7 +1107,6 @@ internal class AgentAppState(
     /** 输入框已消费新建对话的焦点信号，避免返回首页时重复弹键盘。 */
     fun consumeComposerFocusRequest() {
         composerFocusPending = false
-    }
     }
 
     /** 执行通知的「补充」按钮：回到主界面后把输入框聚焦并拉起键盘。 */

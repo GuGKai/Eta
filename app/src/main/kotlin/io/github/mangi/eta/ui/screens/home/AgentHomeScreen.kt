@@ -8,7 +8,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.ui.components.AgentChatBody
 import io.github.mangi.eta.ui.components.AgentConversationLoadState
-import io.github.mangi.eta.ui.components.LocalChatInputBalanceCapsule
 import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
@@ -51,10 +50,7 @@ internal fun AgentHomeScreen(
                 modifier = modifier,
             )
         } else {
-            CompositionLocalProvider(
-                LocalRoleplayChat provides state.roleplayChatUi(),
-                LocalChatInputBalanceCapsule provides balanceCapsule,
-            ) {
+            CompositionLocalProvider(LocalRoleplayChat provides state.roleplayChatUi()) {
                 AgentChatBody(
                     messages = state.messages,
                     modelPickerState = modelPickerState,
@@ -71,7 +67,6 @@ internal fun AgentHomeScreen(
                     onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
                     onCompactContext = { onAction(AgentHomeAction.CompactContext) },
                     canCompactContext = state.canCompactContext,
-                    onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
                     onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },
                     onInterruptAndSubmit = { text -> onAction(AgentHomeAction.InterruptAndSubmitMessage(text)) },
                     onSteerQueuedMessage = { id -> onAction(AgentHomeAction.SteerQueuedMessage(id)) },
@@ -108,5 +103,4 @@ internal fun AgentHomeScreen(
             }
         }
         }
-    }
 }
