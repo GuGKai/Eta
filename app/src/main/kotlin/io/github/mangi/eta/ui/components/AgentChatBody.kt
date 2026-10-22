@@ -11,6 +11,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -57,6 +58,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.dropShadow
@@ -1018,27 +1020,28 @@ internal fun AgentConversationMessages(
             enter = fadeIn(tween(160)) + scaleIn(tween(180), initialScale = 0.82f),
             exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.86f),
         ) {
-            IconButton(
-                // 与输入框同一套浮起层次：消息背景接近按钮底色时仍能一眼认出。
+            Box(
+                // 统一圆形：阴影、底色、描边都跟随 CircleShape，不再出现两层不同形状。
                 modifier = Modifier
                     .dropShadow(
                         shape = CircleShape,
                         shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
                     )
-                    .squircleBorder(
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                    .border(
                         width = 0.5.dp,
                         color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                        cornerRadius = IconButtonDefaults.CornerRadius,
-                    ),
-                onClick = {
-                    onBottomAnchorChanged(true)
-                    coroutineScope.launch {
-                        scrollState.animateScrollToItem(bottomItemIndex)
-                    }
-                },
-                backgroundColor = MiuixTheme.colorScheme.surfaceContainerHigh,
-                minWidth = 40.dp,
-                minHeight = 40.dp,
+                        shape = CircleShape,
+                    )
+                    .clickable {
+                        onBottomAnchorChanged(true)
+                        coroutineScope.launch {
+                            scrollState.animateScrollToItem(bottomItemIndex)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Rounded.ArrowDownward,
