@@ -56,6 +56,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,6 +107,9 @@ private val SendButtonVisualSize = ChatInputActionIconSize
 private val SendIconSize = 16.dp
 private val StopIconSize = 10.dp
 private val ThinkingIconSize = 21.dp
+/** 输入栏正中的余额胶囊：由外壳页面注入，避免把余额状态一路透传进输入栏。 */
+internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+
 private val InputContainerShape = RoundedCornerShape(20.dp)
 
 /**
@@ -135,6 +139,7 @@ internal fun AgentChatInputBar(
     onModelSelected: (String) -> Unit = {},
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit = onSubmit,
+    onSteerSubmit: (String) -> Unit = onSubmit,
     onSteerQueuedMessage: (String) -> Unit = {},
     onRecallQueuedMessage: (String, String) -> Unit = { _, _ -> },
     onRemoveQueuedMessage: (String) -> Unit = {},
@@ -147,7 +152,7 @@ internal fun AgentChatInputBar(
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
     /** 新建对话后的一次性聚焦信号。 */
-    focusInputRequest: Boolean = false,
+    focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -193,15 +198,18 @@ internal fun AgentChatInputBar(
         syncedVersion = inputSyncVersion
     }
 
+    // 用「请求序号」而不是一次性布尔：新建对话会连带重建输入栏，
+    // 布尔信号容易被即将销毁的旧实例吞掉，导致新会话不弹键盘。
+    var handledFocusRequestId by remember { mutableIntStateOf(0) }
     LaunchedEffect(focusInputRequest) {
-        // 新建对话后自动进入输入状态：聚焦输入框并拉起键盘；信号用后即清，
-        // 避免从二级页面返回首页时重复弹出键盘。
-        if (focusInputRequest) {
-            focusRequester.requestFocus()
-            withFrameNanos { }
-            keyboard?.show()
-            onFocusInputHandled()
-        }
+        if (focusInputRequest <= 0 || focusInputRequest == handledFocusRequestId) return@LaunchedEffect
+        handledFocusRequestId = focusInputRequest
+        // 等新节点进入布局后再请求焦点，键盘才有可挂载的输入连接。
+        withFrameNanos { }
+        runCatching { focusRequester.requestFocus() }
+        withFrameNanos { }
+        keyboard?.show()
+        onFocusInputHandled()
     }
 
     Column(
@@ -209,6 +217,20 @@ internal fun AgentChatInputBar(
             .fillMaxWidth(),
     ) {
         if (recognitionEnabled) SpeechInputFeedback(dictation)
+        AnimatedVisibility(
+            visible = queuedMessages.isNotEmpty(),
+            enter = fadeIn(tween(160)),
+            exit = fadeOut(tween(100)) + shrinkVertically(tween(150)),
+        ) {
+            AgentChatQueueStrip(
+                queuedMessages = queuedMessages,
+                isStreaming = isStreaming,
+                onSteer = onSteerQueuedMessage,
+                onRecall = { id -> onRecallQueuedMessage(id, textFieldState.text.toString()) },
+                onRemove = onRemoveQueuedMessage,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
         AnimatedVisibility(
             visible = pendingFileReferences.isNotEmpty(),
             enter = fadeIn(tween(160)),
@@ -321,6 +343,7 @@ internal fun AgentChatInputBar(
                     )
                 }
 
+                Box(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -375,13 +398,6 @@ internal fun AgentChatInputBar(
                             Spacer(modifier = Modifier.width(2.dp))
                         }
 
-                        AgentModelPickerButton(
-                            state = modelPickerState,
-                            isStreaming = isStreaming,
-                            popupAnchorTopPx = inputContainerTopPx,
-                            popupMaxHeight = thinkingPopupMaxHeight,
-                            onModelSelected = onModelSelected,
-                        )
 
                         val showStreamingSend = isStreaming && !isCompacting && canSend
                         val submitCurrentDraft: (Boolean) -> Unit = { interrupt ->
@@ -390,36 +406,9 @@ internal fun AgentChatInputBar(
                                 val submittedText = textFieldState.text.toString()
                                 textFieldState.clearText()
                                 if (interrupt) {
-                                    onInterruptAndSubmit(submittedText)
+                                    onSteerSubmit(submittedText)
                                 } else {
                                     onSubmit(submittedText)
-                                }
-                            }
-                        }
-
-                        AnimatedVisibility(
-                            visible = showStreamingSend,
-                            enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = 0.78f) + expandHorizontally(tween(160)),
-                            exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.78f) + shrinkHorizontally(tween(140)),
-                        ) {
-                            IconButton(
-                                onClick = onStop,
-                                minWidth = ChatInputActionSize,
-                                minHeight = ChatInputActionSize,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(SendButtonVisualSize)
-                                        .clip(CircleShape)
-                                        .background(MiuixTheme.colorScheme.surfaceContainerHigh),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Stop,
-                                        contentDescription = stringResource(R.string.chat_stop),
-                                        modifier = Modifier.size(StopIconSize),
-                                        tint = MiuixTheme.colorScheme.onSurface,
-                                    )
                                 }
                             }
                         }
@@ -500,6 +489,11 @@ internal fun AgentChatInputBar(
                                 }
                             }
                         }
+                }
+                // 余额胶囊相对整行绝对居中：变长时向两侧对称延伸，不会把右侧按钮挤偏。
+                LocalChatInputBalanceCapsule.current?.let { capsule ->
+                    Box(modifier = Modifier.align(Alignment.Center)) { capsule() }
+                }
                 }
             }
         }

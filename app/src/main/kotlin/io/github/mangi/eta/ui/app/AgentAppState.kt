@@ -9,6 +9,7 @@ import android.net.Uri
 import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
@@ -172,7 +173,7 @@ internal class AgentAppState(
     /**
      * 新建对话后的一次性输入焦点信号：置位后由聊天输入框消费（聚焦 + 拉起键盘）。
      */
-    var composerFocusPending by mutableStateOf(false)
+    var composerFocusRequestId by mutableIntStateOf(0)
         private set
 
     var conversationPaneState by mutableStateOf(
@@ -1139,18 +1140,16 @@ internal class AgentAppState(
             searchQuery = "",
         )
         refreshConversationSummaries()
-        composerFocusPending = true
+        composerFocusRequestId += 1
         persistConversations()
     }
 
-    /** 输入框已消费新建对话的焦点信号，避免返回首页时重复弹键盘。 */
-    fun consumeComposerFocusRequest() {
-        composerFocusPending = false
-    }
+    /** 焦点请求改为序号制后无需清除；保留空实现，兼容既有调用点。 */
+    fun consumeComposerFocusRequest() = Unit
 
     /** 执行通知的「补充」按钮：回到主界面后把输入框聚焦并拉起键盘。 */
     fun requestComposerFocus() {
-        composerFocusPending = true
+        composerFocusRequestId += 1
     }
 
     fun startCharacterConversation(binding: RoleplayBinding, greeting: String) {
@@ -1377,6 +1376,28 @@ internal class AgentAppState(
         submitOrQueueCurrentMessage(submittedText = submittedText, immediateInterrupt = true)
     }
 
+    /**
+     * 流式期间「长按发送」：把这句话直接注入正在运行的回合（steerRun），
+     * 不排队也不打断当前运行；注入失败时把草稿放回输入框，避免消息丢失。
+     */
+    fun steerCurrentMessage(submittedText: String? = null) {
+        if (!homeState.isConversationLoaded || homeState.isCompacting) return
+        val prompt = (submittedText ?: homeState.input).trim()
+        if (prompt.isBlank()) return
+        val conversationId = selectedConversationId ?: return
+        val runId = currentRunId?.takeIf { runConversationIds[it] == conversationId }
+        if (runId == null) {
+            restoreInterjectionDraft(conversationId, prompt)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(runId, prompt)
+            if (!accepted) withContext(Dispatchers.Main) {
+                restoreInterjectionDraft(conversationId, prompt)
+            }
+        }
+    }
+
     fun steerQueuedMessage(id: String) {
         if (!homeState.isConversationLoaded) return
         val (nextState, promoted) = AgentMessageQueueReducer.promoteToInterrupt(homeState, id)
@@ -1416,23 +1437,6 @@ internal class AgentAppState(
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
-        if (homeState.isStreaming) {
-            val conversationId = selectedConversationId ?: return
-            if (prompt.isBlank() || pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()) return
-            val runId = currentRunId?.takeIf { runConversationIds[it] == conversationId }
-            if (runId == null) {
-                restoreInterjectionDraft(conversationId, prompt)
-                return
-            }
-            scope.launch(Dispatchers.IO) {
-                val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(runId, prompt)
-                if (!accepted) withContext(Dispatchers.Main) {
-                    // The task may finish while submitting. Keep the draft instead of starting another run.
-                    restoreInterjectionDraft(conversationId, prompt)
-                }
-            }
-            return
-        }
         if (
             prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()
         ) {
