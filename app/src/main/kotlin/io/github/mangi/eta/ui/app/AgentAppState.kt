@@ -92,6 +92,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -100,6 +101,9 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+/** 新建对话的聚焦请求通道：输入栏直接订阅，绕开逐层传参在重建时丢信号。 */
+internal val composerFocusRequests = MutableStateFlow(0)
 
 internal class AgentAppState(
     context: Context,
@@ -1141,6 +1145,11 @@ internal class AgentAppState(
         )
         refreshConversationSummaries()
         composerFocusRequestId += 1
+        composerFocusRequests.value = composerFocusRequestId
+        runCatching {
+            java.io.File(appContext.filesDir, "eta_focus.log")
+                .appendText("${System.currentTimeMillis()} createConversation id=$composerFocusRequestId\n")
+        }
         persistConversations()
     }
 
