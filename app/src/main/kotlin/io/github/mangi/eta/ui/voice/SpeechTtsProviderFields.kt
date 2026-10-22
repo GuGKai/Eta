@@ -120,6 +120,8 @@ internal fun SpeechDeliveryFields(store: SpeechSettingsStore) {
                 },
             )
         }
+        // 系统引擎的语速由设备设置决定，应用内不重复暴露。
+        TtsProvider.SYSTEM -> Unit
         TtsProvider.NONE, TtsProvider.QWEN, TtsProvider.DOUBAO -> Unit
     }
 }

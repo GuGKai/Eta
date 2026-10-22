@@ -1399,7 +1399,6 @@
   <string name="tool_web_search_description">未使用 Provider 托管搜索时检索公开网页，返回标题、链接与摘要，可在网页工具服务中切换内置、DeepSeek 或自定义接口。</string>
   <string name="tool_fetch_url">读取网页正文</string>
   <string name="tool_fetch_url_description">读取网页正文并分页续读，支持内置静态抓取、DeepSeek 或自定义接口，失败时自动回退到本地静态抓取。</string>
-  <string name="tool_fetch_url_description">读取静态网页正文并分页续读；不执行网页脚本或共享浏览器登录状态。</string>
     <string name="auto_memory_title">Automatic memory updates</string>
     <string name="auto_memory_summary">After a completed task, review durable facts using your model. Adds memory without deleting existing entries; makes additional API requests.</string>
     <string name="auto_skills_title">Learn operation skills</string>
