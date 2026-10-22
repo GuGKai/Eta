@@ -50,7 +50,9 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -71,10 +74,19 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.input.ImeAction
@@ -84,6 +96,7 @@ import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
+import io.github.mangi.eta.ui.app.composerFocusRequests
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
@@ -201,15 +214,55 @@ internal fun AgentChatInputBar(
     // 用「请求序号」而不是一次性布尔：新建对话会连带重建输入栏，
     // 布尔信号容易被即将销毁的旧实例吞掉，导致新会话不弹键盘。
     var handledFocusRequestId by remember { mutableIntStateOf(0) }
-    LaunchedEffect(focusInputRequest) {
-        if (focusInputRequest <= 0 || focusInputRequest == handledFocusRequestId) return@LaunchedEffect
-        handledFocusRequestId = focusInputRequest
-        // 等新节点进入布局后再请求焦点，键盘才有可挂载的输入连接。
+    var inputFocused by remember { mutableStateOf(false) }
+    var pendingFocusRequest by remember { mutableStateOf(false) }
+    var inputPlaced by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val appContext = LocalContext.current
+    val focusLog: (String) -> Unit = { message ->
+        android.util.Log.d("EtaFocus", message)
+        runCatching {
+            java.io.File(appContext.filesDir, "eta_focus.log")
+                .appendText("${System.currentTimeMillis()} $message\n")
+        }
+    }
+
+    val busFocusRequest by composerFocusRequests.collectAsState()
+    val effectiveFocusRequest = if (busFocusRequest > 0) busFocusRequest else focusInputRequest
+    LaunchedEffect(effectiveFocusRequest) {
+        if (effectiveFocusRequest <= 0 || effectiveFocusRequest == handledFocusRequestId) return@LaunchedEffect
+        handledFocusRequestId = effectiveFocusRequest
+        pendingFocusRequest = true
+        focusLog("request=$effectiveFocusRequest placed=$inputPlaced")
         withFrameNanos { }
-        runCatching { focusRequester.requestFocus() }
+        // 只有已经完成过布局的输入框（复用场景）才在这里请求；新建会话交给 onPlaced，
+        // 否则会抢在 attach 之前 requestFocus，抛异常后把 pending 标记清掉，onPlaced 就不重试了。
+        if (inputPlaced && pendingFocusRequest) {
+            pendingFocusRequest = false
+            runCatching { focusRequester.requestFocus() }
+        }
+        // 等焦点真正落到输入框（最多 1.5 秒），再拉起键盘；IME 需要有效的输入连接。
+        withTimeoutOrNull(1500) { snapshotFlow { inputFocused }.first { it } }
         withFrameNanos { }
         keyboard?.show()
+        focusLog("result focused=$inputFocused placed=$inputPlaced")
         onFocusInputHandled()
+        // 处理完把通道值复位，避免 Activity 重建时重复聚焦拉起键盘。
+        delay(600)
+        composerFocusRequests.compareAndSet(effectiveFocusRequest, 0)
+    }
+
+    // 退到后台时清掉输入焦点：回到前台时不再自动弹键盘。
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                pendingFocusRequest = false
+                focusManager.clearFocus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(
@@ -332,7 +385,16 @@ internal fun AgentChatInputBar(
                         state = textFieldState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .focusRequester(focusRequester),
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { inputFocused = it.isFocused }
+                            .onPlaced {
+                                // 节点完成布局才可能真正拿到焦点，这里是新建会话的主要触发点。
+                                inputPlaced = true
+                                if (pendingFocusRequest) {
+                                    pendingFocusRequest = false
+                                    runCatching { focusRequester.requestFocus() }
+                                }
+                            },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                         textStyle = inputTextStyle.copy(color = MiuixTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
