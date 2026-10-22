@@ -1,11 +1,38 @@
 # Eta 本地改动清单（fork: GuGKai/Eta）
 
-- 上游基线：**v3.3.1**（`Mangi-11/Eta` @ `213e8ed`，2026-10-14 合并；`v3.3.1` 标签指向 `a7fdfc2`）
+- 上游基线：**v3.3.3**（`Mangi-11/Eta` @ `5e9d3a7`，2026-10-22 合并；`v3.3.2` / `v3.3.3` 标签）
 - 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
-- 最后更新：2026-10-14
-- 出包版本：versionCode `2026101501`，versionName `3.3.1`（2026-10-15 出包：侧栏回归原作者版式 + 新增工作区，产物 `/workspace/eta-3.3.1-2026101501-sidebar-workspaces.apk`；此前 `2026101404` 为顶栏余额胶囊渲染点修复、`2026101403` 为侧栏清理、`2026101402` 为合并上游 3.3.1）
-- 历史同步备份分支：`backup/pre-sync-20261007-0635-feat-local`（`e61cce4`）、`backup/pre-pr142-20261011-feat-local`（`141f9dd`）、`backup/pre-pr142-20261011-main`（`4d760b8`）
-- 本次同步备份分支：`backup/pre-sync-20261014-1555-feat-local`（同步前的 `feat/local`＝`d0a5840`，按用户要求长期保留）
+- 最后更新：2026-10-22
+- 出包版本：versionCode `2026102203`，versionName `3.3.3`（产物 `/workspace/eta-3.3.3-2026102203-upstream-3.3.3.apk`）
+- 历史同步备份分支：`backup/pre-sync-20261007-0635-feat-local`、`backup/pre-pr142-20261011-feat-local`、`backup/pre-pr142-20261011-main`、`backup/pre-sync-20261014-1555-feat-local`
+- 本次同步备份分支：`backup/pre-sync-20261022-1100-feat-local`（同步前 `feat/local`＝`a9795b9`，长期保留）
+
+## 本次同步（2026-10-22，上游 3.3.1 → 3.3.3）
+
+上游 14 个提交（`ef0a1b3`…`5e9d3a7`）：消息排队与插话发送、历史会话内存优化与分页恢复、Gemini/MiniMax 语音播报、
+可关闭语音识别、自动朗读开关移入更多菜单、网页搜索/读取可切 DeepSeek 与自定义接口、Codex/Grok 订阅登录与远端模型同步、
+回复与 GUI 执行期间屏幕常亮、新图标与移除自定义启动动画、仅打包 ARM64。
+
+本地 92 个提交重放，**丢弃 2 个**（`61f9975`、`4b4aa9a` 启动/会话加载优化——上游已用索引行 + 分页 + 启动请求重构覆盖）。
+
+关键取舍：
+
+| 区域 | 处理 |
+|---|---|
+| 插话 | **保留本地运行时插话**（`MSG_STEER_RUN` → `AgentLoop` 注入补充文本、跳过未开始动作）。上游「排队 + 长按插话」的队列条 UI 已移除（`AgentChatInputBar` 不再渲染 `AgentChatQueueStrip`）；点击发送在流式中仍走本地 steer，不会排队 |
+| 通知插话入口 | 保留：`ACTION_INTERJECT` 经 `MainActivityLaunchRequests.interject` → `AgentAppRoot.interjectRequested` → `requestComposerFocus()` |
+| 语音 | 上游 Gemini / MiniMax 与本地系统 TTS（MultiTTS）**共存**：`TtsProvider` = NONE/QWEN/DOUBAO/GEMINI/MINIMAX/SYSTEM，各 when 分支补齐 SYSTEM；朗读暂停/继续、聆听压音量保留 |
+| 网页 | 上游可配置后端（BUILTIN / DEEPSEEK / CUSTOM）保留；本地内置搜索的 DuckDuckGo → Bing RSS 回退与单次 8 秒超时并进 `searchBuiltInWithFallback` |
+| 启动/会话加载 | 全取上游（索引行、分页、`MainActivityLaunchRequests`） |
+| 运行服务 | 合并：上游 `updateKeepScreenOn` / `setKeepScreenOn` 常亮 + 本地 `refreshGlowFor` 边缘光、`pauseFromNotification`/`resumeFromNotification`、`CAPSULE_OVERLAY_ENABLED` |
+| 会话存储 | 上游分页 + 本地 `pinned`、`lastModelUsage`（顶栏胶囊）：`ConversationIndexRow` 与 `conversationMetadataRow` 补 `pinned`、`last_model_usage_json` 列 |
+| 数据库 | 上游仍是 v23、无新迁移；本地 23→29 链保留，`MIGRATION_22_23` 额外补 `model_providers.auth_mode`（上游 3.3.2 同版本号新增），`version = 29` |
+| 输入栏 | 采用上游结构（含语音/模型按钮、长按插话），并补回本地 `focusInputRequest` / `onFocusInputHandled`（新建对话自动聚焦）；队列条移除 |
+| 侧栏/工作区/顶栏胶囊 | 保留本地：置顶、工作区（会话文件夹）、顶栏余额/累计胶囊、侧栏原作者版式 |
+
+编译修复：`AgentChatBody` 与 `AgentChatInputBar` 参数对齐、`EtaVoicePanel` 键盘判定、三处语音设置 when 穷尽性、
+`EtaDatabase` 重复 `MIGRATION_21_22/22_23` 去重、`AgentAppState` 多余的类闭合大括号。
+
 
 ## 零之四、侧栏回归原作者版式 + 新增工作区（2026-10-15，出包 `2026101501`）
 
