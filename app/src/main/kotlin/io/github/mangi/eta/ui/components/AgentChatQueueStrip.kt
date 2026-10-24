@@ -86,134 +86,145 @@ internal fun AgentChatQueueStrip(
     )
     val first = queuedMessages.first()
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .squircleSurface(
-                color = MiuixTheme.colorScheme.surfaceContainer,
-                cornerRadius = QueueContainerCornerRadius,
-            )
-            .squircleBorder(
-                width = 0.5.dp,
-                color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                cornerRadius = QueueContainerCornerRadius,
-            ),
-    ) {
-        Row(
+    val queueBorderColor = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f)
+
+    // 描边不能挂在 squircleSurface 上：surface 的角部遮罩（DstIn）会把越过填充轮廓的
+    // 那一段描边整段擦掉，表现为四个圆角没有描边、只有直边有线。改为同级覆盖层单独绘制。
+    Box(modifier = modifier.fillMaxWidth()) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .squircleSurface(
+                    color = MiuixTheme.colorScheme.surfaceContainer,
+                    cornerRadius = QueueContainerCornerRadius,
+                ),
         ) {
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .then(
-                        if (hasMultiple) {
-                            Modifier.clickable { expanded = !expanded }
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .padding(horizontal = 2.dp, vertical = 4.dp),
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
+                Row(
                     modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(MiuixTheme.colorScheme.primary),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = when {
-                        first.immediateInterrupt -> stringResource(R.string.chat_queue_interrupting)
-                        hasMultiple -> stringResource(R.string.chat_queue_status_count, queuedMessages.size)
-                        else -> stringResource(R.string.chat_queue_status)
-                    },
-                    style = MiuixTheme.textStyles.footnote1,
-                    fontWeight = FontWeight.Medium,
-                    color = MiuixTheme.colorScheme.primary,
-                )
-                if (hasMultiple) {
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Icon(
-                        imageVector = Icons.Rounded.ExpandMore,
-                        contentDescription = null,
+                        .clip(RoundedCornerShape(8.dp))
+                        .then(
+                            if (hasMultiple) {
+                                Modifier.clickable { expanded = !expanded }
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .padding(horizontal = 2.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
                         modifier = Modifier
-                            .size(14.dp)
-                            .rotate(chevronRotation),
-                        tint = MiuixTheme.colorScheme.primary,
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MiuixTheme.colorScheme.primary),
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = when {
+                            first.immediateInterrupt -> stringResource(R.string.chat_queue_interrupting)
+                            hasMultiple -> stringResource(R.string.chat_queue_status_count, queuedMessages.size)
+                            else -> stringResource(R.string.chat_queue_status)
+                        },
+                        style = MiuixTheme.textStyles.footnote1,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.primary,
+                    )
+                    if (hasMultiple) {
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Rounded.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .rotate(chevronRotation),
+                            tint = MiuixTheme.colorScheme.primary,
+                        )
+                    }
+                }
+
+                if (!expanded) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    QueuedMessagePreviewText(
+                        item = first,
+                        onClick = { onRecall(first.id) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    QueuedMessageItemActions(
+                        item = first,
+                        isStreaming = isStreaming,
+                        onSteer = { onSteer(first.id) },
+                        onRemove = { onRemove(first.id) },
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
 
-            if (!expanded) {
-                Spacer(modifier = Modifier.width(8.dp))
-                QueuedMessagePreviewText(
-                    item = first,
-                    onClick = { onRecall(first.id) },
-                    modifier = Modifier.weight(1f),
-                )
-                QueuedMessageItemActions(
-                    item = first,
-                    isStreaming = isStreaming,
-                    onSteer = { onSteer(first.id) },
-                    onRemove = { onRemove(first.id) },
-                )
-            } else {
-                Spacer(modifier = Modifier.weight(1f))
-            }
-        }
-
-        AnimatedVisibility(
-            visible = expanded && hasMultiple,
-            enter = fadeIn(tween(150)) + expandVertically(tween(180)),
-            exit = fadeOut(tween(110)) + shrinkVertically(tween(150)),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = QueueExpandedMaxHeight)
-                    .verticalScroll(rememberScrollState())
-                    .padding(bottom = 4.dp),
+            AnimatedVisibility(
+                visible = expanded && hasMultiple,
+                enter = fadeIn(tween(150)) + expandVertically(tween(180)),
+                exit = fadeOut(tween(110)) + shrinkVertically(tween(150)),
             ) {
-                queuedMessages.forEachIndexed { index, item ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .height(0.5.dp)
-                            .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.25f)),
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 14.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "${index + 1}",
-                            style = MiuixTheme.textStyles.footnote2,
-                            fontWeight = FontWeight.Medium,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = QueueExpandedMaxHeight)
+                        .verticalScroll(rememberScrollState())
+                        .padding(bottom = 4.dp),
+                ) {
+                    queuedMessages.forEachIndexed { index, item ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                .height(0.5.dp)
+                                .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.25f)),
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        QueuedMessagePreviewText(
-                            item = item,
-                            onClick = { onRecall(item.id) },
-                            modifier = Modifier.weight(1f),
-                        )
-                        QueuedMessageItemActions(
-                            item = item,
-                            isStreaming = isStreaming,
-                            onSteer = { onSteer(item.id) },
-                            onRemove = { onRemove(item.id) },
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 14.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                style = MiuixTheme.textStyles.footnote2,
+                                fontWeight = FontWeight.Medium,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            QueuedMessagePreviewText(
+                                item = item,
+                                onClick = { onRecall(item.id) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            QueuedMessageItemActions(
+                                item = item,
+                                isStreaming = isStreaming,
+                                onSteer = { onSteer(item.id) },
+                                onRemove = { onRemove(item.id) },
+                            )
+                        }
                     }
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .squircleBorder(
+                    width = { 0.5.dp },
+                    color = { queueBorderColor },
+                    cornerRadius = QueueContainerCornerRadius,
+                ),
+        )
     }
 }
 
