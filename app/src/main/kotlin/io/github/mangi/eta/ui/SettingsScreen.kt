@@ -63,6 +63,7 @@ import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
@@ -247,6 +248,15 @@ private fun SettingsPageContent(
     val powerAssistantItems = powerAssistantTargets.map { target ->
         DropdownItem(text = target.displayName(context))
     }
+    // 默认思考强度：不提供 OFF（由上面的「默认启用思考」开关统一关闭），
+    // 具体档位在会话创建时按模型支持的能力归一化。
+    val defaultEffortOptions = remember { ReasoningEffort.entries.filter { it != ReasoningEffort.OFF } }
+    val defaultEffortItems = remember(defaultEffortOptions) {
+        defaultEffortOptions.map { DropdownItem(text = it.displayName) }
+    }
+    var defaultReasoningEffort by remember(agentPrefs) {
+        mutableStateOf(Prefs.defaultReasoningEffort())
+    }
 
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_set_up_7debf9),
@@ -276,6 +286,47 @@ private fun SettingsPageContent(
                         key = Prefs.Keys.AGENT_THINKING_ENABLED,
                         icon = Icons.Rounded.Psychology,
                         iconTint = EtaPreferenceColors.Blue,
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.settings_default_reasoning_effort),
+                        summary = stringResource(R.string.settings_default_reasoning_effort_summary),
+                        items = defaultEffortItems,
+                        selectedIndex = defaultEffortOptions
+                            .indexOf(defaultReasoningEffort)
+                            .coerceAtLeast(0),
+                        enabled = agentPrefs != null,
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.Psychology,
+                                tint = EtaPreferenceColors.Orange,
+                            )
+                        },
+                        onSelectedIndexChange = { index ->
+                            val effort = defaultEffortOptions.getOrNull(index)
+                                ?: return@EtaDropdownPreference
+                            val targetPrefs = agentPrefs ?: return@EtaDropdownPreference
+                            if (putStringSync(
+                                    prefs = targetPrefs,
+                                    key = Prefs.Keys.AGENT_DEFAULT_REASONING_EFFORT,
+                                    value = effort.wireValue,
+                                )
+                            ) {
+                                defaultReasoningEffort = effort
+                                coroutineScope.launch {
+                                    RuntimeConfigRepository.syncToRemotePreferences(
+                                        EtaApp.serviceInstance,
+                                    )
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context.applicationContext,
+                                    context.getString(R.string.settings_write_failed),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
                     )
                 }
             }

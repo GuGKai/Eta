@@ -2771,15 +2771,20 @@ internal class AgentAppState(
         // 数据状态以较粗粒度发布，文字显现由独立的帧时钟连续推进。
         const val STREAM_UI_UPDATE_INTERVAL_MS = 80L
 
-        fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState =
-            AgentChatHomeUiState(
+        fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState {
+            // 新会话的思考强度来自设置里的「默认思考强度」；关闭深度思考时一律 OFF。
+            // 模型不支持该档位时，refreshConversationModel 会按能力归一化回落。
+            val effort = if (thinkingEnabled) Prefs.defaultReasoningEffort() else ReasoningEffort.OFF
+            return AgentChatHomeUiState(
                 messages = emptyList(),
                 history = emptyList(),
                 journal = emptyList(),
                 input = "",
                 isStreaming = false,
-                thinkingEnabled = thinkingEnabled,
+                thinkingEnabled = effort.enablesReasoning,
+                reasoningEffort = effort,
             )
+        }
 
         fun newConversationId(): String = "conv-${UUID.randomUUID()}"
     }
