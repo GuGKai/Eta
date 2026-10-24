@@ -41,8 +41,10 @@ internal class SpeechPlaybackController(
     private val synthesize: suspend (SpeechSettings, SpeechCredentials, String, (ByteArray) -> Unit) -> Unit = ::synthesizeSpeech,
     /** 整篇单会话流式合成；为 null 时只用逐段请求。 */
     private val streamSynthesize: (suspend (SpeechSettings, SpeechCredentials, List<String>, (ByteArray) -> Unit) -> Unit)? = ::streamSpeech,
-    private val createOutput: () -> SpeechAudioOutput = ::SpeechPcmOutput,
+    private val createOutput: () -> SpeechAudioOutput = { SpeechPcmOutput() },
     private val createSystemSpeaker: (SpeechSettings) -> SystemTtsSpeaker = { SystemTtsSpeaker(context, it.systemTtsEngine) },
+    private val createSystemSynthesizer: (SpeechSettings) -> SystemTtsSynthesizer =
+        { SystemTtsSynthesizer(context, it.systemTtsEngine) },
 ) {
     private val mutableState = MutableStateFlow(SpeechPlaybackState())
     val state = mutableState.asStateFlow()
@@ -50,11 +52,14 @@ internal class SpeechPlaybackController(
     private var generation = 0L
     private var output: SpeechAudioOutput? = null
     private var systemSpeaker: SystemTtsSpeaker? = null
+    private var systemSynthesizer: SystemTtsSynthesizer? = null
+    private var systemClipPlayed = false
     private var lease: SpeechAudioLease? = null
     private var playbackActive = false
 
     fun speak(messageId: String, text: String, settings: SpeechSettings? = null, credentials: SpeechCredentials? = null) {
         stop()
+        systemClipPlayed = false
         val session = generation
         mutableState.value = SpeechPlaybackState(messageId, loading = true)
         job = scope.launch(Dispatchers.Main.immediate) {
@@ -191,8 +196,91 @@ internal class SpeechPlaybackController(
         }
     }
 
-    /** 系统 TTS 引擎自己合成并播放，这里只负责分段喂文本并等待每段结束。 */
+    /** 系统引擎逐句合成到本地音频，再交给我们自己的音轨播放；暂停只停音轨，不丢位置。 */
     private suspend fun speakWithSystemEngine(
+        session: Long,
+        messageId: String,
+        readable: String,
+        config: SpeechSettings,
+    ) {
+        val sentences = SpeechText.sentences(readable)
+        if (sentences.isEmpty()) throw SpeechFailure(SpeechErrorCode.NO_SPEECH, "这条消息没有可朗读的正文")
+        val synthesizer = createSystemSynthesizer(config)
+        systemSynthesizer = synthesizer
+        try {
+            playSystemClips(session, messageId, sentences, config, synthesizer)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            // 还没出声就合成失败（引擎不支持 synthesizeToFile 或输出格式不符）时退回引擎直接播报；
+            // 已经出声则直接报错，不从头重读。
+            if (systemClipPlayed) throw error
+            AndroidAgentLogger.warn("Eta system TTS synthesis unavailable, falling back: code=${error.speechFailure().code}")
+            speakWithEngineSpeaker(session, messageId, readable, config)
+        } finally {
+            synthesizer.close()
+            if (systemSynthesizer === synthesizer) systemSynthesizer = null
+        }
+    }
+
+    /** 逐句合成并写入同一音轨：合成与播放并行，下一句在上一句还播着时就已备好。 */
+    private suspend fun playSystemClips(
+        session: Long,
+        messageId: String,
+        sentences: List<String>,
+        config: SpeechSettings,
+        synthesizer: SystemTtsSynthesizer,
+    ) = coroutineScope {
+        val queue = Channel<SystemTtsClip>(Channel.UNLIMITED)
+        // 只允许领先播放若干句：暂停时不会把整篇合成出来，恢复后立刻有下一句可用。
+        val ahead = Semaphore(PREFETCH_CLIPS)
+        launch(Dispatchers.IO) {
+            try {
+                for (sentence in sentences) {
+                    ahead.acquire()
+                    queue.send(synthesizer.synthesize(sentence, config.systemTtsVoice))
+                }
+                queue.close()
+            } catch (error: Throwable) {
+                // 合成失败经队列交给播放端，避免子协程异常直接取消这个作用域。
+                queue.close(error)
+            }
+        }
+        withContext(Dispatchers.IO) {
+            var player: SpeechPcmOutput? = null
+            var playerRate = 0
+            var announced = false
+            for (clip in queue) {
+                if (session != generation) throw CancellationException("Speech playback replaced")
+                if (player == null || clip.sampleRate != playerRate) {
+                    // 采样率随引擎与音色变化，换了就必须换音轨，否则会变调变速。
+                    player?.let { previous ->
+                        previous.finish()
+                        awaitDrained(session, previous)
+                        previous.close()
+                    }
+                    player = SpeechPcmOutput(clip.sampleRate)
+                    output = player
+                    playerRate = clip.sampleRate
+                }
+                val current = checkNotNull(player) { "Speech playback stopped" }
+                // write 会在音轨缓冲写满时阻塞轮询，必须留在 IO 线程，挪到主线程会冻住界面。
+                runInterruptible { current.write(clip.pcm) }
+                ahead.release()
+                if (!announced) {
+                    announced = true
+                    systemClipPlayed = true
+                    markPlaying(session, messageId)
+                }
+            }
+            player?.let {
+                it.finish()
+                awaitDrained(session, it)
+            }
+        }
+    }
+
+    /** 回退路径：引擎自己合成并播放，这里只负责分段喂文本并等待每段结束。 */
+    private suspend fun speakWithEngineSpeaker(
         session: Long,
         messageId: String,
         readable: String,
@@ -260,6 +348,7 @@ internal class SpeechPlaybackController(
         generation++
         output?.close(); output = null
         systemSpeaker?.close(); systemSpeaker = null
+        systemSynthesizer?.close(); systemSynthesizer = null
         job?.cancel(); job = null
         lease?.close(); lease = null
         if (playbackActive) afterPlayback()
@@ -274,6 +363,9 @@ private sealed interface SpeechQueueItem {
 }
 
 private const val PREFETCH_CHUNKS = 2
+
+/** 系统引擎逐句合成时最多领先播放的句数，够盖住一次合成耗时，又不会在暂停时白合成整篇。 */
+private const val PREFETCH_CLIPS = 2
 
 internal interface SpeechAudioOutput : Closeable {
     fun write(bytes: ByteArray)

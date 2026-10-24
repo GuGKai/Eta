@@ -65,4 +65,86 @@ internal object SpeechText {
         }
         return result
     }
+
+    /**
+     * 按句切分，供逐句合成使用：中文句末标点与换行是句边界，英文句号不参与切分，
+     * 避免把 `8.8%`、`app/build.gradle.kts` 这类片段读断；超长句再按次级标点细分。
+     */
+    fun sentences(
+        text: String,
+        limit: Int = SENTENCE_LIMIT,
+        minLength: Int = MIN_SENTENCE_LENGTH,
+    ): List<String> {
+        require(limit >= 16 && minLength >= 0)
+        val clean = text.trim()
+        if (clean.isEmpty()) return emptyList()
+        val raw = mutableListOf<String>()
+        val buffer = StringBuilder()
+        var index = 0
+        while (index < clean.length) {
+            val char = clean[index]
+            if (char == '\n') {
+                raw += buffer.toString()
+                buffer.setLength(0)
+                index++
+                continue
+            }
+            buffer.append(char)
+            index++
+            if (char !in SENTENCE_END) continue
+            // 连续的句末标点与收尾引号仍属于同一句，不能从中间切开。
+            while (index < clean.length && clean[index] in SENTENCE_TAIL) buffer.append(clean[index++])
+            raw += buffer.toString()
+            buffer.setLength(0)
+        }
+        if (buffer.isNotBlank()) raw += buffer.toString()
+        return mergeShortPieces(raw.flatMap { splitLong(it.trim(), limit) }, minLength)
+    }
+
+    private fun splitLong(sentence: String, limit: Int): List<String> {
+        if (sentence.length <= limit) return if (sentence.isEmpty()) emptyList() else listOf(sentence)
+        val pieces = mutableListOf<String>()
+        var rest = sentence
+        while (rest.length > limit) {
+            val window = rest.take(limit)
+            val cut = window.indexOfLast { it in SECONDARY_END }
+            var end = if (cut >= limit / 3) cut + 1 else limit
+            if (end > 1 && rest[end - 1].isHighSurrogate()) end--
+            val piece = rest.substring(0, end).trim()
+            if (piece.isNotEmpty()) pieces += piece
+            rest = rest.substring(end).trimStart()
+        }
+        if (rest.isNotEmpty()) pieces += rest
+        return pieces
+    }
+
+    /** 只把硬切后留下的零星尾巴并回前句；以标点结尾的正常短句保持独立成句。 */
+    private fun mergeShortPieces(pieces: List<String>, minLength: Int): List<String> {
+        val merged = mutableListOf<String>()
+        for (piece in pieces) {
+            if (piece.isBlank()) continue
+            val previous = merged.lastOrNull()
+            if (previous != null && isDanglingTail(piece, minLength)) {
+                merged[merged.lastIndex] = previous + piece
+                continue
+            }
+            merged += piece
+        }
+        if (merged.size >= 2 && isDanglingTail(merged[0], minLength)) {
+            merged[1] = merged[0] + merged[1]
+            merged.removeAt(0)
+        }
+        return merged
+    }
+
+    /** 没有以标点收尾、又特别短的片段，是硬切留下的零头，单独成句会出现突兀停顿。 */
+    private fun isDanglingTail(piece: String, minLength: Int): Boolean =
+        piece.length < minLength && piece.last() !in PIECE_END
+
+    private const val SENTENCE_LIMIT = 120
+    private const val MIN_SENTENCE_LENGTH = 8
+    private val SENTENCE_END = setOf('。', '！', '？', '…', '；', ';', '!', '?')
+    private val SENTENCE_TAIL = SENTENCE_END + setOf('”', '』', '」', '）', ')')
+    private val SECONDARY_END = setOf('，', '、', '：', ':', ',', ' ')
+    private val PIECE_END = SENTENCE_TAIL + SECONDARY_END
 }
