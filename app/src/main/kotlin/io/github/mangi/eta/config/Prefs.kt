@@ -3,6 +3,7 @@ package io.github.mangi.eta.config
 import android.content.Context
 import android.content.SharedPreferences
 import io.github.libxposed.service.XposedService
+import io.github.mangi.eta.data.model.ReasoningEffort
 
 /**
  * 模块配置中枢。
@@ -43,6 +44,8 @@ internal object Prefs {
         const val AGENT_DEVICE_SENSITIVE_READ_TOOLS = "agent_device_sensitive_read_tools"
         const val AGENT_DEVICE_SENSITIVE_ACTION_TOOLS = "agent_device_sensitive_action_tools"
         const val AGENT_THINKING_ENABLED = "agent_thinking_enabled"
+        /** 新建会话使用的默认思考强度（ReasoningEffort.wireValue）。 */
+        const val AGENT_DEFAULT_REASONING_EFFORT = "agent_default_reasoning_effort"
         const val AGENT_AUTO_COMPACTION_ENABLED = "agent_auto_compaction_enabled"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
 
@@ -156,6 +159,24 @@ internal object Prefs {
 
     /** Eta 设置页与 Runtime 使用的本地 Agent 配置，不依赖 LSPosed。 */
     fun localAgentPreferences(): SharedPreferences? = localAgent
+
+    /** 读取本地 Agent 配置中的字符串，未设置时返回默认值。 */
+    fun localString(key: String, defaultValue: String = ""): String =
+        runCatching { localAgent?.getString(key, defaultValue) }.getOrNull() ?: defaultValue
+
+    /** 同步写入本地 Agent 配置字符串；失败返回 false，由 UI 回滚展示。 */
+    fun putLocalString(preferences: SharedPreferences, key: String, value: String): Boolean =
+        runCatching { preferences.edit().putString(key, value).commit() }.getOrDefault(false)
+
+    /**
+     * 新建会话使用的默认思考强度。
+     *
+     * 这里是唯一事实源：会话创建（UI 侧空白状态）与 Runtime 默认配置都读它，
+     * 保证「默认思考强度」设置对界面与后台入口一致生效。未设置时保持 Default。
+     */
+    fun defaultReasoningEffort(): ReasoningEffort =
+        ReasoningEffort.fromWireValue(localString(Keys.AGENT_DEFAULT_REASONING_EFFORT))
+            ?: ReasoningEffort.DEFAULT
 
     /**
      * 首次升级优先把已有 RemotePreferences 值迁入本地；之后本地值是事实源，并在框架

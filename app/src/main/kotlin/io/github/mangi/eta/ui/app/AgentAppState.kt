@@ -2833,15 +2833,20 @@ internal class AgentAppState(
         const val LEGACY_STOPPED_ERROR = "已停止"
         const val SYNTHETIC_STATUS_STOPPED = "eta_status:stopped"
 
-        fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState =
-            AgentChatHomeUiState(
+        fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState {
+            // 新会话的思考强度来自设置里的「默认思考强度」；关闭深度思考时一律 OFF。
+            // 模型不支持该档位时，refreshConversationModel 会按能力归一化回落。
+            val effort = if (thinkingEnabled) Prefs.defaultReasoningEffort() else ReasoningEffort.OFF
+            return AgentChatHomeUiState(
                 messages = emptyList(),
                 history = emptyList(),
                 journal = emptyList(),
                 input = "",
                 isStreaming = false,
-                thinkingEnabled = thinkingEnabled,
+                thinkingEnabled = effort.enablesReasoning,
+                reasoningEffort = effort,
             )
+        }
 
         fun newConversationId(): String = "conv-${UUID.randomUUID()}"
     }

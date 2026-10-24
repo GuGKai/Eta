@@ -128,6 +128,10 @@ internal object RuntimeConfigRepository {
         val profile = ProviderConnectionProfile.forAuthMode(provider.authMode)
         val endpointMode = profile?.endpointMode ?: provider.endpointMode()
         val reasoningCapabilities = reasoningCapabilities(provider, model)
+        // 默认档位来自设置「默认思考强度」，并按模型实际支持的能力归一化。
+        val reasoningEffort = reasoningCapabilities
+            ?.normalize(Prefs.defaultReasoningEffort())
+            ?: ReasoningEffort.OFF
         return AgentModelClient.ModelConfig(
             providerId = provider.id,
             providerName = provider.name,
@@ -145,9 +149,8 @@ internal object RuntimeConfigRepository {
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
             openAiEndpointMode = endpointMode,
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
-            thinkingEnabled = reasoningCapabilities != null,
-            reasoningEffort = reasoningCapabilities?.let { ReasoningEffort.DEFAULT }
-                ?: ReasoningEffort.OFF,
+            thinkingEnabled = reasoningEffort.enablesReasoning,
+            reasoningEffort = reasoningEffort,
             reasoningCapabilities = reasoningCapabilities,
             customHeaders = provider.customHeaders + model.customHeaders,
             customBody = provider.customBody + model.customBody,
