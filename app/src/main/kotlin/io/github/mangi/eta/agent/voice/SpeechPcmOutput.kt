@@ -5,13 +5,14 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import kotlinx.coroutines.CancellationException
 
-internal class SpeechPcmOutput : SpeechAudioOutput {
+/** 按 [sampleRate] 建流式音轨；采样率必须与写入的 PCM 一致，否则会变调变速。 */
+internal class SpeechPcmOutput(private val sampleRate: Int = DEFAULT_SAMPLE_RATE) : SpeechAudioOutput {
     private var track: AudioTrack? = AudioTrack.Builder()
         .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-        .setAudioFormat(AudioFormat.Builder().setSampleRate(SAMPLE_RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+        .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-        .setBufferSizeInBytes(maxOf(SAMPLE_RATE, AudioTrack.getMinBufferSize(SAMPLE_RATE,
+        .setBufferSizeInBytes(maxOf(sampleRate, AudioTrack.getMinBufferSize(sampleRate,
             AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)))
         .setTransferMode(AudioTrack.MODE_STREAM).build()
     private var frames = 0L
@@ -78,7 +79,7 @@ internal class SpeechPcmOutput : SpeechAudioOutput {
     }
 
     private companion object {
-        const val SAMPLE_RATE = 24_000
+        const val DEFAULT_SAMPLE_RATE = 24_000
         const val BYTES_PER_FRAME = 2
         const val PAUSED_POLL_MS = 50L
     }
