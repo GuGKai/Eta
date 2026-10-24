@@ -1,6 +1,8 @@
 package io.github.mangi.eta.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -10,6 +12,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +35,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -59,6 +64,9 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.dropShadow
@@ -101,12 +109,14 @@ import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.latestContextUsage
 import io.github.mangi.eta.ui.voice.SpeechAutoReadAloud
 import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -496,6 +506,15 @@ internal fun AgentConversationMessages(
         visibleMessages.toTimelineEntries(previous = previousTimelineEntries[0])
     }
     SideEffect { previousTimelineEntries[0] = timelineEntries }
+    // 滚动条按条目 key 记录已测量高度：分页加载更早消息时所有 index 会整体前移，
+    // 按 index 缓存会把旧高度错配到别的消息上，进度和长度就会突然跳。
+    val scrollIndicatorKeys = remember(timelineEntries, hasEarlierMessages) {
+        buildList<Any> {
+            if (hasEarlierMessages) add(ChatHistoryBoundaryKey)
+            timelineEntries.forEach { add(it.key) }
+            add(ChatBottomSentinelKey)
+        }
+    }
     val activeWorkProcessKey = if (isStreaming) {
         (timelineEntries.lastOrNull() as? AgentTimelineEntry.WorkProcess)?.key
     } else {
@@ -1012,6 +1031,19 @@ internal fun AgentConversationMessages(
             }
         }
 
+        // 滚动条：滚动时出现，停止后渐隐；两侧圆角。
+        ChatScrollIndicator(
+            scrollState = scrollState,
+            itemKeys = scrollIndicatorKeys,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(
+                    top = topInset + ScrollIndicatorVerticalInset,
+                    bottom = bottomInset + ScrollIndicatorVerticalInset,
+                    end = ScrollIndicatorEndInset,
+                ),
+        )
+
         AnimatedVisibility(
             visible = !keepBottomAnchored && !isAtBottom,
             modifier = Modifier
@@ -1421,3 +1453,180 @@ private const val EmptyGreetingFontScale = 1.3f
 /** TextUnit 未指定时不能参与算术，原样返回，避免行高未设置时报错。 */
 private fun TextUnit.scaleIfSpecified(factor: Float): TextUnit =
     if (this == TextUnit.Unspecified) this else this * factor
+
+/** 滚动条宽度、与屏幕边缘的距离与上下留白。 */
+private val ScrollIndicatorWidth = 3.dp
+private val ScrollIndicatorEndInset = 2.dp
+private val ScrollIndicatorVerticalInset = 10.dp
+private val ScrollIndicatorMinThumb = 36.dp
+
+/** 完全静止后等待多久开始渐隐，避免惯性滚动尾巴让滚动条闪一下。 */
+private const val ScrollIndicatorIdleDelayMs = 550L
+
+/**
+ * 滚动条跟随采样值的平滑时长。
+ *
+ * LazyColumn 不暴露总内容高度，采样只能由「已测量过消息项的高度」累计推算；新消息项进入视口时
+ * 推算值会小幅跳变，直接绘制就是用户看到的「长度突然一变」。这里用很短的线性补间把跳变磨平，
+ * 又不足以让位置明显滞后于手指。
+ */
+private const val ScrollIndicatorFollowMs = 120
+
+/** 采样结果：滚动进度与滑块长度占比；null 表示内容不足一屏。 */
+private data class ScrollIndicatorMetrics(
+    val progress: Float,
+    val thumbFraction: Float,
+)
+
+/**
+ * 滚动条采样器：按消息项索引缓存已测量的高度。
+ *
+ * 只用「当前可见项平均高度 × 总项数」估算总高度时，可见项集合每变一次平均高度就跳一次，
+ * 滑块长度随之忽长忽短。缓存后总高度 = 已测量项之和 + 未测量项 × 平均值，随滚动单调收敛，
+ * 位置也按像素而不是按项数推进，滚动速度才均匀。
+ */
+private class ScrollIndicatorSampler {
+    /** 已测量高度，按条目 key 而不是 index 缓存。 */
+    private val heights = HashMap<Any, Int>()
+
+    /** 在底部实测到的滚动总距离（px）；0 表示还没到底过。 */
+    private var calibratedRangePx = 0f
+    private var lastTotalItems = 0
+
+    fun sample(state: LazyListState, keys: List<Any>): ScrollIndicatorMetrics? {
+        val info = state.layoutInfo
+        val totalItems = info.totalItemsCount
+        val visible = info.visibleItemsInfo
+        if (totalItems <= 0 || visible.isEmpty()) return null
+
+        // 会话切换或整体替换（项数骤减）：缓存与校准都失效，重新估算。
+        val shrank = lastTotalItems > 0 && totalItems < lastTotalItems - 20 &&
+            totalItems < lastTotalItems * 3 / 5
+        if (shrank) {
+            heights.clear()
+            calibratedRangePx = 0f
+        }
+        if (heights.size > 6000) heights.clear()
+        visible.forEach { item ->
+            keys.getOrNull(item.index)?.let { key -> heights[key] = item.size }
+        }
+
+        val measuredSum = heights.values.sum().toFloat()
+        val average = (measuredSum / heights.size).coerceAtLeast(1f)
+        val viewportPx = (info.viewportEndOffset - info.viewportStartOffset)
+            .coerceAtLeast(1)
+            .toFloat()
+
+        // 分页加载更早消息后项数增加：把新增部分按平均高度并入已校准的总距离。
+        // 之前是直接丢弃校准回到推算值，分母一换滑块就会瞬移。
+        if (!shrank && calibratedRangePx > 0f && lastTotalItems > 0 && totalItems > lastTotalItems) {
+            calibratedRangePx += (totalItems - lastTotalItems) * average
+        }
+        lastTotalItems = totalItems
+
+        val first = visible.first()
+        // 视口顶部内边距（顶栏高度）不算滚动距离，减掉后滑到顶时进度才是 0。
+        val firstTopInViewport = (first.offset - info.viewportStartOffset).toFloat()
+        val insideFirst = (-firstTopInViewport).coerceIn(0f, first.size.toFloat())
+        var beforeFirst = 0f
+        for (index in 0 until first.index) {
+            beforeFirst += keys.getOrNull(index)?.let { key -> heights[key] }?.toFloat() ?: average
+        }
+        val scrolledPx = beforeFirst + insideFirst
+
+        // canScrollForward == false 表示已经真的到底：此时「已滚动距离 + 视口高度」就是真实内容高度。
+        // 用探底实测值校准，避免高度推算偏高时进度永远停在中间、滑到底也到不了 100%。
+        val atBottom = !state.canScrollForward && scrolledPx > 0f
+        if (atBottom) calibratedRangePx = scrolledPx
+        val contentPx = if (calibratedRangePx > 0f) {
+            calibratedRangePx + viewportPx
+        } else {
+            measuredSum + (totalItems - heights.size).coerceAtLeast(0) * average
+        }
+        if (contentPx <= viewportPx * 1.02f) return null
+        val maxScrollPx = (contentPx - viewportPx).coerceAtLeast(1f)
+        return ScrollIndicatorMetrics(
+            progress = if (atBottom) 1f else (scrolledPx / maxScrollPx).coerceIn(0f, 1f),
+            thumbFraction = (viewportPx / contentPx).coerceIn(0.06f, 1f),
+        )
+    }
+}
+
+/**
+ * 会话滚动条。
+ *
+ * - 只在滚动（拖动或惯性）时显示，停止后渐隐；
+ * - 两端圆角，不是直角；
+ * - 采样与绘制分离：采样在 snapshotFlow 里做补间，绘制在 Canvas 的 draw 阶段读动画值，
+ *   不触发重组，滚动过程中每帧连续更新。
+ */
+@Composable
+private fun ChatScrollIndicator(
+    scrollState: LazyListState,
+    itemKeys: List<Any>,
+    modifier: Modifier = Modifier,
+) {
+    val sampler = remember(scrollState) { ScrollIndicatorSampler() }
+    val progress = remember { Animatable(0f) }
+    val length = remember { Animatable(0f) }
+    val visibility = remember { Animatable(0f) }
+    val thumbColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.32f)
+
+    // 采样流共享给两条补间：位置跟手（直接落位），长度做短补间磨平跳变。
+    val samples = remember(scrollState, itemKeys) {
+        snapshotFlow { sampler.sample(scrollState, itemKeys) }.distinctUntilChanged()
+    }
+    LaunchedEffect(samples) {
+        samples.collectLatest { sample ->
+            val target = sample?.progress ?: return@collectLatest
+            progress.snapTo(target)
+        }
+    }
+    LaunchedEffect(samples) {
+        samples.collectLatest { sample ->
+            val target = sample?.thumbFraction ?: return@collectLatest
+            // 差值很大说明是一次跳转（如打开长会话直接到底），直接落位，不做扫动。
+            if (abs(target - length.value) > 0.4f) {
+                length.snapTo(target)
+            } else {
+                length.animateTo(
+                    targetValue = target,
+                    animationSpec = tween(ScrollIndicatorFollowMs, easing = LinearEasing),
+                )
+            }
+        }
+    }
+
+    val isScrolling by remember(scrollState) {
+        derivedStateOf { scrollState.isScrollInProgress }
+    }
+    LaunchedEffect(isScrolling) {
+        if (isScrolling) {
+            visibility.animateTo(1f, tween(durationMillis = 110))
+        } else {
+            delay(ScrollIndicatorIdleDelayMs)
+            visibility.animateTo(0f, tween(durationMillis = 420))
+        }
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(ScrollIndicatorWidth),
+    ) {
+        val opacity = visibility.value
+        val fraction = length.value
+        if (opacity <= 0.01f || fraction <= 0f) return@Canvas
+        val track = size.height
+        if (track <= 0f) return@Canvas
+        val minThumb = ScrollIndicatorMinThumb.toPx().coerceAtMost(track)
+        val thumb = (track * fraction).coerceIn(minThumb, track)
+        val top = ((track - thumb) * progress.value).coerceIn(0f, track - thumb)
+        drawRoundRect(
+            color = thumbColor.copy(alpha = thumbColor.alpha * opacity),
+            topLeft = Offset(0f, top),
+            size = Size(size.width, thumb),
+            cornerRadius = CornerRadius(thumb / 2f),
+        )
+    }
+}
