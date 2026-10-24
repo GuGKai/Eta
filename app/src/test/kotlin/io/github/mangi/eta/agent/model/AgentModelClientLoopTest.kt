@@ -147,7 +147,11 @@ class AgentModelClientLoopTest {
         assertEquals(listOf("skills_list"), executed)
         assertEquals(listOf(listOf("skills_list"), listOf("skills_list")), publishedTools)
         val result = provider.requests.last().toString()
-        assertTrue(result.contains("INVALID_TOOL_ARGUMENTS"))
+        // 白名单外的工具现在按「本轮能力目录里没有」拒绝，返回 TOOL_NOT_AVAILABLE。
+        assertTrue(result.contains("TOOL_NOT_AVAILABLE"))
+    }
+
+    @Test
     fun rootProbeStatesKeepThePrefixStableUntilGrantActuallyChanges() {
         var root = RootAccessState(isChecking = true)
         val calls = mutableListOf<String>()
@@ -252,8 +256,8 @@ class AgentModelClientLoopTest {
         )
         assertEquals(listOf("ctx"), executed)
         assertTrue(results.single().contains("NOTIFICATION_ACCESS_REQUIRED"))
-    @Test
     }
+
 
     @Test
     fun hostedSearchReplacesOnlyTheLocalSearchInSupportedConfigurations() {
