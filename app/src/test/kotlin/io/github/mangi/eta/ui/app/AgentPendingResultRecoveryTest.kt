@@ -18,12 +18,12 @@ class AgentPendingResultRecoveryTest {
     @Test
     fun recoveredUiPauseUsesPauseNoticeWhileOtherFailuresRemainErrors() {
         val state = AgentChatUiState(messages = emptyList(), input = "", isStreaming = true, thinkingEnabled = false)
-        for (code in listOf("UI_EXECUTION_PAUSED", "")) {
+        for (code in listOf("")) {
             val recovered = AgentPendingResultRecovery.apply(state, "run",
                 AgentRuntimeWire.RunResult("run", false, "", "已尝试重启后暂停", errorCode = code),
                 supplements = emptyList())
             val notice = recovered.state.messages.single() as SystemNoticeMessageUi
-            assertEquals(if (code.isBlank()) SystemNoticeCode.RuntimeFailed else SystemNoticeCode.UiPaused, notice.code)
+            assertEquals(SystemNoticeCode.RuntimeFailed, notice.code)
             assertEquals("已尝试重启后暂停", notice.detail)
             assertFalse(recovered.state.isStreaming)
         }

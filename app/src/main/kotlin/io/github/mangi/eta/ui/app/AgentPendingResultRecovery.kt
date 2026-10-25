@@ -89,11 +89,6 @@ internal object AgentPendingResultRecovery {
                     id = resultId,
                     code = SystemNoticeCode.EmptyResult,
                 )
-                result.errorCode == "UI_EXECUTION_PAUSED" -> SystemNoticeMessageUi(
-                    id = resultId,
-                    code = SystemNoticeCode.UiPaused,
-                    detail = result.error,
-                )
                 else -> SystemNoticeMessageUi(
                     id = resultId,
                     code = SystemNoticeCode.RuntimeFailed,

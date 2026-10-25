@@ -669,7 +669,6 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         val notice = when {
             result.ok && result.content.isBlank() -> SystemNoticeCode.EmptyResult
             !result.ok && result.error == LEGACY_STOPPED_ERROR -> SystemNoticeCode.Stopped
-            !result.ok && result.errorCode == "UI_EXECUTION_PAUSED" -> SystemNoticeCode.UiPaused
             !result.ok -> SystemNoticeCode.RuntimeFailed
             else -> null
         }

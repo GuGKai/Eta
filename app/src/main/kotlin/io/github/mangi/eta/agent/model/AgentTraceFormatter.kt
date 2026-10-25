@@ -39,8 +39,6 @@ internal class AgentTraceFormatter {
             "get_clipboard" -> "读取剪贴板"
             "search_apps" -> summarizeQueryArguments("搜索应用", toolCall.argumentsJson)
             "launch_app" -> "打开应用"
-            "virtual_screen" -> if (runCatching { JSONObject(toolCall.argumentsJson).optString("action") }.getOrNull() == "restart")
-                "重启虚拟屏应用" else "操作虚拟屏"
             "get_current_context" -> "读取时间与位置"
             "observe_screen" -> summarizeObservationArguments(toolCall.argumentsJson)
             "tap" -> summarizePointArguments("点击屏幕", toolCall.argumentsJson)

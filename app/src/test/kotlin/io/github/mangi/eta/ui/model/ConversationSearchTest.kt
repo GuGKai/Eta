@@ -16,7 +16,6 @@ class ConversationSearchTest {
             SystemNoticeCode.ContextCompaction -> "上下文压缩"
             SystemNoticeCode.ModelRetry -> "Retrying"
             SystemNoticeCode.RuntimeFailed -> "Runtime failed"
-            SystemNoticeCode.UiPaused -> "Paused"
             SystemNoticeCode.Interrupted -> "Interrupted"
         }
     }

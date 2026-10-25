@@ -33,7 +33,6 @@ internal class AgentExecutionService : Service() {
     @Volatile private var startRejected = false
     private var progress: String = ""
     private var progressOwner: String = ""
-    private var floatingPreview: io.github.mangi.eta.agent.display.VirtualScreenFloatingPreviewHost? = null
 
     /** 通知去重与节流状态，只在主线程读写。 */
     private var publishedContent: RenderedText? = null
@@ -52,7 +51,6 @@ internal class AgentExecutionService : Service() {
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
         )
         ensureForeground()
-        if (!startRejected) floatingPreview = io.github.mangi.eta.agent.display.VirtualScreenFloatingPreviewHost(this)
     }
 
     private fun ensureForeground() {
@@ -93,7 +91,6 @@ internal class AgentExecutionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        floatingPreview?.close(); floatingPreview = null
         if (instance === this) instance = null
         // 服务被停不等于用户取消任务：用户任务租约只解除归属，runtime 侧继续跑完，
         // 下次进入界面由恢复流程接管；保活/终端租约照旧回收。回收在独立工作线程上完成，不阻塞 Main。
@@ -184,10 +181,8 @@ internal class AgentExecutionService : Service() {
         val status = runStatus
         // 只有 Agent run 正在跑时才指向虚拟屏查看页；任务跑完或只剩保活会话时指向对话界面，
         // 否则用户点通知会先落在查看页、还要按返回才回到对话。
-        val openVirtualScreen =
-            runStatus != null && io.github.mangi.eta.agent.display.VirtualScreenSession.isActive()
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, if (openVirtualScreen) io.github.mangi.eta.agent.display.VirtualScreenViewerActivity::class.java else MainActivity::class.java),
+            this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(

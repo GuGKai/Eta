@@ -44,8 +44,6 @@ import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
-import io.github.mangi.eta.agent.display.VirtualScreenRoutingPolicy
-import io.github.mangi.eta.agent.display.VirtualScreenSession
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
@@ -671,11 +669,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun sendEventTo(
         target: Messenger?,
         event: AgentEvent,
-        virtualScreen: Boolean? = null,
     ) {
         runCatching {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_EVENT)
-            msg.data = AgentRuntimeWire.eventToBundle(event, virtualScreen)
+            msg.data = AgentRuntimeWire.eventToBundle(event)
             target?.send(msg)
         }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_event_delivery_failed") {
@@ -1063,12 +1060,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 再停留 [GLOW_LINGER_MS] 才淡出，期间任何新的操作都会重新点亮并取消这次淡出。
      * 任务跑在虚拟屏上时手机上不显示运行叠层，直接保持熄灭。
      */
-    private fun refreshGlowFor(event: AgentEvent, virtualUi: Boolean) {
-        if (virtualUi) {
-            mainHandler.removeCallbacks(hideGlow)
-            glowActive.value = false
-            return
-        }
+    private fun refreshGlowFor(event: AgentEvent) {
         if (!AgentOverlayVisibilityPolicy.shouldRevealFor(event)) return
         mainHandler.removeCallbacks(hideGlow)
         if (event is AgentEvent.ToolFinished || event is AgentEvent.ToolImagesAttached) {
@@ -1078,18 +1070,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
-    private fun usesVirtualUi(session: AgentRuntimeSession, virtualScreenEnabled: Boolean = false): Boolean =
-        (session.virtualUiRouted.get() || virtualScreenEnabled) && !session.mainScreenFallbackApproved.get()
-
     private fun showOverlay() {
         // 「叠层已挂出」的判据必须是边缘光窗口，不是胶囊。胶囊停用后 capsuleView 恒为 null，
         // 若继续拿它当判据，每次屏幕操作都会重新走完这里、往 WindowManager 再叠一层全屏光效窗口：
         // 边框越叠越宽、多份 Compose + 无限旋转动画把帧率拖垮，且任务结束后也不会消失。
         if (glowView != null) return
-        // 任务跑在虚拟屏上时不在手机上显示运行叠层。
-        if (activeSession?.let { session ->
-                usesVirtualUi(session, runBlocking { SettingsDataStore.settings() }.virtualScreenEnabled)
-            } == true) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return
         val wm = overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return

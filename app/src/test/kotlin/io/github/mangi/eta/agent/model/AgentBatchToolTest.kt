@@ -195,7 +195,6 @@ class AgentBatchToolTest {
             Triple(write("disabled"), config(), null),
             Triple(item("tap", JSONObject().put("x", 1).put("y", 1)), config(), setOf("batch", "search_apps")),
             Triple(item("read_file", JSONObject().put("path", "note.txt").put("identity", "root")), config().copy(terminalTools = true), null),
-            Triple(item("virtual_screen", JSONObject().put("action", "restart")), config(), null),
             Triple(item("mcp_example", JSONObject().put("value", "known")), config(), null),
             Triple(item("batch", JSONObject().put("calls", JSONArray().put(query("nested")))), config(), null),
         )
@@ -237,29 +236,6 @@ class AgentBatchToolTest {
         assertTrue(publications.any { messages -> messages.any { it.role == "tool" && it.content.contains("completed") } })
         (publications + listOf(failure.transcript)).forEach { assertFalse(it.toString().contains("secret-")) }
         assertEquals(1, provider.requests.size)
-    }
-
-    @Test
-    fun sequentialGuiPauseSkipsRemainingMutationAndRecoversOnceEvenWithContinue() {
-        val provider = ScriptedProvider(wrapper(listOf(
-            write("first"), item("tap", JSONObject().put("x", 1).put("y", 1)), write("skipped"),
-        ), "sequential", "continue"))
-        val executed = mutableListOf<String>()
-        val recoveries = AtomicInteger()
-        AgentModelClient.complete(config().copy(terminalTools = true), "执行", AgentModelClient.ToolExecutor { call ->
-            executed += call.name
-            if (call.name == "tap") AgentModelClient.ToolResult("{\"ok\":false}",
-                stop = AgentModelClient.ToolStop("UI_NO_PROGRESS", "暂停"))
-            else AgentModelClient.ToolResult("{\"ok\":true}")
-        }, provider = provider, recoverVirtualUi = {
-            recoveries.incrementAndGet()
-            AgentModelClient.ToolResult("{\"ok\":true}")
-        })
-        assertEquals(listOf("write_file", "tap", "observe_screen"), executed)
-        assertEquals(1, recoveries.get())
-        val aggregate = provider.requests.last().messages.objects().single { it.optString("tool_call_id") == "batch-call" }
-            .getString("content").let(::JSONObject)
-        assertEquals("UI_EXECUTION_PAUSED", aggregate.getJSONArray("results").getJSONObject(2).getJSONObject("result").getString("code"))
     }
 
     @Test
@@ -454,23 +430,6 @@ class AgentBatchToolTest {
         assertEquals((0 until 8).toList(), results.map { it.getInt("index") })
         assertEquals("TOOL_ERROR", results[1].getJSONObject("result").getString("code"))
         assertEquals(7, results.count { it.getBoolean("ok") })
-    }
-
-    @Test
-    fun trustedPauseInsideSequentialWrapperSkipsRemainingReadsAndReachesExistingRecovery() {
-        val provider = ScriptedProvider(wrapper(listOf(query("first"), query("skipped")), "sequential"))
-        val executed = mutableListOf<String>()
-        val failure = assertThrows(AgentModelExecutionException::class.java) {
-            AgentModelClient.complete(config(), "查询", AgentModelClient.ToolExecutor { call ->
-                executed += JSONObject(call.argumentsJson).getString("query")
-                AgentModelClient.ToolResult("{\"ok\":false}",
-                    stop = AgentModelClient.ToolStop("UI_NO_PROGRESS", "暂停"))
-            }, provider = provider)
-        }
-        assertEquals(listOf("first"), executed)
-        assertTrue(failure.cause is AgentUiExecutionPausedException)
-        assertEquals(1, provider.requests.size)
-        assertEquals(listOf("batch-call"), failure.transcript.filter { it.role == "tool" }.map { it.toolCallId })
     }
 
     @Test
