@@ -68,9 +68,6 @@ import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
 import io.github.mangi.eta.data.update.AppUpdateChecker
-import io.github.mangi.eta.systemizer.GoogleAppSystemizerInstaller
-import io.github.mangi.eta.systemizer.RootManager
-import io.github.mangi.eta.systemizer.SystemizerInstallResult
 import io.github.mangi.eta.ui.app.EnhancementSettingsHistory
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.components.EtaArrowPreference
@@ -119,9 +116,6 @@ private fun SettingsPageContent(
     val capabilities = rememberDeviceCapabilities()
     val enhancementHistory = remember(context.applicationContext) { EnhancementSettingsHistory(context) }
     var hasConnectedFramework by remember { mutableStateOf(enhancementHistory.hasConnected) }
-    var hasUsedSystemizer by remember { mutableStateOf(enhancementHistory.hasUsedSystemizer) }
-    var showSystemizerDialog by remember { mutableStateOf(false) }
-    var installingSystemizer by remember { mutableStateOf(false) }
 
     // 悬浮窗权限状态：授权后从系统设置返回时（ON_RESUME）刷新。
     var overlayGranted by remember {
@@ -361,7 +355,6 @@ private fun SettingsPageContent(
                         startAction = { EtaPreferenceIcon(icon = Icons.Rounded.FilterAlt, tint = EtaPreferenceColors.Blue) },
                         onClick = { onNavigate(AppRoute.Tasks) },
                     )
-
                     EtaPreferenceDivider()
                     EtaArrowPreference(
                         title = stringResource(R.string.route_skills),
@@ -568,7 +561,6 @@ private fun SettingsPageContent(
                             context = context,
                             prefs = prefs,
                             title = stringResource(R.string.ui_enable_vendor_assistant_custom_models_c8e465),
-                            summary = stringResource(R.string.ui_vendor_assistant_custom_models_summary),
                             key = Prefs.Keys.AGENT_CUSTOM_MODEL,
                             icon = Icons.Rounded.Cloud,
                             iconTint = EtaPreferenceColors.Blue,
@@ -579,7 +571,6 @@ private fun SettingsPageContent(
                             context = context,
                             prefs = prefs,
                             title = stringResource(R.string.ui_only_take_over_with_agent_prefix_d17556),
-                            summary = stringResource(R.string.ui_vendor_assistant_require_prefix_summary),
                             key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
                             icon = Icons.Rounded.FilterAlt,
                             iconTint = EtaPreferenceColors.Blue,
@@ -588,97 +579,6 @@ private fun SettingsPageContent(
                 }
             }
 
-            if (prefs != null || hasConnectedFramework || capabilities.root.isGranted || hasUsedSystemizer) {
-                // ── Gemini ─────────────────────────────────────────────────
-                item(key = "section_gemini") {
-                    EtaPreferenceGroupTitle("Gemini")
-                    EtaPreferenceGroup {
-                        if (prefs != null || hasConnectedFramework) {
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_maintain_hey_google_detection_after_screen_rest_9d6877),
-                                key = Prefs.Keys.HOTWORD_SELF_HEAL,
-                                icon = Icons.Rounded.Hearing,
-                                iconTint = EtaPreferenceColors.Green,
-                            )
-
-                            EtaPreferenceDivider()
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_lock_screen_evokes_automatic_voice_input_1cde18),
-                                key = Prefs.Keys.LOCKSCREEN_VOICE_COMMAND,
-                                icon = Icons.Rounded.Lock,
-                                iconTint = EtaPreferenceColors.Blue,
-                            )
-
-                            EtaPreferenceDivider()
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_bright_screen_evokes_automatic_voice_input_4358fe),
-                                key = Prefs.Keys.SCREEN_ON_VOICE_COMMAND,
-                                icon = Icons.Rounded.SettingsVoice,
-                                iconTint = EtaPreferenceColors.Green,
-                            )
-
-                        }
-                        if (capabilities.root.isGranted || hasUsedSystemizer) {
-                            if (prefs != null || hasConnectedFramework) {
-                                EtaPreferenceDivider()
-                            }
-                            EtaArrowPreference(
-                                title = stringResource(R.string.ui_convert_google_apps_to_system_apps_0f6d89),
-                                startAction = {
-                                    EtaPreferenceIcon(
-                                        icon = Icons.Rounded.Inventory,
-                                        tint = EtaPreferenceColors.Orange,
-                                        enabled = !installingSystemizer,
-                                    )
-                                },
-                                summary = if (capabilities.root.isGranted) null else stringResource(R.string.capability_root_required),
-                                enabled = !installingSystemizer,
-                                holdDownState = showSystemizerDialog,
-                                onClick = {
-                                    if (!capabilities.root.isGranted) {
-                                        onNavigate(AppRoute.SystemEnhance)
-                                    } else if (!installingSystemizer) {
-                                        showSystemizerDialog = true
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (prefs != null || hasConnectedFramework) {
-                // ── 一圈即搜 ────────────────────────────────────────────────
-                item(key = "section_circle_to_search") {
-                    EtaPreferenceGroupTitle(stringResource(R.string.ui_search_in_one_turn_179584))
-                    EtaPreferenceGroup {
-                        SwitchPref(
-                            context = context,
-                            prefs = prefs,
-                            title = stringResource(R.string.ui_long_press_on_the_gesture_bar_triggers_a_circle_to_s_b80117),
-                            key = Prefs.Keys.GESTURE_BAR_CIRCLE_TO_SEARCH,
-                            icon = Icons.Rounded.SwipeUp,
-                            iconTint = EtaPreferenceColors.Blue,
-                        )
-
-                        EtaPreferenceDivider()
-                        SwitchPref(
-                            context = context,
-                            prefs = prefs,
-                            title = stringResource(R.string.ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
-                            key = Prefs.Keys.DOUBLE_FINGER_CIRCLE_TO_SEARCH,
-                            icon = Icons.Rounded.TouchApp,
-                            iconTint = EtaPreferenceColors.Blue,
-                        )
-                    }
-                }
-            }
 
             // ── 通用 ────────────────────────────────────────────────────
             item(key = "section_general") {
@@ -896,39 +796,6 @@ private fun SettingsPageContent(
             }
         }
 
-        SystemizerConfirmDialog(
-            show = showSystemizerDialog,
-            installing = installingSystemizer,
-            onDismissRequest = {
-                if (!installingSystemizer) {
-                    showSystemizerDialog = false
-                }
-            },
-            onConfirm = {
-                if (installingSystemizer) return@SystemizerConfirmDialog
-                if (!capabilities.root.isGranted) {
-                    showSystemizerDialog = false
-                    onNavigate(AppRoute.SystemEnhance)
-                    return@SystemizerConfirmDialog
-                }
-                enhancementHistory.recordSystemizerUse()
-                hasUsedSystemizer = true
-                showSystemizerDialog = false
-                installingSystemizer = true
-                coroutineScope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        GoogleAppSystemizerInstaller(context.applicationContext).install()
-                    }
-                    installingSystemizer = false
-                    Toast.makeText(
-                        context.applicationContext,
-                        result.toToastMessage(context),
-                        Toast.LENGTH_LONG,
-                    ).show()
-                }
-            },
-        )
-
         availableUpdate?.let { update ->
             EtaWindowDialog(
                 show = true,
@@ -949,33 +816,6 @@ private fun SettingsPageContent(
 }
 
 // ── 系统化确认对话框 ─────────────────────────────────────────────────────────
-
-@Composable
-private fun SystemizerConfirmDialog(
-    show: Boolean,
-    installing: Boolean,
-    onDismissRequest: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    EtaWindowDialog(
-        show = show,
-        title = stringResource(R.string.ui_convert_google_apps_to_system_apps_0f6d89),
-        summary = stringResource(R.string.ui_system_applications_have_voice_wake_up_permissions_f_0190f2),
-        onDismissRequest = onDismissRequest,
-    ) {
-        MiuixDialogActions(
-            confirmText = if (installing) {
-                stringResource(R.string.status_processing)
-            } else {
-                stringResource(R.string.action_confirm)
-            },
-            cancelEnabled = !installing,
-            confirmEnabled = !installing,
-            onCancel = onDismissRequest,
-            onConfirm = onConfirm,
-        )
-    }
-}
 
 // ── 带图标的布尔开关 ─────────────────────────────────────────────────────────
 
@@ -1077,23 +917,3 @@ private fun isAgentAccessibilityEnabled(context: Context): Boolean {
     ).orEmpty()
     return enabledServices.split(':').any { it.equals(expected, ignoreCase = true) }
 }
-
-private fun SystemizerInstallResult.toToastMessage(context: Context): String =
-    when (this) {
-        SystemizerInstallResult.AlreadySystemized -> context.getString(R.string.systemizer_already_system)
-        SystemizerInstallResult.GoogleAppMissing -> context.getString(R.string.systemizer_google_missing)
-        SystemizerInstallResult.UnsupportedRootManager -> context.getString(R.string.systemizer_root_manager_missing)
-        SystemizerInstallResult.KernelSuMetamoduleMissing -> context.getString(R.string.systemizer_metamodule_missing)
-        is SystemizerInstallResult.RootPermissionUnavailable -> when (rootManager) {
-            RootManager.KERNEL_SU -> context.getString(R.string.systemizer_grant_kernelsu)
-            RootManager.MAGISK -> context.getString(R.string.systemizer_grant_magisk)
-            RootManager.UNSUPPORTED -> context.getString(R.string.systemizer_root_denied)
-        }
-        is SystemizerInstallResult.InstalledRebootRequired -> context.getString(R.string.systemizer_installed)
-        is SystemizerInstallResult.Failed -> commandOutput
-            .lineSequence()
-            .map { it.trim() }
-            .lastOrNull { it.isNotEmpty() }
-            ?.let { "$message：$it" }
-            ?: message
-    }
