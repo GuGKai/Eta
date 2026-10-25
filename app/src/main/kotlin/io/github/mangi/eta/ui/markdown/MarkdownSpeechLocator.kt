@@ -15,11 +15,14 @@ internal class MarkdownSpeechHighlightCache {
     private var blocks: List<MarkdownBlock>? = null
     private var sentences: List<String>? = null
     private var flat: FlattenedBlocks? = null
-    /** 已经定位到的句序号；-1 表示还没开始。 */
+    /** 已经定位到第几句；-1 表示还没开始。 */
     private var scanned = -1
-    /** 下一句从这里往后找，保证重复句不会被定位到前面那一处。 */
+    /** 下一句从哪里往后找，保证重复句不会被定位到前面那一处。 */
     private var cursor = 0
+    /** 每句在渲染文本里的起点；当前句的高亮要延伸到下一句起点。 */
+    private val starts = HashMap<Int, Int>()
     private var current: MarkdownSpeechHighlight? = null
+    private var currentIndex = -1
 
     fun highlight(
         blocks: List<MarkdownBlock>,
@@ -33,49 +36,59 @@ internal class MarkdownSpeechHighlightCache {
             flat = null
             scanned = -1
             cursor = 0
+            starts.clear()
             current = null
+            currentIndex = -1
         }
-        if (index == scanned) return current
+        if (index == currentIndex && current != null) return current
         if (index < scanned) {
             scanned = -1
             cursor = 0
+            starts.clear()
             current = null
+            currentIndex = -1
         }
         val flat = flat ?: FlattenedBlocks(blocks).also { flat = it }
-        while (scanned < index) {
+        // 多定位一句：本句的高亮要一直盖到下一句开始，这样被挖掉的行内代码也在高亮区间内。
+        val target = if (index + 1 < sentences.size) index + 1 else index
+        while (scanned < target) {
             scanned++
-            val needle = sentences[scanned].trim()
-            if (needle.isEmpty()) {
-                current = null
-                continue
-            }
-            val at = flat.text.indexOf(needle, cursor)
-            if (at >= 0) {
-                cursor = at + needle.length
-                current = flat.highlightAt(at, cursor)
-                continue
-            }
-            // 整句对不上时按句首逐级兜底：句中夹了排版空白、表格单元格分隔或代码块也能落到开头。
-            // 长度逐级缩短，短句同样能兜底——原来要求句首满 10 个字，短句因此被直接放弃高亮。
-            val fallback = FALLBACK_HEAD_LENGTHS
-                .asSequence()
-                .filter { needle.length >= it }
-                .mapNotNull { size -> flat.text.indexOf(needle.take(size), cursor).takeIf { it >= 0 } }
-                .firstOrNull()
-            if (fallback != null) {
-                cursor = fallback + minOf(needle.length, flat.text.length - fallback)
-                current = flat.highlightAt(fallback, minOf(fallback + needle.length, flat.text.length))
-                continue
-            }
-            // 仍然对不上（例如这句只存在于渲染时被省略的标记里）：不再清空高亮，
-            // 就着游标所在位置标出等长一段，保证朗读推进时始终有可见的高亮跟着走。
-            val startAt = cursor.coerceIn(0, (flat.text.length - 1).coerceAtLeast(0))
-            val endAt = minOf(startAt + needle.length.coerceAtLeast(1), flat.text.length)
-            cursor = endAt
-            current = flat.highlightAt(startAt, endAt)
-                ?: flat.highlightAt(startAt, flat.text.length)
+            locate(scanned, flat)
         }
+        val start = starts[index] ?: return current
+        val end = starts[index + 1]
+            ?: minOf(start + sentences[index].trim().length.coerceAtLeast(1), flat.text.length)
+        current = flat.highlightAt(start, end) ?: flat.highlightAt(start, flat.text.length)
+        currentIndex = index
         return current
+    }
+
+    /** 定位第 [i] 句在渲染文本里的起点并推进 [cursor]；找不到时按游标处近似落点，绝不放弃。 */
+    private fun locate(i: Int, flat: FlattenedBlocks) {
+        val needle = sentences?.getOrNull(i)?.trim().orEmpty()
+        if (needle.isEmpty()) return
+        val at = flat.text.indexOf(needle, cursor)
+        if (at >= 0) {
+            starts[i] = at
+            cursor = at + needle.length
+            return
+        }
+        // 整句对不上时按句首逐级兜底：句中夹了排版空白、表格单元格分隔或代码块也能落到开头。
+        // 长度逐级缩短，短句同样能兜底——原来要求句首满 10 个字，短句因此被直接放弃高亮。
+        val fallback = FALLBACK_HEAD_LENGTHS
+            .asSequence()
+            .filter { needle.length >= it }
+            .mapNotNull { size -> flat.text.indexOf(needle.take(size), cursor).takeIf { it >= 0 } }
+            .firstOrNull()
+        if (fallback != null) {
+            starts[i] = fallback
+            cursor = fallback + minOf(needle.length, flat.text.length - fallback)
+            return
+        }
+        // 仍然对不上（例如这句只存在于渲染时被省略的标记里）：记下游标位置继续推进。
+        val startAt = cursor.coerceIn(0, (flat.text.length - 1).coerceAtLeast(0))
+        starts[i] = startAt
+        cursor = minOf(startAt + needle.length.coerceAtLeast(1), flat.text.length)
     }
 }
 
