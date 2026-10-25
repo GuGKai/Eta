@@ -176,8 +176,9 @@ internal class SpeechAudioLease(
         /** 复检间隔：太小会频繁写音量，太大则播放器改回来后又响起来。 */
         const val MEDIA_WATCH_INTERVAL_MS = 400L
 
+        /** 朗读与聆听都用媒体通道的属性：跟随媒体音量，和系统 TTS 引擎、其他媒体应用一致。 */
         fun speechAttributes(): AudioAttributes =
-            AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+            AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
     }
 }
