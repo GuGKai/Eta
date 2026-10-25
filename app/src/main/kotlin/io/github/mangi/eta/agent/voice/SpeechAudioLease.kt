@@ -24,13 +24,30 @@ internal class SpeechAudioLease(
     private val context: Context,
     private val interruptOnScreenOff: Boolean = true,
     private val interrupt: () -> Unit,
+    /** 焦点被别的应用抢走：默认按打断处理，朗读入口传入暂停，保留音频缓冲与通知。 */
+    private val focusLost: (permanent: Boolean) -> Unit = { interrupt() },
 ) : Closeable {
     private val manager = context.getSystemService(AudioManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
     private val systemVolume = SystemVolumeControl(context)
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
         .setAudioAttributes(speechAttributes())
-        .setOnAudioFocusChangeListener({ change -> if (change < 0 && current === this) interrupt() }, handler)
+        .setOnAudioFocusChangeListener({ change ->
+            if (current === this) {
+                when (change) {
+                    AudioManager.AUDIOFOCUS_LOSS -> {
+                        focused = false
+                        focusLost(true)
+                    }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                        focused = false
+                        focusLost(false)
+                    }
+                    AudioManager.AUDIOFOCUS_GAIN -> focused = true
+                }
+            }
+        }, handler)
         .build()
 
     /**
@@ -155,6 +172,18 @@ internal class SpeechAudioLease(
         beforeFocus()
         focused = manager.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (!focused) throw SpeechFailure(SpeechErrorCode.AUDIO, "当前无法获得音频焦点，请稍后重试")
+    }
+
+    /**
+     * 焦点被别的应用抢走后，用户点「继续」时再申请一次。
+     * 拿不到也照常放音（音轨不需要焦点），只是无法请对方让开。
+     */
+    fun reacquireFocus(): Boolean {
+        val audio = manager ?: return false
+        focused = runCatching {
+            audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }.getOrDefault(false)
+        return focused
     }
 
     override fun close() {

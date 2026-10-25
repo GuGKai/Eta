@@ -64,7 +64,7 @@ class SpeechPlaybackTest {
 
     @Test fun microphoneLeaseInterruptsPlayback() {
         start("answer")
-        val microphone = SpeechAudioLease(context) {}
+        val microphone = SpeechAudioLease(context, interrupt = {})
         try {
             microphone.acquire(playback = false)
             assertTrue(outputs.single().closed)
@@ -75,7 +75,7 @@ class SpeechPlaybackTest {
 
     @Test fun microphoneWinsWhileOldPlaybackIsStillPreparing() {
         playback.speak("preparing", "尚未合成的回答", SpeechSettings(tts = TtsProvider.QWEN), SpeechCredentials(qwenTts = "test-key"))
-        val microphone = SpeechAudioLease(context) {}
+        val microphone = SpeechAudioLease(context, interrupt = {})
         try {
             microphone.acquire(playback = false)
             shadowOf(Looper.getMainLooper()).idle()

@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -104,7 +105,9 @@ import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.ui.voice.LocalSpeechPlayback
 import io.github.mangi.eta.ui.voice.SpeechReadAloudButton
+import io.github.mangi.eta.ui.voice.rememberSpeechSentences
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -587,6 +590,17 @@ private fun AgentMessageBlock(
         }
     }
 
+    // 只对正在朗读的这条消息订阅句级进度，其余消息保持不重组。
+    val speechState = LocalSpeechPlayback.current?.state?.collectAsState()?.value
+    val speakingIndex = speechState
+        ?.takeIf { it.messageId == message.id && it.sentenceIndex >= 0 }
+        ?.sentenceIndex
+    val speechSentences = if (speakingIndex != null && message.renderMarkdown) {
+        rememberSpeechSentences(message.content)
+    } else {
+        null
+    }
+
     val character = LocalRoleplayChat.current.takeUnless { assistantOverlay }
     val isGreeting = character != null && message.id.startsWith(GreetingMessagePrefix)
     Column(
@@ -606,7 +620,8 @@ private fun AgentMessageBlock(
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
-            streamingState != null && !revealComplete -> {
+            // 正在朗读时直接走静态渲染：等显现动画收尾会错过第一句的高亮。
+            streamingState != null && !revealComplete && speakingIndex == null -> {
                 StreamingMarkdown(
                     state = streamingState,
                     content = message.content,
@@ -623,6 +638,8 @@ private fun AgentMessageBlock(
                         tone = MarkdownTone.Answer,
                         parsed = completedDocument,
                         modifier = Modifier.fillMaxWidth(),
+                        speechSentences = speechSentences,
+                        speechSentenceIndex = speakingIndex,
                     )
                 }
             }

@@ -51,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -121,6 +122,22 @@ private class MarkdownRenderScope(
 /** 嵌套列表的层级只影响 marker 字形，用 CompositionLocal 传递，块组件不必逐层转发。 */
 private val LocalListDepth = compositionLocalOf { 0 }
 
+/**
+ * 朗读进度高亮：命中 [blockOffset] 这一块时，把块内 [start] until [end] 涂上主题色背景。
+ * 只有正在朗读的那一块会命中，其余块读取到的仍是原文。
+ */
+@Immutable
+internal data class MarkdownSpeechHighlight(
+    val blockOffset: Int,
+    val start: Int,
+    val end: Int,
+)
+
+internal val LocalMarkdownSpeechHighlight = compositionLocalOf<MarkdownSpeechHighlight?> { null }
+
+/** 背景取主题高亮色，透明度压低到不遮住正文。 */
+private const val SPEECH_HIGHLIGHT_ALPHA = 0.4f
+
 @Composable
 private fun MarkdownBlockColumn(
     blocks: List<MarkdownBlock>,
@@ -182,21 +199,42 @@ private fun MarkdownText(
     softWrap: Boolean = true,
 ) {
     val reveal = scope.reveal
+    val text = markdownSpeechHighlighted(block.text, block.offset)
     // 空单元格没有可显现的文字，也不占用显现协调器的 key。
     if (reveal == null || block.text.isEmpty()) {
-        Text(text = block.text, style = style, softWrap = softWrap, modifier = modifier)
+        Text(text = text, style = style, softWrap = softWrap, modifier = modifier)
         return
     }
     val revealState = rememberSmoothTextRevealState(block.revealKey, reveal)
     // 显现裁剪按字素边界逐帧变化，关闭像素对齐可避免裁剪边缘抖动。
     val animatedStyle = remember(style) { style.copy(textMotion = TextMotion.Animated) }
     Text(
-        text = block.text,
+        text = text,
         style = animatedStyle,
         softWrap = softWrap,
         modifier = modifier.smoothTextReveal(revealState),
         onTextLayout = { layout -> revealState.onTextLayout(block.text.text, layout) },
     )
+}
+
+/**
+ * 正在朗读的那一句涂上主题高亮色背景。
+ *
+ * 只对命中的块加一层 background span，其余块原样返回，不参与重组。
+ */
+@Composable
+private fun markdownSpeechHighlighted(text: AnnotatedString, blockOffset: Int): AnnotatedString {
+    val highlight = LocalMarkdownSpeechHighlight.current
+    if (highlight == null || highlight.blockOffset != blockOffset) return text
+    val start = highlight.start.coerceIn(0, text.length)
+    val end = highlight.end.coerceIn(start, text.length)
+    if (end <= start) return text
+    val background = MiuixTheme.colorScheme.primary.copy(alpha = SPEECH_HIGHLIGHT_ALPHA)
+    return remember(text, start, end, background) {
+        AnnotatedString.Builder(text)
+            .apply { addStyle(SpanStyle(background = background), start, end) }
+            .toAnnotatedString()
+    }
 }
 
 // ── 代码块 ──────────────────────────────────────────────────────────────

@@ -57,6 +57,10 @@ internal class SpeechPcmOutput(private val sampleRate: Int = DEFAULT_SAMPLE_RATE
         finished = true
     }
 
+    /** 已播出的帧数（相对这条音轨的起点）：界面据此把高亮跟到真正在放的那一句。 */
+    @Synchronized override fun playedFrames(): Long =
+        track?.let { it.playbackHeadPosition.toLong() and 0xffffffffL } ?: 0L
+
     @Synchronized override fun drained(): Boolean = track?.let {
         finished && (it.playbackHeadPosition.toLong() and 0xffffffffL) >= frames
     } ?: true
@@ -79,9 +83,9 @@ internal class SpeechPcmOutput(private val sampleRate: Int = DEFAULT_SAMPLE_RATE
         track = null
     }
 
-    private companion object {
-        const val DEFAULT_SAMPLE_RATE = 24_000
+    companion object {
         const val BYTES_PER_FRAME = 2
-        const val PAUSED_POLL_MS = 50L
+        private const val DEFAULT_SAMPLE_RATE = 24_000
+        private const val PAUSED_POLL_MS = 50L
     }
 }
