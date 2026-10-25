@@ -32,6 +32,8 @@ internal object SpeechText {
                     GFMTokenTypes.TILDE,
                     GFMTokenTypes.TABLE_SEPARATOR,
                     GFMTokenTypes.CHECK_BOX -> Unit
+                    // 行内代码整段不朗读：换成换行，让前后自然断成两句，代码本身不进 TTS。
+                    MarkdownElementTypes.CODE_SPAN -> append('\n')
                     MarkdownElementTypes.INLINE_LINK,
                     MarkdownElementTypes.FULL_REFERENCE_LINK,
                     MarkdownElementTypes.SHORT_REFERENCE_LINK -> {
@@ -123,6 +125,8 @@ internal object SpeechText {
         val merged = mutableListOf<String>()
         for (piece in pieces) {
             if (piece.isBlank()) continue
+            // 代码被挖掉后可能只剩一个标点（例如「：`code`。」挖完只剩句号），不要单独成句。
+            if (piece.none { it.isLetterOrDigit() }) continue
             val previous = merged.lastOrNull()
             if (previous != null && isDanglingTail(piece, minLength)) {
                 merged[merged.lastIndex] = previous + piece
