@@ -65,11 +65,11 @@ internal class SpeechInputController(
         job = scope.launch(Dispatchers.Main.immediate) {
             try {
                 // 聆听期间压掉正在播放的媒体音量，避免麦克风把音乐、视频一起收进去；识别结束随租约还原。
-                lease = SpeechAudioLease(context) { cancel() }
+                lease = SpeechAudioLease(context, interrupt = { cancel() })
                     .also { it.acquire(playback = false, muteMedia = true) }
                 val config = settings ?: SpeechSettingsRepository.settings()
                 if (!config.recognitionEnabled) return@launch
-                lease = SpeechAudioLease(context) { cancel() }.also { it.acquire(playback = false) }
+                lease = SpeechAudioLease(context, interrupt = { cancel() }).also { it.acquire(playback = false) }
                 val secrets = credentials ?: if (config.asr == AsrProvider.SYSTEM) SpeechCredentials()
                     else SpeechSettingsRepository.credentials(context)
                 validateSpeechSettings(config, secrets, synthesis = false)

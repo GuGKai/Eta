@@ -28,6 +28,11 @@ internal data class SpeechPlaybackState(
     val error: String? = null,
     /** 暂停中：已合成的音频与播放位置都保留，继续后从断点接着读。 */
     val paused: Boolean = false,
+    /**
+     * 正在读第几句（按 [SpeechText.sentences] 的顺序）；界面据此高亮当前句，
+     * 拿不到句级进度（例如云端流式合成的分段）时为 -1。
+     */
+    val sentenceIndex: Int = -1,
 )
 
 internal class SpeechPlaybackController(
@@ -64,7 +69,12 @@ internal class SpeechPlaybackController(
         mutableState.value = SpeechPlaybackState(messageId, loading = true)
         job = scope.launch(Dispatchers.Main.immediate) {
             try {
-                lease = SpeechAudioLease(context, interruptOnScreenOff) { stop() }.also { it.acquire(playback = false) }
+                lease = SpeechAudioLease(
+                    context = context,
+                    interruptOnScreenOff = interruptOnScreenOff,
+                    interrupt = ::stop,
+                    focusLost = { pauseForFocusLoss() },
+                ).also { it.acquire(playback = false) }
                 val config = settings ?: SpeechSettingsRepository.settings()
                 val secrets = credentials ?: SpeechSettingsRepository.credentials(context)
                 validateSpeechSettings(config, secrets, synthesis = true)
@@ -112,8 +122,21 @@ internal class SpeechPlaybackController(
         val current = mutableState.value
         if (current.messageId == null || !current.paused) return
         mutableState.value = current.copy(paused = false)
+        // 焦点可能还在对方手里，点继续时再申请一次；拿不到也照常放音，只是请不动对方让开。
+        lease?.reacquireFocus()
         output?.resume()
         onPauseChanged(false)
+    }
+
+    /**
+     * 别的应用抢走音频焦点（例如切去刷视频、听歌）时只暂停，不终止：
+     * 音频缓冲、播放位置、前台服务与实时活动通知都保留，点「继续」从断点接着读。
+     */
+    private fun pauseForFocusLoss() {
+        val current = mutableState.value
+        if (current.messageId == null || current.paused) return
+        AndroidAgentLogger.info("Eta speech paused by audio focus loss")
+        pause()
     }
 
     /** 朗读卡片上的暂停与继续共用一枚按钮；返回切换后的暂停状态。 */
@@ -230,14 +253,14 @@ internal class SpeechPlaybackController(
         config: SpeechSettings,
         synthesizer: SystemTtsSynthesizer,
     ) = coroutineScope {
-        val queue = Channel<SystemTtsClip>(Channel.UNLIMITED)
+        val queue = Channel<SystemTtsSentence>(Channel.UNLIMITED)
         // 只允许领先播放若干句：暂停时不会把整篇合成出来，恢复后立刻有下一句可用。
         val ahead = Semaphore(PREFETCH_CLIPS)
         launch(Dispatchers.IO) {
             try {
-                for (sentence in sentences) {
+                sentences.forEachIndexed { index, sentence ->
                     ahead.acquire()
-                    queue.send(synthesizer.synthesize(sentence, config.systemTtsVoice))
+                    queue.send(SystemTtsSentence(index, synthesizer.synthesize(sentence, config.systemTtsVoice)))
                 }
                 queue.close()
             } catch (error: Throwable) {
@@ -249,32 +272,54 @@ internal class SpeechPlaybackController(
             var player: SpeechPcmOutput? = null
             var playerRate = 0
             var announced = false
-            for (clip in queue) {
-                if (session != generation) throw CancellationException("Speech playback replaced")
-                if (player == null || clip.sampleRate != playerRate) {
-                    // 采样率随引擎与音色变化，换了就必须换音轨，否则会变调变速。
-                    player?.let { previous ->
-                        previous.finish()
-                        awaitDrained(session, previous)
-                        previous.close()
+            // 高亮比“交给音轨”晚一点亮：写入本身跑在出声前面，直接跟着写就会提前半秒。
+            val highlights = Channel<Int>(Channel.UNLIMITED)
+            val highlightJob = launch {
+                for (index in highlights) {
+                    delay(HIGHLIGHT_DELAY_MS)
+                    // 暂停期间声音停住，高亮也不许往前跑。
+                    awaitResume()
+                    if (session == generation) {
+                        AndroidAgentLogger.info("Eta speech highlight $index")
+                        mutableState.value = mutableState.value.copy(sentenceIndex = index)
                     }
-                    player = SpeechPcmOutput(clip.sampleRate)
-                    output = player
-                    playerRate = clip.sampleRate
-                }
-                val current = checkNotNull(player) { "Speech playback stopped" }
-                // write 会在音轨缓冲写满时阻塞轮询，必须留在 IO 线程，挪到主线程会冻住界面。
-                runInterruptible { current.write(clip.pcm) }
-                ahead.release()
-                if (!announced) {
-                    announced = true
-                    systemClipPlayed = true
-                    markPlaying(session, messageId)
                 }
             }
-            player?.let {
-                it.finish()
-                awaitDrained(session, it)
+            try {
+            for (spoken in queue) {
+                    val clip = spoken.clip
+                    if (session != generation) throw CancellationException("Speech playback replaced")
+                    if (player == null || clip.sampleRate != playerRate) {
+                        // 采样率随引擎与音色变化，换了就必须换音轨，否则会变调变速。
+                        player?.let { previous ->
+                            previous.finish()
+                            awaitDrained(session, previous)
+                            previous.close()
+                        }
+                        player = SpeechPcmOutput(clip.sampleRate)
+                        output = player
+                        playerRate = clip.sampleRate
+                    }
+                    val current = checkNotNull(player) { "Speech playback stopped" }
+                    // 高亮跟着“准备交给音轨的这一句”走：写入是跟着播放节奏一点点灌进缓冲的，
+                    // 等 write 返回该句已经快读完了，所以在这之前就把高亮排进队列（延时生效）。
+                    if (session == generation) highlights.trySend(spoken.index)
+                    // write 会在音轨缓冲写满时阻塞轮询，必须留在 IO 线程，挪到主线程会冻住界面。
+                    runInterruptible { current.write(clip.pcm) }
+                    ahead.release()
+                    if (!announced) {
+                        announced = true
+                        systemClipPlayed = true
+                        markPlaying(session, messageId)
+                    }
+                }
+                player?.let {
+                    it.finish()
+                    awaitDrained(session, it)
+                }
+            } finally {
+                highlights.close()
+                highlightJob.join()
             }
         }
     }
@@ -357,6 +402,10 @@ internal class SpeechPlaybackController(
     }
 }
 
+/** 一句已合成好的音频，带上它在句列表里的序号，供界面高亮当前句。 */
+private class SystemTtsSentence(val index: Int, val clip: SystemTtsClip)
+
+
 private sealed interface SpeechQueueItem {
     class Audio(val bytes: ByteArray) : SpeechQueueItem
     data object ChunkEnd : SpeechQueueItem
@@ -364,11 +413,17 @@ private sealed interface SpeechQueueItem {
 
 private const val PREFETCH_CHUNKS = 2
 
+/** 高亮比音频晚这么久生效：抵消音轨缓冲带来的提前量。 */
+private const val HIGHLIGHT_DELAY_MS = 300L
+
 /** 系统引擎逐句合成时最多领先播放的句数，够盖住一次合成耗时，又不会在暂停时白合成整篇。 */
 private const val PREFETCH_CLIPS = 2
 
 internal interface SpeechAudioOutput : Closeable {
     fun write(bytes: ByteArray)
+
+    /** 已播出的帧数；拿不到播放头（例如引擎自己放音）时返回 null。 */
+    fun playedFrames(): Long? = null
     fun finish()
     fun drained(): Boolean
 
