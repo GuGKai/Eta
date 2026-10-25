@@ -8,7 +8,8 @@ import kotlinx.coroutines.CancellationException
 /** 按 [sampleRate] 建流式音轨；采样率必须与写入的 PCM 一致，否则会变调变速。 */
 internal class SpeechPcmOutput(private val sampleRate: Int = DEFAULT_SAMPLE_RATE) : SpeechAudioOutput {
     private var track: AudioTrack? = AudioTrack.Builder()
-        .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+        // 用媒体通道：朗读跟随媒体音量，与系统 TTS 引擎和其他媒体应用一致。
+        .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
         .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
