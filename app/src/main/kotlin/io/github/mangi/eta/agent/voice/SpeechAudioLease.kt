@@ -32,19 +32,32 @@ internal class SpeechAudioLease(
     private val systemVolume = SystemVolumeControl(context)
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
         .setAudioAttributes(speechAttributes())
+        // 显式关掉"duck 时自动暂停"：提示音只该让我们让一让，不该把整段朗读掐掉。
+        .setWillPauseWhenDucked(false)
         .setOnAudioFocusChangeListener({ change ->
             if (current === this) {
+                AndroidAgentLogger.info("Eta speech audio focus change=$change")
                 when (change) {
                     AudioManager.AUDIOFOCUS_LOSS -> {
                         focused = false
+                        ducked = false
                         focusLost(true)
                     }
-                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                         focused = false
+                        ducked = false
                         focusLost(false)
                     }
-                    AudioManager.AUDIOFOCUS_GAIN -> focused = true
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                        // 消息铃声、通知提示音这类短音只会要求我们"让一让"：
+                        // 继续朗读即可（一两秒被盖过去比整段被掐掉体验好得多），
+                        // 只有真正的抢占（来电、别的朗读）才走上面的暂停分支。
+                        ducked = true
+                    }
+                    AudioManager.AUDIOFOCUS_GAIN -> {
+                        focused = true
+                        ducked = false
+                    }
                 }
             }
         }, handler)
@@ -60,6 +73,8 @@ internal class SpeechAudioLease(
         .build()
     private var registered = false
     private var focused = false
+    /** 当前是否处于"被要求让一让"（CAN_DUCK）状态；朗读继续，只是被短音盖住。 */
+    private var ducked = false
     private var captureFocused = false
 
     /** 非 null 表示这次聆听是我们把媒体音量压掉了，值就是原本的音量。 */

@@ -1400,7 +1400,13 @@ internal class AgentAppState(
         scope.launch(Dispatchers.IO) {
             val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(runId, prompt)
             if (!accepted) withContext(Dispatchers.Main) {
-                restoreInterjectionDraft(conversationId, prompt)
+                // 注入失败不能只把文字塞回输入框——那正是"发了却没人收到"的观感。
+                // 降级成正常发送：本轮还在跑就入队、本轮已结束就直接发出，保证消息不丢。
+                if (prompt.isNotBlank()) {
+                    submitOrQueueCurrentMessage(submittedText = prompt, immediateInterrupt = false)
+                } else {
+                    restoreInterjectionDraft(conversationId, prompt)
+                }
             }
         }
     }
@@ -2199,6 +2205,10 @@ internal class AgentAppState(
             AgentFileReferenceGateway.Error.ValidationTimedOut -> appContext.getString(R.string.state_ui_path_verification_timed_out_please_try_again_703687)
         }
 
+    private val stopRequestedRunIds = mutableSetOf<String>()
+    private val CANCEL_RETRY_WINDOW_MS = 3_000L
+    private val userStoppedRunIds = mutableSetOf<String>()
+
     fun stopCurrentRun() {
         val runId = runStore.activeRunId(selectedConversationId) ?: return
         stopRun(runId)
@@ -2226,7 +2236,14 @@ internal class AgentAppState(
         scope.launch(Dispatchers.IO) {
             AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
         }
+        // 取消指令可能落在僵死的连接上被丢掉；runId 只有等本轮真正结束才会移出去重集合，
+        // 期间再点终止会被上面那行直接吞掉，按钮看起来就是"没反应"。这里放开一个重试窗口。
+        scope.launch {
+            kotlinx.coroutines.delay(CANCEL_RETRY_WINDOW_MS)
+            if (currentRunId == runId) stopRequestedRunIds.remove(runId)
+        }
     }
+
 
     /**
      * 界面侧脱钩（不取消任务）。
