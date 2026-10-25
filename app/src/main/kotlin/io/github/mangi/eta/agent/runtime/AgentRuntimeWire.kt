@@ -108,7 +108,6 @@ internal object AgentRuntimeWire {
     private const val SERVICE_CLASS = "io.github.mangi.eta.agent.runtime.AgentRuntimeService"
 
     private const val KEY_TYPE = "type"
-    private const val KEY_EVENT_VIRTUAL_SCREEN = "virtual_screen"
     private const val KEY_RUN_ID = "run_id"
     private const val KEY_PROMPT = "prompt"
     private const val KEY_ASSISTANT_SCREEN_CONTEXT = "assistant_screen_context"
@@ -196,13 +195,6 @@ internal object AgentRuntimeWire {
                     ?.let { AgentUiHandoffPayload.from(it.payload).conversationId }
                     ?.takeIf { it.isNotBlank() } ?: runId
             }
-
-        val virtualScreenOwner: String
-            get() = handoff?.let { entry ->
-                AgentExternalArchivePayload.from(entry.payload)?.let {
-                    AgentExternalArchivePayload.conversationId(entry.source, it.conversationKey)
-                }
-            } ?: effectiveModelSessionId
     }
 
     enum class RunPhase(val wireValue: String) {
@@ -705,13 +697,8 @@ internal object AgentRuntimeWire {
         }
     }
 
-    /** 旧 Runtime 未携带执行位置时返回 null。 */
-    fun eventVirtualScreenFromBundle(bundle: Bundle): Boolean? =
-        if (bundle.containsKey(KEY_EVENT_VIRTUAL_SCREEN)) bundle.getBoolean(KEY_EVENT_VIRTUAL_SCREEN) else null
-
     /** 将 [AgentEvent] 和可选的执行位置打包为可跨进程传递的 [Bundle]。 */
-    fun eventToBundle(event: AgentEvent, virtualScreen: Boolean? = null): Bundle = Bundle().apply {
-        virtualScreen?.let { putBoolean(KEY_EVENT_VIRTUAL_SCREEN, it) }
+    fun eventToBundle(event: AgentEvent): Bundle = Bundle().apply {
         when (event) {
             is AgentEvent.GuiControlChanged -> {
                 putString(KEY_TYPE, "gui_control_changed")

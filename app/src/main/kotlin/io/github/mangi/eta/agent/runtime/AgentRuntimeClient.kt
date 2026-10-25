@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.AtomicReference
 internal class AgentRuntimeClient(
     private val context: Context,
     private val logger: AgentLogger,
-    private val onExecutionTarget: (Boolean) -> Unit = {},
 ) {
     sealed interface AttachOutcome {
         data class Completed(val result: AgentRuntimeWire.RunResult) : AttachOutcome
@@ -57,7 +56,6 @@ internal class AgentRuntimeClient(
         val clientMessenger = Messenger(
             ClientHandler(
                 onEvent = onEvent,
-                onExecutionTarget = onExecutionTarget,
                 onResult = { result ->
                     resultRef.set(result)
                     resultLatch.countDown()
@@ -352,14 +350,12 @@ internal class AgentRuntimeClient(
         private val onEvent: (AgentEvent) -> Unit,
         private val onResult: (Bundle) -> Unit,
         private val onRequestIngested: () -> Unit,
-        private val onExecutionTarget: (Boolean) -> Unit = {},
     ) : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
             when (msg.what) {
                 AgentRuntimeWire.MSG_EVENT -> {
                     val bundle = msg.data ?: return
                     val event = AgentRuntimeWire.eventFromBundle(bundle) ?: return
-                    AgentRuntimeWire.eventVirtualScreenFromBundle(bundle)?.let(onExecutionTarget)
                     onEvent(event)
                 }
 

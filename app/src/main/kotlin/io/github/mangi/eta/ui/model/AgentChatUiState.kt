@@ -80,7 +80,6 @@ enum class SystemNoticeCode(val wireValue: String) {
     Stopped("stopped"),
     EmptyResult("empty_result"),
     RuntimeFailed("runtime_failed"),
-    UiPaused("ui_paused"),
     ModelRetry("model_retry"),
     ContextCompaction("context_compaction"),
     Interrupted("interrupted");
