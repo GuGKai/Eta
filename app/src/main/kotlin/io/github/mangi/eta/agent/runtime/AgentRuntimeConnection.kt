@@ -48,13 +48,19 @@ internal object AgentRuntimeConnection {
     private var activeLeases = 0
     private var connectionLatch = CountDownLatch(0)
     private var bindStartedAt = 0L
+    // 缓存 Messenger 时必须同时监听 binder 死亡，否则服务重启后会把请求永远发到死 binder 上。
+    private var deathRecipient: IBinder.DeathRecipient? = null
 
     private val idleUnbind = Runnable { unbindIfIdle() }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
-            synchronized(lock) {
+            val recipient = IBinder.DeathRecipient { resetDeadBinding() }
+            val linked = runCatching { service.linkToDeath(recipient, 0) }.isSuccess
+            val stale = synchronized(lock) {
+                val previous = messenger?.binder to deathRecipient
                 messenger = Messenger(service)
+                deathRecipient = recipient.takeIf { linked }
                 binding = false
                 bound = true
                 connectionLatch.countDown()
@@ -63,7 +69,9 @@ internal object AgentRuntimeConnection {
                         (SystemClock.elapsedRealtime() - bindStartedAt)
                 }
                 scheduleIdleUnbindLocked()
+                previous
             }
+            stale.second?.let { old -> runCatching { stale.first?.unlinkToDeath(old, 0) } }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
@@ -113,7 +121,12 @@ internal object AgentRuntimeConnection {
         if (shouldBind) {
             mainHandler.post { bind() }
         }
-        if (!latch.await(BIND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) return null
+        if (!latch.await(BIND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            // 绑定超时说明连接状态已僵死（服务被冻结或 binder 失效）：清掉状态，让下一次调用重新绑定，
+            // 否则 binding=true 会一直卡住，之后每次调用都只能等满超时后静默失败。
+            resetDeadBinding()
+            return null
+        }
 
         return synchronized(lock) {
             messenger?.let { connected ->
@@ -171,14 +184,20 @@ internal object AgentRuntimeConnection {
     }
 
     private fun unbindIfIdle() {
+        var staleBinder: IBinder? = null
+        var staleRecipient: IBinder.DeathRecipient? = null
         val context = synchronized(lock) {
             if (activeLeases != 0 || !bound) return
             val currentContext = appContext
+            staleBinder = messenger?.binder
+            staleRecipient = deathRecipient
             messenger = null
+            deathRecipient = null
             binding = false
             bound = false
             currentContext
         } ?: return
+        runCatching { staleRecipient?.let { staleBinder?.unlinkToDeath(it, 0) } }
         runCatching { context.unbindService(serviceConnection) }
             .onFailure { throwable ->
                 synchronized(lock) {
@@ -188,14 +207,20 @@ internal object AgentRuntimeConnection {
     }
 
     private fun resetDeadBinding() {
+        var staleBinder: IBinder? = null
+        var staleRecipient: IBinder.DeathRecipient? = null
         val context = synchronized(lock) {
             val currentContext = appContext.takeIf { bound }
+            staleBinder = messenger?.binder
+            staleRecipient = deathRecipient
             messenger = null
+            deathRecipient = null
             binding = false
             bound = false
             connectionLatch.countDown()
             currentContext
         }
+        runCatching { staleRecipient?.let { staleBinder?.unlinkToDeath(it, 0) } }
         if (context != null) {
             runCatching { context.unbindService(serviceConnection) }
         }
