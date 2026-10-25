@@ -81,7 +81,7 @@ class SpeechLifecycleTest {
 
     @Test fun anotherAudioOwnerInterruptsRecording() {
         val recognizer = start()
-        val lease = SpeechAudioLease(RuntimeEnvironment.getApplication()) {}
+        val lease = SpeechAudioLease(RuntimeEnvironment.getApplication(), interrupt = {})
         try {
             lease.acquire(playback = false)
             assertTrue(recognizer.isDestroyed)
@@ -99,7 +99,7 @@ class SpeechLifecycleTest {
 
     @Test fun disabledRecognitionDoesNotAcquireAudioOrRequireCloudCredentials() {
         var interrupted = false
-        val lease = SpeechAudioLease(RuntimeEnvironment.getApplication()) { interrupted = true }
+        val lease = SpeechAudioLease(RuntimeEnvironment.getApplication(), interrupt = { interrupted = true })
         try {
             lease.acquire(playback = false)
             for (provider in AsrProvider.entries) {
