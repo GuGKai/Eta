@@ -757,9 +757,6 @@ fun AgentAppRoot(
             entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
                 AgentTasksScreen(onBack = { popRoute() })
             }
-            entry<AppRoute.VirtualScreen>(swipeDismiss = swipeDismiss) {
-                io.github.mangi.eta.ui.screens.tasks.VirtualScreenSettingsScreen(onBack = { popRoute() })
-            }
             entry<AppRoute.SpeechSettings>(swipeDismiss = swipeDismiss) {
                 SpeechSettingsScreen(
                     onBack = ::popRoute,

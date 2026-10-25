@@ -123,19 +123,6 @@ class AgentRuntimeWireTest {
     }
 
     @Test
-    fun importedTurnsShareTheVirtualDisplayOwner() {
-        val config = AgentModelClient.ModelConfig(baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = "")
-        val payload = AgentExternalArchivePayload("操作应用", "session", "操作应用").toJson()
-        val id = AgentExternalArchivePayload.conversationId(AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE, "session")
-        val imported = AgentRuntimeWire.RunRequest(
-            "one", "操作应用", config, emptyList(),
-            handoff = AgentRuntimeWire.EntryHandoff("one", AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE, payload),
-        )
-        assertEquals(id, imported.virtualScreenOwner)
-        assertEquals(id, imported.copy(runId = "three").virtualScreenOwner)
-    }
-
-    @Test
     fun automaticCompactionSettingSurvivesIpcAndDefaultsForOldRequests() {
         val config = AgentModelClient.ModelConfig(
             baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = "",

@@ -12,8 +12,6 @@ import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
-import io.github.mangi.eta.agent.display.VirtualScreenSession
-import io.github.mangi.eta.agent.display.VirtualScreenViewerActivity
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.db.EtaDatabase
@@ -187,8 +185,7 @@ internal class AgentTaskJobService : JobService() {
         title: String,
         progress: String,
     ): Notification {
-        val target =
-            if (VirtualScreenSession.isActive()) VirtualScreenViewerActivity::class.java else MainActivity::class.java
+        val target = MainActivity::class.java
         val open = PendingIntent.getActivity(
             this,
             NOTIFICATION_ID,

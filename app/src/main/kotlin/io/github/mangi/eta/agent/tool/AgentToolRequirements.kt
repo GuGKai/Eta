@@ -54,7 +54,6 @@ internal object AgentToolRequirements {
         )
         register(
             RootRequirement.REQUIRED,
-            "virtual_screen",
             "top_memory_apps", "top_storage_apps", "wifi_credentials", "read_sms_code",
             "get_logcat", "set_setting", "set_device_state", "app_state_control",
             "list_alarms", "list_active_timers", "get_health_summary", "search_clipboard_history",

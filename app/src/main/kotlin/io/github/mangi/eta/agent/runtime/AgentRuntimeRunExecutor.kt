@@ -10,7 +10,6 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentModelFailure
-import io.github.mangi.eta.agent.model.AgentUiExecutionPausedException
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
@@ -212,7 +211,7 @@ internal class AgentRuntimeRunExecutor(
                 beforeToolExecution = { toolName ->
                     if (io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId) &&
                         (toolName in io.github.mangi.eta.agent.automation.AgentTaskTools.names || toolName in setOf("terminal", "run_command") ||
-                            (!session.mainScreenFallbackApproved.get() && (AgentToolRequirements.requiresAccessibility(toolName) ||
+                            ((AgentToolRequirements.requiresAccessibility(toolName) ||
                                 AgentOverlayVisibilityPolicy.isForegroundOperationTool(toolName) || toolName == "browser_use")))) {
                         ToolExecutionDecision.Reject("AUTOMATION_ACTION_UNAVAILABLE", "自动任务暂不支持创建其他任务或操作主屏；需要独立虚拟屏执行环境")
                     } else {
@@ -254,8 +253,6 @@ internal class AgentRuntimeRunExecutor(
                 pendingSkillConflict = pendingSkillConflict,
                 virtualDisplayEnabled = { currentPermissions().virtualDisplay },
                 skillAuthoringService = SkillAuthoringService(skillIndexService, skillPackageInstaller),
-                onMainScreenFallback = { session.mainScreenFallbackApproved.set(true) },
-                onVirtualTaskCancelled = { session.cancel("用户取消虚拟屏任务") },
             )
             val routingExecutor = RoutingToolExecutor(
                 local = executor,
@@ -353,7 +350,7 @@ internal class AgentRuntimeRunExecutor(
                     AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
                     session.updateTranscript(transcript)
                 },
-                capabilitiesProvider = { executor.capabilitiesForRun(AgentToolCapabilities.capture(appContext)) },
+                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
                 prompt = request.prompt,
                 assistantScreenContext = request.assistantScreenContext,
                 toolExecutor = runToolExecutor,
@@ -364,7 +361,6 @@ internal class AgentRuntimeRunExecutor(
                 memoryContext = memoryContext,
                 additionalTools = runTools,
                 executionContext = executor.terminalExecutionContext,
-                recoverVirtualUi = executor::recoverVirtualUi,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(
@@ -377,7 +373,6 @@ internal class AgentRuntimeRunExecutor(
             }
             response = completedResponse
             runController.throwIfCancelled()
-            executor.retainVirtualScreenOnSuccess()
             AgentRuntimeWire.RunResult(
                 runId = request.runId,
                 ok = true,
@@ -393,7 +388,6 @@ internal class AgentRuntimeRunExecutor(
             ConversationMemoryPins.forget(memoryConversationId)
             cancelled = runController.isCancelled || throwable is AgentRunCancelledException
             val modelFailure = throwable as? AgentModelExecutionException
-            val uiPause = modelFailure?.cause as? AgentUiExecutionPausedException
             val message = if (cancelled) {
                 "已停止"
             } else {
@@ -401,9 +395,6 @@ internal class AgentRuntimeRunExecutor(
             }
             if (cancelled) {
                 AndroidAgentLogger.info("Agent runtime stopped")
-            } else if (uiPause != null) {
-                localTools?.retainVirtualScreenOnPause()
-                AndroidAgentLogger.info("Agent virtual UI paused: code=${uiPause.stop.code}")
             } else {
                 val requestFailure = modelFailure?.cause as? AgentModelFailure
                 AndroidAgentLogger.error(
@@ -438,7 +429,6 @@ internal class AgentRuntimeRunExecutor(
                 contextSnapshot = modelFailure?.contextSnapshot?.copy(operationId = request.runId) ?: session.contextSnapshot,
                 operation = request.operation,
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
-                errorCode = if (!cancelled && uiPause != null) "UI_EXECUTION_PAUSED" else "",
             )
         } finally {
             runCatching { toolsBinding?.close() }
