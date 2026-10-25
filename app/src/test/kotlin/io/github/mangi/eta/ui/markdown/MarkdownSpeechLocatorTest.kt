@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.markdown
 
 import io.github.mangi.eta.agent.voice.SpeechText
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -53,10 +54,18 @@ class MarkdownSpeechLocatorTest {
     @Test
     fun inlineEmphasisDoesNotBreakHighlighting() {
         val markdown = "**重点**在这里，还有 `code` 与 [链接](https://example.com)。"
-        val sentence = sentencesOf(markdown).first()
+        // 行内代码不朗读：句子在这里断开，代码本身不进朗读文本。
+        assertEquals(listOf("重点在这里，还有", "与 链接。"), sentencesOf(markdown))
         val text = highlighted(markdown, 0)
         assertNotNull(text)
-        assertEquals(condensed(sentence), text)
+        // 轮到这句时高亮仍一路盖到下一句开头，被跳过的行内代码不会成为空档。
+        assertEquals("重点在这里，还有code", text)
+    }
+
+    @Test
+    fun inlineCodeIsNotSpoken() {
+        assertFalse(SpeechText.readable("运行 `./gradlew assembleRelease` 即可。").contains("gradlew"))
+        assertFalse(SpeechText.readable("装好后的版本号是 `2026102502`。").contains("2026102502"))
     }
 
     @Test
