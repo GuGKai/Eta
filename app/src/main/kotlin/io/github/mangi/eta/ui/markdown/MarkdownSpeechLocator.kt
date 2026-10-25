@@ -55,23 +55,32 @@ internal class MarkdownSpeechHighlightCache {
                 current = flat.highlightAt(at, cursor)
                 continue
             }
-            // 整句对不上时退一步按句首定位：句中夹了排版空白或代码块也能落到正确的开头。
-            val head = needle.take(MATCH_HEAD_CHARS)
-            val fallback = if (head.length >= MATCH_HEAD_CHARS) flat.text.indexOf(head, cursor) else -1
-            if (fallback < 0) {
-                // 这句在渲染文本里确实找不到，游标不动，继续试下一句。
-                current = null
+            // 整句对不上时按句首逐级兜底：句中夹了排版空白、表格单元格分隔或代码块也能落到开头。
+            // 长度逐级缩短，短句同样能兜底——原来要求句首满 10 个字，短句因此被直接放弃高亮。
+            val fallback = FALLBACK_HEAD_LENGTHS
+                .asSequence()
+                .filter { needle.length >= it }
+                .mapNotNull { size -> flat.text.indexOf(needle.take(size), cursor).takeIf { it >= 0 } }
+                .firstOrNull()
+            if (fallback != null) {
+                cursor = fallback + minOf(needle.length, flat.text.length - fallback)
+                current = flat.highlightAt(fallback, minOf(fallback + needle.length, flat.text.length))
                 continue
             }
-            cursor = fallback + head.length
-            current = flat.highlightAt(fallback, minOf(fallback + needle.length, flat.text.length))
+            // 仍然对不上（例如这句只存在于渲染时被省略的标记里）：不再清空高亮，
+            // 就着游标所在位置标出等长一段，保证朗读推进时始终有可见的高亮跟着走。
+            val startAt = cursor.coerceIn(0, (flat.text.length - 1).coerceAtLeast(0))
+            val endAt = minOf(startAt + needle.length.coerceAtLeast(1), flat.text.length)
+            cursor = endAt
+            current = flat.highlightAt(startAt, endAt)
+                ?: flat.highlightAt(startAt, flat.text.length)
         }
         return current
     }
 }
 
-/** 整句匹配失败时用句首这么多字兜底定位，够长到不撞车，又短到能容忍句中差异。 */
-private const val MATCH_HEAD_CHARS = 10
+/** 整句匹配失败时按这些长度依次用句首兜底：先长后短，既避免撞车，也保证短句有得兜。 */
+private val FALLBACK_HEAD_LENGTHS = intArrayOf(10, 6, 4, 2)
 
 /**
  * 把渲染块按顺序拼成一条可搜索的文本，同时记住每个字符属于哪一块、在块内第几位。
