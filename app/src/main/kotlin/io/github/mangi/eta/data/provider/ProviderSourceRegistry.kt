@@ -12,7 +12,6 @@ internal object ProviderSourceRegistry {
         ProviderSourceTypes.OPENAI,
         ProviderSourceTypes.XAI,
         ProviderSourceTypes.ANTHROPIC,
-        ProviderSourceTypes.GEMINI,
         ProviderSourceTypes.BAILIAN,
         ProviderSourceTypes.DEEPSEEK,
         ProviderSourceTypes.MOONSHOT,
@@ -42,7 +41,6 @@ internal object ProviderSourceRegistry {
         baseUrl: String?,
         providerType: String,
     ): String {
-        if (providerType == ProviderTypes.GEMINI) return ProviderSourceTypes.GEMINI
         val normalized = normalize(sourceType)
         if (normalized != ProviderSourceTypes.CUSTOM) {
             return normalized
@@ -59,7 +57,6 @@ internal object ProviderSourceRegistry {
         when (providerId) {
             BuiltinProviders.OPENAI_ID -> ProviderSourceTypes.OPENAI
             BuiltinProviders.XAI_ID -> ProviderSourceTypes.XAI
-            BuiltinProviders.GEMINI_ID -> ProviderSourceTypes.GEMINI
             BuiltinProviders.ANTHROPIC_ID -> ProviderSourceTypes.ANTHROPIC
             BuiltinProviders.BAILIAN_ID -> ProviderSourceTypes.BAILIAN
             BuiltinProviders.DEEPSEEK_ID -> ProviderSourceTypes.DEEPSEEK

@@ -9,7 +9,7 @@ import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ProviderSourceTypes
 
 internal object OfficialModelCatalog {
-    internal const val CURRENT_REVISION = 4
+    internal const val CURRENT_REVISION = 3
 
     // 旧安装只补入本次新增的模型，避免恢复用户主动删除的旧预设。
     private val additionsByRevision = mapOf(
@@ -24,7 +24,6 @@ internal object OfficialModelCatalog {
             ProviderSourceTypes.STEPFUN to setOf("step-5-preview"),
         ),
         2 to mapOf(ProviderSourceTypes.OPENAI to setOf("gpt-6.1-sol")),
-        4 to mapOf(ProviderSourceTypes.GEMINI to setOf("gemini-3.8-flash", "gemini-4-argon", "gemini-3.5-flash-lite")),
     )
 
     private val modelsByCatalogId: Map<String, List<Model>> = mapOf(
@@ -61,41 +60,6 @@ internal object OfficialModelCatalog {
                 reasoning = true,
                 structuredOutput = true,
                 contextWindow = 1_050_000,
-            ),
-        ).map { it.copy(contextWindowOverride = it.contextWindow) },
-        ProviderSourceTypes.GEMINI to listOf(
-            officialModel(
-                id = "builtin-gemini-3-8-flash",
-                modelId = "gemini-3.8-flash",
-                displayName = "Gemini 3.8 Flash",
-                ownedBy = "google",
-                inputModalities = listOf(Model.TEXT_MODALITY, Model.IMAGE_MODALITY),
-                toolCall = true,
-                reasoning = true,
-                structuredOutput = true,
-                contextWindow = 1_048_576,
-            ),
-            officialModel(
-                id = "builtin-gemini-4-argon",
-                modelId = "gemini-4-argon",
-                displayName = "Gemini 4 Argon",
-                ownedBy = "google",
-                inputModalities = listOf(Model.TEXT_MODALITY, Model.IMAGE_MODALITY),
-                toolCall = true,
-                reasoning = true,
-                structuredOutput = true,
-                contextWindow = 1_048_576,
-            ),
-            officialModel(
-                id = "builtin-gemini-3-5-flash-lite",
-                modelId = "gemini-3.5-flash-lite",
-                displayName = "Gemini 3.5 Flash-Lite",
-                ownedBy = "google",
-                inputModalities = listOf(Model.TEXT_MODALITY, Model.IMAGE_MODALITY),
-                toolCall = true,
-                reasoning = true,
-                structuredOutput = true,
-                contextWindow = 1_048_576,
             ),
         ).map { it.copy(contextWindowOverride = it.contextWindow) },
         ProviderSourceTypes.ANTHROPIC to listOf(

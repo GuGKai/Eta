@@ -6,7 +6,6 @@ import kotlinx.serialization.Serializable
 internal object ProviderTypes {
     const val OPENAI_COMPATIBLE = "openai_compatible"
     const val ANTHROPIC = "anthropic"
-    const val GEMINI = "gemini"
     const val CUSTOM = "custom"
 }
 
@@ -28,7 +27,6 @@ internal object ProviderSourceTypes {
     const val OPENAI = "openai"
     const val XAI = "xai"
     const val ANTHROPIC = "anthropic"
-    const val GEMINI = "gemini"
     const val BAILIAN = "bailian"
     const val DEEPSEEK = "deepseek"
     const val MOONSHOT = "moonshot"
@@ -105,31 +103,6 @@ data class AnthropicProviderSetting(
 }
 
 @Serializable
-@SerialName(ProviderTypes.GEMINI)
-data class GeminiProviderSetting(
-    override val id: String,
-    override val name: String,
-    override val baseUrl: String = DEFAULT_BASE_URL,
-    override val sourceType: String = ProviderSourceTypes.GEMINI,
-    override val apiKey: String = "",
-    override val isEnabled: Boolean = true,
-    override val isBuiltIn: Boolean = false,
-    override val sortOrder: Int = 0,
-    override val systemPrompt: String? = null,
-    override val models: List<Model> = emptyList(),
-    override val customHeaders: List<CustomHeader> = emptyList(),
-    override val customBody: List<CustomBody> = emptyList(),
-    override val createdAt: Long = System.currentTimeMillis(),
-    override val hostedWebSearchEnabled: Boolean = false,
-) : ProviderSetting {
-    override val authMode: String get() = ProviderAuthModes.API_KEY
-
-    companion object {
-        const val DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-    }
-}
-
-@Serializable
 @SerialName(ProviderTypes.CUSTOM)
 data class CustomProviderSetting(
     override val id: String,
@@ -153,7 +126,6 @@ data class CustomProviderSetting(
 internal val ProviderSetting.runtimeProviderType: String
     get() = when (this) {
         is AnthropicProviderSetting -> ProviderTypes.ANTHROPIC
-        is GeminiProviderSetting -> ProviderTypes.GEMINI
         is OpenAiCompatibleProviderSetting,
         is CustomProviderSetting -> ProviderTypes.OPENAI_COMPATIBLE
     }
@@ -161,7 +133,6 @@ internal val ProviderSetting.runtimeProviderType: String
 internal val ProviderSetting.typeLabel: String
     get() = when (this) {
         is AnthropicProviderSetting -> "Anthropic Messages"
-        is GeminiProviderSetting -> "Gemini Interactions"
         is OpenAiCompatibleProviderSetting -> "OpenAI-compatible"
         is CustomProviderSetting -> "Custom OpenAI-compatible"
     }
@@ -177,7 +148,6 @@ internal fun ProviderSetting.withModels(models: List<Model>): ProviderSetting =
     when (this) {
         is OpenAiCompatibleProviderSetting -> copy(models = models)
         is AnthropicProviderSetting -> copy(models = models)
-        is GeminiProviderSetting -> copy(models = models)
         is CustomProviderSetting -> copy(models = models)
     }
 
@@ -185,7 +155,6 @@ internal fun ProviderSetting.withSortOrder(sortOrder: Int): ProviderSetting =
     when (this) {
         is OpenAiCompatibleProviderSetting -> copy(sortOrder = sortOrder)
         is AnthropicProviderSetting -> copy(sortOrder = sortOrder)
-        is GeminiProviderSetting -> copy(sortOrder = sortOrder)
         is CustomProviderSetting -> copy(sortOrder = sortOrder)
     }
 
@@ -193,7 +162,6 @@ internal fun ProviderSetting.withId(id: String): ProviderSetting =
     when (this) {
         is OpenAiCompatibleProviderSetting -> copy(id = id)
         is AnthropicProviderSetting -> copy(id = id)
-        is GeminiProviderSetting -> copy(id = id)
         is CustomProviderSetting -> copy(id = id)
     }
 
@@ -201,7 +169,6 @@ internal fun ProviderSetting.withApiKey(apiKey: String): ProviderSetting =
     when (this) {
         is OpenAiCompatibleProviderSetting -> copy(apiKey = apiKey)
         is AnthropicProviderSetting -> copy(apiKey = apiKey)
-        is GeminiProviderSetting -> copy(apiKey = apiKey)
         is CustomProviderSetting -> copy(apiKey = apiKey)
     }
 

@@ -138,7 +138,7 @@ class AgentRuntimePolicyTest {
                 browserTools = false,
                 thinking = true,
             ).copy(
-                extraBodyJson = """{"thinking":{"budget_tokens":4096},"temperature":0.2,"generation_config":{"thinking_level":"high","thinking_summaries":"auto","max_output_tokens":4096}}""",
+                extraBodyJson = """{"thinking":{"budget_tokens":4096},"temperature":0.2}""",
                 customBody = listOf(
                     CustomBody("reasoning_effort", JsonPrimitive("high")),
                     CustomBody(
@@ -163,10 +163,6 @@ class AgentRuntimePolicyTest {
         val extra = JSONObject(constrained.extraBodyJson)
         assertFalse(extra.has("thinking"))
         assertEquals(0.2, extra.getDouble("temperature"), 0.0)
-        val generation = extra.getJSONObject("generation_config")
-        assertFalse(generation.has("thinking_level"))
-        assertFalse(generation.has("thinking_summaries"))
-        assertEquals(4096, generation.getInt("max_output_tokens"))
         assertEquals(listOf("metadata"), constrained.customBody.map { it.key })
         val metadata = constrained.customBody.single().value as JsonObject
         assertFalse("enable_thinking" in metadata)

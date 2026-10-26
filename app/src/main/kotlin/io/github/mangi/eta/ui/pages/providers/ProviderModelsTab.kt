@@ -73,8 +73,6 @@ import io.github.mangi.eta.agent.auth.ProviderAuthException
 import io.github.mangi.eta.data.model.Model
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderAuthModes
-import io.github.mangi.eta.data.model.GeminiProviderSetting
-import io.github.mangi.eta.data.provider.GeminiModelCapabilities
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.ModelRepository
@@ -496,7 +494,6 @@ internal fun ProviderModelsTab(
 
     editingModel?.let { model ->
         ModelEditDialog(
-            nativeGemini = provider is GeminiProviderSetting,
             model = model,
             isNew = isCreatingModel,
             isSaving = isMutatingModel,
@@ -874,7 +871,6 @@ private fun ModelListItem(
 
 @Composable
 private fun ModelEditDialog(
-    nativeGemini: Boolean,
     model: Model,
     isNew: Boolean,
     isSaving: Boolean,
@@ -907,7 +903,6 @@ private fun ModelEditDialog(
         )
     }
     val contextError = contextWindowInputError(contextWindowOverrideText)
-    val geminiCapabilities = if (nativeGemini) GeminiModelCapabilities.requestReasoningCapabilities(modelId) else null
 
     fun resetAutomaticReasoning() {
         reasoningOverrideActive = false
@@ -924,8 +919,8 @@ private fun ModelEditDialog(
         contextWindowOverride = contextWindowOverrideText.trim()
             .takeIf(String::isNotEmpty)
             ?.toInt(),
-        reasoningOverride = reasoningEnabled.takeIf { reasoningOverrideActive && geminiCapabilities == null },
-        reasoningCapabilitiesOverride = if (reasoningOverrideActive && reasoningEnabled && geminiCapabilities == null) {
+        reasoningOverride = reasoningEnabled.takeIf { reasoningOverrideActive },
+        reasoningCapabilitiesOverride = if (reasoningOverrideActive && reasoningEnabled) {
             val canDisable = ReasoningEffort.OFF in selectedReasoningEfforts
             (model.effectiveReasoningCapabilities ?: ModelReasoningCapabilities()).copy(
                 supportedEfforts = editableReasoningEfforts.filter { effort ->
@@ -1027,7 +1022,7 @@ private fun ModelEditDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = !isSaving && geminiCapabilities == null) {
+                        .clickable(enabled = !isSaving) {
                             reasoningOverrideActive = true
                             reasoningEnabled = !reasoningEnabled
                         }
@@ -1036,16 +1031,12 @@ private fun ModelEditDialog(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (geminiCapabilities != null && !geminiCapabilities.mandatory) "思考档位使用 Default"
-                                else stringResource(R.string.ui_support_thinking_5b9e4c),
+                            text = stringResource(R.string.ui_support_thinking_5b9e4c),
                             style = MiuixTheme.textStyles.body1,
                             color = MiuixTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = if (geminiCapabilities != null) {
-                                if (geminiCapabilities.mandatory) "该模型必须思考，不支持 Off；Default 使用模型默认档位。"
-                                else "尚未确认该模型的思考档位；仅使用 Default，不发送自定义思考档位。"
-                            } else if (reasoningOverrideActive) {
+                            text = if (reasoningOverrideActive) {
                                 stringResource(R.string.page_covered_model_automatic_capabilities_3fa7d4)
                             } else {
                                 stringResource(
@@ -1063,23 +1054,23 @@ private fun ModelEditDialog(
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     EtaSwitch(
-                        checked = geminiCapabilities != null || reasoningEnabled,
+                        checked = reasoningEnabled,
                         onCheckedChange = { enabled ->
                             reasoningOverrideActive = true
                             reasoningEnabled = enabled
                         },
-                        enabled = !isSaving && geminiCapabilities == null,
+                        enabled = !isSaving,
                     )
                 }
-                if (geminiCapabilities != null || reasoningEnabled) {
+                if (reasoningEnabled) {
                     // Default 始终可用（交给模型或 Provider 决定），不作为可选项展示。
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.padding(top = 10.dp),
                     ) {
-                        (geminiCapabilities?.supportedEfforts ?: editableReasoningEfforts).forEach { effort ->
-                            val checked = geminiCapabilities != null || effort in selectedReasoningEfforts
+                        editableReasoningEfforts.forEach { effort ->
+                            val checked = effort in selectedReasoningEfforts
                             EtaChoiceChip(
                                 text = effort.displayName,
                                 selected = checked,
@@ -1091,14 +1082,13 @@ private fun ModelEditDialog(
                                         selectedReasoningEfforts + effort
                                     }
                                 },
-                                enabled = !isSaving && geminiCapabilities == null,
+                                enabled = !isSaving,
                             )
                         }
                     }
                 }
                 Text(
-                    text = if (nativeGemini) "Gemini 原生连接只发送已确认支持的思考档位。"
-                        else stringResource(R.string.ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d),
+                    text = stringResource(R.string.ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d),
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(start = 4.dp, top = 8.dp),

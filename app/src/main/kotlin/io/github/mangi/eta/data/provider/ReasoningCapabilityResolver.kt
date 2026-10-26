@@ -70,8 +70,6 @@ internal object ReasoningCapabilityResolver {
                 else -> null
             }
 
-            ProviderSourceTypes.GEMINI -> GeminiModelCapabilities.reasoningCapabilities(model)
-
             ProviderSourceTypes.ANTHROPIC -> when (model) {
                 "claude-fable-5", "claude-fable-5-1" ->
                     capabilities(

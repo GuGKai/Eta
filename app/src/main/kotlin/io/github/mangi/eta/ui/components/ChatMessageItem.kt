@@ -653,10 +653,6 @@ private fun AgentMessageBlock(
             }
         }
 
-        message.searchSuggestionsHtml.forEach { html ->
-            SearchSuggestionsView(html = html, modifier = Modifier.padding(top = 8.dp))
-        }
-
         // 回答显现完成后才出现操作行；淡入展开避免贴底滚动时整页突然跳动一行高度。
         AnimatedVisibility(
             visible = showCopyAction &&

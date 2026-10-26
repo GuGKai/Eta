@@ -126,15 +126,6 @@ internal sealed interface AgentEvent {
                 "name=${name.toSafeLogToken()}, chars=$contentChars"
     }
 
-    data class SearchSuggestions(
-        val round: Int,
-        val index: Int,
-        val html: String,
-    ) : AgentEvent {
-        override fun toLogLine(): String =
-            "search_suggestions round=$round, index=$index, chars=${html.length}"
-    }
-
     data class AssistantReceived(
         val round: Int,
         val contentChars: Int,

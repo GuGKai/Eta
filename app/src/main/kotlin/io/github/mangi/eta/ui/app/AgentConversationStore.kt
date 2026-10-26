@@ -342,7 +342,7 @@ internal object AgentConversationStore {
     fun unloadConversation(state: AgentChatHomeUiState): AgentChatHomeUiState = state.copy(
         messages = listOfNotNull(state.messages.lastOrNull()?.let { message -> when (message) {
             is UserMessageUi -> message.copy(content = message.content.take(256), images = emptyList())
-            is AgentMessageUi -> message.copy(content = message.content.take(256), searchSuggestionsHtml = emptyList())
+            is AgentMessageUi -> message.copy(content = message.content.take(256))
             is ThinkingMessageUi -> message.copy(content = message.content.take(256))
             is ToolActivityMessageUi -> message.copy(
                 argumentsSummary = message.argumentsSummary.take(256), command = message.command?.take(256),
