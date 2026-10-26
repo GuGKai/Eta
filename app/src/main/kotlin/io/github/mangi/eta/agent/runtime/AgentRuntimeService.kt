@@ -255,7 +255,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     val runId = AgentRuntimeWire.runIdFromBundle(msg.data)
                     val text = msg.data.getString("supplement_text").orEmpty()
                     val valid = runCatching { AgentRuntimeWire.steerBundle(runId, text) }.isSuccess
-                    val accepted = valid && requestSupplement(text, expectedRunId = runId)
+                    val accepted = valid && requestSupplement(runId, text)
                     runCatching {
                         msg.replyTo?.send(Message.obtain(null, AgentRuntimeWire.MSG_STEER_RESPONSE).apply {
                             data = AgentRuntimeWire.ackBundle(runId).apply { putBoolean("accepted", accepted) }
@@ -311,9 +311,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             val prepared = runCatching {
                 run.session.controller.throwIfCancelled()
                 run.awaitPredecessors()
-                val request = AgentRuntimeRequestConfigResolver.constrainPresentation(
-                    AgentRuntimeImageTransfer.materialize(incoming), isEtaProcess,
-                )
+                val request = AgentRuntimeImageTransfer.materialize(incoming)
                 if (!AgentRuntimeRequestConfigResolver.requiresRuntimeConfig(request)) {
                     request
                 } else {
@@ -438,6 +436,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
+        // 自动任务由调度器发起，需要绑定服务回退才能后台执行。
+        val automated = io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId)
         val allowBoundFallback = RootAccess.isGranted || automated
         val executionHeld = AgentExecutionService.acquire(
             this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
@@ -903,11 +903,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         guiControl.resumeForUser()
     }
 
-    private fun requestSupplement(runId: String?, text: String) {
+    private fun requestSupplement(runId: String?, text: String): Boolean {
         val supplementText = text.trim()
-        if (supplementText.isBlank()) return
-        val run = displayedRun?.takeIf { it.runId == runId } ?: return
-        if (guiControl.state.value.userPaused && guiControl.state.value.ownerRunId == null) return
+        if (supplementText.isBlank()) return false
+        val run = displayedRun?.takeIf { it.runId == runId } ?: return false
+        if (guiControl.state.value.userPaused && guiControl.state.value.ownerRunId == null) return false
         setCapsuleInputMode(focusable = false)
         runs.get(run.runId)?.let { active ->
             val event = active.supplement(supplementText)
@@ -924,11 +924,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 )
                 active.overlayState = active.overlayState.applyEvent(event)
                 state.value = active.overlayState
-                return
+                return true
             }
         }
 
-        val completed = run.completedContext ?: return
+        val completed = run.completedContext ?: return false
         if (completed.request.operation != AgentRuntimeWire.OP_CHAT ||
             completed.request.handoff?.source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
             state.value = state.value.copy(status = AgentOverlayStatus.ContinuationUnavailable)
@@ -1488,8 +1488,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          */
         fun pauseFromNotification(): Boolean {
             val service = instance ?: return false
-            if (service.activeSession?.isTerminal != false) return false
-            service.mainHandler.post { service.requestPause() }
+            val displayed = service.displayedRun ?: return false
+            if (service.runs.get(displayed.runId)?.session?.isTerminal != false) return false
+            service.mainHandler.post { service.requestPause(displayed.runId) }
             return true
         }
 

@@ -308,6 +308,8 @@ fun AgentAppRoot(
         val sessionKey = agentState.conversationPaneState.selectedConversationId
             ?: BrowserSessionRegistry.MANUAL_SESSION_KEY
         context.startActivity(AgentBrowserActivity.createIntent(context, sessionKey))
+    }
+
     fun openAccessibilitySettings() {
         focusManager.clearFocus()
         // Android's per-service settings action is not exposed in the public SDK.
