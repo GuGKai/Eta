@@ -1,11 +1,40 @@
 # Eta 本地改动清单（fork: GuGKai/Eta）
 
-- 上游基线：**v3.3.3**（`Mangi-11/Eta` @ `5e9d3a7`，2026-10-22 合并；`v3.3.2` / `v3.3.3` 标签）
-- 本地工作分支：`feat/local`（单一工作分支，原 `feat/system-tts` 更名而来）
-- 最后更新：2026-10-22
-- 出包版本：versionCode `2026102203`，versionName `3.3.3`（产物 `/workspace/eta-3.3.3-2026102203-upstream-3.3.3.apk`）
-- 历史同步备份分支：`backup/pre-sync-20261007-0635-feat-local`、`backup/pre-pr142-20261011-feat-local`、`backup/pre-pr142-20261011-main`、`backup/pre-sync-20261014-1555-feat-local`
-- 本次同步备份分支：`backup/pre-sync-20261022-1100-feat-local`（同步前 `feat/local`＝`a9795b9`，长期保留）
+- 上游基线：**v3.3.4**（`Mangi-11/Eta` @ `de12fc3`，2026-10-26 合并）
+- 本地工作分支：`feat/local`（单一工作分支）
+- 最后更新：2026-10-26
+- 出包版本：versionCode `2026102601`，versionName `3.3.4`
+- 本次同步备份分支：`backup/pre-sync-20261026-1311-feat-local`（同步前 `feat/local`=`031ed3f`，长期保留）
+
+## 本次同步（2026-10-26，上游 3.3.3 → 3.3.4）
+
+上游 11 个提交（`ed022f5`…`de12fc3`）：Gemini 原生 Interactions API、多会话并行与 GUI 阶段互斥、DEX 压缩、
+浏览器渲染与地址栏修复、系统提示词身份冲突修复、工具图标与多语言文案、Debian 安装中断恢复、README 与截图。
+
+**按要求排除 Gemini**：对 `cf78436d` 执行 `git revert`（提交 `0555fb5`），不引入 Gemini 提供商、
+Interactions 协议实现、Google 远端模型目录与思考档位，也不改备份 schema 的 Gemini 部分。
+104 个本地提交全部重放（`git log main..feat/local` 仍为 104 + 2 个同步提交）。
+
+关键取舍：
+
+| 区域 | 处理 |
+|---|---|
+| 运行时 | 一律取上游多 run 架构（`AgentRuntimeService`/`RunExecutor`/`Session`）；本地单 session 时代的 `activeSession`、`entrySurfaceGuard`、原子岛 `islandBridge` 调用点丢弃（字段保留但不再被调用） |
+| 虚拟屏 | 12 个虚拟屏提交全部取上游侧（本地末尾 `7f2395af` 本就移除虚拟屏，上游 3.3.4 也无此功能），相关符号不再进入产物 |
+| 通知 | 取上游 `executionText` + 任务数；本地「已完成 N 步」「暂停中」文案、`runPaused`、步骤计数丢弃；保留彩色小图标、固定 `when`、400ms 发布节流、`BAKLAVA` 门槛（本机 ColorOS 16.1 必需） |
+| 插话 | 取上游 `requestSupplement(runId, text)`，补回 Boolean 返回值供 `MSG_STEER_RESPONSE` 的 ack 使用 |
+| 自动任务 | 保留：`admitRun` 内补回 `AgentTaskScheduler.isRegistered(request.runId)` 的 `automated` 判断 |
+| 默认提示词 | 保留本地 `buildRuntimeConfig(defaultAssistantSystemPrompt)` 分支 |
+| vivo | 本地 `01b86a0c`「剔除 vivo 一套」生效，README 里 vivo 两条同时移除 |
+| 文档 | `docs/*.md` 冲突一率取上游，本文件在同步后重写 |
+| 数据库 | 上游 3.3.4 未改 Room schema，本地 23→30 迁移链保持现行为 v30 |
+
+被上游覆盖/移除的本地行为：虚拟屏全链路、原子岛通知、通知「已完成 N 步」「暂停中」文案、
+`entrySurfaceGuard` 入口浮层关闭、`AgentExperienceReview` 经验学习触发点。
+
+编译修复（`5c67071`）：移除 Gemini 后清掉 `recoveryProjection`/`requestSupplement`/`activeSession` 残留；
+恢复 `currentRunId`/`currentRunJob`/`runConversationIds` 字段；通知服务改回 `runStatus == Paused` 判断；
+`config.copy(supportsSearchSuggestions)` 回退为 `config`；`app/build.gradle.kts` 去掉冲突标记。
 
 ## 本次同步（2026-10-22，上游 3.3.1 → 3.3.3）
 
