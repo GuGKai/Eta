@@ -121,23 +121,13 @@ OpenAI 请求按当前模型能力配置编码思考档位，不另行维护请�
 
 推理界面展示 Provider 返回的可见推理内容，不由 Eta 生成或补写。Responses 支持 `reasoning_summary_text.delta` 和 `reasoning_text.delta`；终态读取 reasoning item 的 `summary[]` 与 `content[].reasoning_text`，并兼容旧接口的单字段 `reasoning_text`。标准内容与旧字段同时存在时不重复追加，终态仍按 item 和内容块身份校准流式结果。Responses 只对精确命中官方目录且未被远端显式标记为 `reasoning:false` 的模型补齐推理能力，不会因 Endpoint 类型而假定所有模型支持推理。
 
-Chat Completions 消费 `reasoning_content`，并兼容 `reasoning` 和 `reasoning_details` 中的可见文本或摘要；同一分片同时包含多种表示时只显示一次。Anthropic 消费 `content_block_start` 中已有的文字及后续 `thinking_delta` / `text_delta`，思考签名和加密内容不作为文字展示。各协议共用 SSE 分帧，支持多行 `data:`、注释心跳和 UTF-8；正文、思考、工具的解释仍由各自 Provider 负责。Chat 在 `finish_reason` 到达时结束可见块，再接收用量与 `[DONE]`；Responses 和 Anthropic 收到各自终态事件后立即收尾，不等待连接关闭。缺少合法终态或 Anthropic 可见/工具块未闭合时返回未完成错误。
+Chat Completions 消费 `reasoning_content`，并兼容 `reasoning` 和 `reasoning_details` 中的可见文本或摘要；同一分片同时包含多种表示时只显示一次。Anthropic 消费 `content_block_start` 中已有的文字及后续 `thinking_delta` / `text_delta`，思考签名和加密内容不作为文字展示。三种协议共用 SSE 分帧，支持多行 `data:`、注释心跳和 UTF-8；正文、思考、工具的解释仍由各自 Provider 负责。Chat 在 `finish_reason` 到达时结束可见块，再接收用量与 `[DONE]`；Responses 和 Anthropic 收到各自终态事件后立即收尾，不等待连接关闭。缺少合法终态或 Anthropic 可见/工具块未闭合时返回未完成错误。
 
 Anthropic 工具回合会在当前 run 的模型上下文中按原顺序回传思考块、签名及加密块，供工具结果继续使用；这些 Provider 专用块不进入持久会话。签名待回传时沿用上一轮的系统提示与工具目录并保持原始上下文，自动压缩延后到签名回合完成，强制压缩则明确报错；工具执行仍按实时权限校验。工具回合完成后的上下文压缩会清除旧签名。
 
-Chat Completions、Responses、Anthropic Messages 与 Gemini Interactions 在 Provider 边界统一投影为带 `round + block index` 身份的正文、思考和工具块。Responses 额外使用 `item_id/output_index/content_index` 区分同一轮中的多个 output item；Chat Completions 在 delta 类型切换时创建新块；Anthropic 直接保留 `content_block.index`，Gemini 使用 step index。正文、思考或工具不会跨越块身份回填；终态校准或引用补齐仅更新对应正文块，不用整轮聚合正文覆盖最后一个块。
+Chat Completions、Responses 与 Anthropic Messages 在 Provider 边界统一投影为带 `round + block index` 身份的正文、思考和工具块。Responses 额外使用 `item_id/output_index/content_index` 区分同一轮中的多个 output item；Chat Completions 在 delta 类型切换时创建新块；Anthropic 直接保留 `content_block.index`。正文、思考或工具类型一旦切换，上一段可见块立即定稿，后续同类型内容也不会跨过工具卡片回填到旧块。终态只在 Provider 的权威内容与已流式内容不一致时携带一次替换，不用整轮聚合正文覆盖最后一个块。
 
-服务端网页搜索为独立开关，默认关闭。OpenAI-compatible Responses 开启后请求增加 `web_search` 托管工具；搜索开始和结束作为独立运行事件投影到 UI，不进入 Eta 本地工具执行器。实际启用托管搜索时，模型目录不再公开本地 `web_search` 函数；`fetch_url` 与 `browser_use` 仍按本地 `browserTools` 开关提供。托管搜索不受本地 `browserTools` 开关控制。Anthropic 和 Chat Completions 不启用该开关，也不会收到 Responses 工具字段。最终回答中的 `url_citation` 会去重并转换为可点击 Markdown 引用；偏移无效时降级为回答末尾的来源列表。当前不接入 file search、code interpreter、Provider 托管 MCP 或其他托管工具。
-
-Gemini 使用原生 Interactions API 和 `x-goog-api-key`，固定 `stream:true`、`store:false`，由 Eta 发送完整输入；不使用 `previous_interaction_id` 或后台任务。各 `step.start/delta/stop` 按 index 累积，`interaction.completed` 中的 status 决定本轮结果，不能用裸 `[DONE]` 或 EOF 代替合法终态。只有 `requires_action` 的完整函数调用进入本地执行器，结果通过原始 call ID 回传。`incomplete` 和 `budget_exceeded` 明确报告输出未完成，不自动重试、不提交半成品助手历史、不执行工具；已流出的部分文字仍留在运行界面。累计 usage 按字段覆盖先前值，不逐分片累加，并在交互终态统一发布，避免早于正文到达的用量被界面丢弃。上下文用量显示服务端 `total_tokens`，自动压缩仍使用 `total_input_tokens`；缓存 token 已包含在输入中，不重复相加。自定义请求头和正文不能覆盖认证、输入、工具目录、流式字段或会话保存策略。 HTTP 400 可展示服务端提供的受控错误类型和参数字段位置；原始 message、字段描述和自定义字段名不进入错误文案，避免回显 Prompt 或凭据。
-
-Gemini 工具参数在 Provider 边界做组合分支兼容投影：`oneOf`、`anyOf`、`allOf` 分支中的 `required` 引用外层已声明属性时，为缺少局部定义的分支补齐该属性声明，保留原有必填、组合和附加属性约束。转换不修改公共工具目录，不跨嵌套对象或数组传递属性；引用与资源标识保留原位置，限制附加属性的分支不会从外层继承声明，避免改变 Schema 语义。
-
-Gemini 的完整原生 steps、思考和搜索签名只在当前 run 内回放，不进入稳定会话或运行归档。签名工具链尚未完成时保持请求前缀并延后自动压缩，强制压缩明确失败。跨 run、跨 Provider 或压缩后，旧消息与工具记录作为明确标注的文本历史投影，不把缺少签名的旧工具交换重新构造成原生调用。工具截图仍沿用完整工具批次后的单轮观察消息。思考档位来自 `GeminiModelCapabilities`；已确认强制思考的模型不能选择 Off，未知手动模型仅提供 Default，不猜测档位或工具混用能力。原生模型目录支持分页并限制累计大小，已有兼容连接不会自动改为 Gemini。
-
-Gemini Google Search 仅在用户开启、模型已确认支持、入口声明并通过 Runtime 校验可以展示建议时生效。Eta 聊天和原生助手浮窗支持该能力；小布、小爱、旧客户端和其他入口保持本地搜索。搜索与函数混用使用 `validated`，能力目前属于预览。搜索调用与结果的完整签名回放留在模型层，引用按 UTF-8 字节位置转换；搜索建议附在对应回答下方，无正文的工具轮将建议延后到下一次回答。建议通过独立只读 WebView 展示，脚本、文件访问和网络子资源关闭，用户点击 HTTP(S) 链接交给外部浏览器。
-
-搜索建议使用 `SearchSuggestionsPayload` 的单片段、每轮数量与总字节预算，超限明确失败，不截断 HTML。活动 Runtime 的内存重连可回放建议；持久化事件、checkpoint、归档、会话存储、备份和导出均排除建议 HTML。进程恢复只保留回答与引用，不能恢复原建议。`store=false` 仅控制 Interactions 保存，不承诺关闭 Google Search 自身的数据处理与留存，详见 [官方说明](https://ai.google.dev/gemini-api/terms#grounding-with-google-search)。
+服务端网页搜索是 Responses Provider 的独立开关，默认关闭。开启后请求只增加 `web_search` 托管工具；搜索开始和结束作为独立运行事件投影到 UI，不进入 Eta 本地工具执行器。当前配置为 OpenAI-compatible Responses 且开启此开关时，模型目录只保留 Provider 托管搜索，不再公开同名的本地 `web_search` 函数；`fetch_url` 与 `browser_use` 仍按本地 `browserTools` 开关提供。托管搜索不受本地 `browserTools` 开关控制。该开关在其他协议下不会隐藏本地搜索，也不会把 Responses 的工具字段注入其他 Provider 协议。最终回答中的 `url_citation` 会去重并转换为可点击 Markdown 引用；偏移无效时降级为回答末尾的来源列表。当前不接入 file search、code interpreter、Provider 托管 MCP 或其他托管工具。
 
 ### 模型等待与重试
 

@@ -147,8 +147,13 @@ internal object AgentRunArchiveStore {
 
     private fun compactEvents(events: List<AgentEvent>): List<AgentEvent> {
         val compacted = mutableListOf<AgentEvent>()
-        events.forEach { rawEvent ->
-            val event = rawEvent.recoveryProjection() ?: return@forEach
+        events.forEach { event ->
+            if (
+                event is AgentEvent.AssistantBlockDelta &&
+                event.kind == AgentEvent.AssistantBlockKind.TOOL_CALL
+            ) {
+                return@forEach
+            }
             val previous = compacted.lastOrNull()
             val merged = when {
                 previous is AgentEvent.AssistantBlockDelta &&
