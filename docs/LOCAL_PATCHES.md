@@ -29,8 +29,13 @@ Interactions 协议实现、Google 远端模型目录与思考档位，也不改
 | 文档 | `docs/*.md` 冲突一率取上游，本文件在同步后重写 |
 | 数据库 | 上游 3.3.4 未改 Room schema，本地 23→30 迁移链保持现行为 v30 |
 
-被上游覆盖/移除的本地行为：虚拟屏全链路、原子岛通知、通知「已完成 N 步」「暂停中」文案、
-`entrySurfaceGuard` 入口浮层关闭、`AgentExperienceReview` 经验学习触发点。
+被上游多 run 架构覆盖的本地补丁：通知「已完成 N 步」「暂停中」文案、`entrySurfaceGuard` 入口浮层关闭、
+原子岛通知集成（`islandBridge` 字段保留但不再调用）。
+
+**PR #142 遗留（提交作者 乐嘉伟，非原作者、非本地自研）**：虚拟屏全链路、经验学习触发点、通知中心。
+本 fork 早已分步清理——`bc4a9e30`（移除经验学习与通知中心）、`01b86a0c`（剔除 vivo 一套）、
+`7f2395af`（移除虚拟屏）。本次 rebase 时这些提交的冲突一律取上游侧，验证后代码内已无残留
+（`*VirtualScreen*`、`*Experience*`、`VirtualScreenUiTools`、`AgentExperienceReview` 均为 0 处）。
 
 编译修复（`5c67071`）：移除 Gemini 后清掉 `recoveryProjection`/`requestSupplement`/`activeSession` 残留；
 恢复 `currentRunId`/`currentRunJob`/`runConversationIds` 字段；通知服务改回 `runStatus == Paused` 判断；
