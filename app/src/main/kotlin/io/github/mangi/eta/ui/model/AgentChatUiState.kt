@@ -70,8 +70,6 @@ data class AgentMessageUi(
     val characterEditable: Boolean = false,
     val candidateCount: Int = 1,
     val selectedCandidate: Int = 0,
-    /** 仅当前内存会话展示，不进入消息存储、归档与导出。 */
-    val searchSuggestionsHtml: List<String> = emptyList(),
     /** 本轮消耗金额（首尾余额差）；老消息为 null，底部操作栏不显示这一项。 */
     val roundCost: Double? = null,
 ) : AgentChatMessageUi

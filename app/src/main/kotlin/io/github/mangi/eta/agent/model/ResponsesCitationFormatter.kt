@@ -7,7 +7,7 @@ internal data class CitationAnnotation(
     val title: String,
 )
 
-internal object CitationFormatter {
+internal object ResponsesCitationFormatter {
     fun apply(text: String, annotations: List<CitationAnnotation>): String {
         val unique = annotations
             .filter { it.url.startsWith("https://") || it.url.startsWith("http://") }

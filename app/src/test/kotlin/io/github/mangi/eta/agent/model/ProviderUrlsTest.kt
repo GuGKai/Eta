@@ -26,13 +26,5 @@ class ProviderUrlsTest {
             "https://api.anthropic.com/v1/models",
             ProviderUrls.anthropicModelsUrl("https://api.anthropic.com")
         )
-        assertEquals(
-            "https://generativelanguage.googleapis.com/v1beta/interactions",
-            ProviderUrls.geminiInteractionsUrl(" https://generativelanguage.googleapis.com/v1beta/ "),
-        )
-        assertEquals(
-            "https://proxy.invalid/google/v1beta/models",
-            ProviderUrls.geminiModelsUrl("https://proxy.invalid/google/v1beta/"),
-        )
     }
 }

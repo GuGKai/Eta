@@ -3,7 +3,6 @@ package io.github.mangi.eta.ui.pages.providers
 import androidx.compose.runtime.saveable.mapSaver
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.CustomHeaderFilter
-import io.github.mangi.eta.data.model.GeminiProviderSetting
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.CustomProviderSetting
@@ -46,7 +45,7 @@ internal data class ProviderConfigDraft(
             endpointMode = when (provider) {
                 is OpenAiCompatibleProviderSetting -> provider.endpointMode
                 is CustomProviderSetting -> provider.endpointMode
-                is AnthropicProviderSetting, is GeminiProviderSetting -> ""
+                is AnthropicProviderSetting -> ""
             },
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
@@ -126,15 +125,6 @@ internal fun buildUpdatedProvider(
             endpointMode = profile?.endpointMode ?: endpointMode,
             hostedWebSearchEnabled = hostedWebSearchEnabled,
         )
-        is GeminiProviderSetting -> source.copy(
-            customHeaders = customHeaders.map { it.copy(name = it.name.trim()) },
-            name = name.trim(),
-            baseUrl = baseUrl.trim(),
-            apiKey = apiKey.trim(),
-            systemPrompt = prompt,
-            isEnabled = isEnabled,
-            hostedWebSearchEnabled = hostedWebSearchEnabled,
-        )
         is AnthropicProviderSetting -> source.copy(
             customHeaders = customHeaders.map { it.copy(name = it.name.trim()) },
             name = name.trim(),
@@ -162,7 +152,7 @@ internal fun ProviderConfigDraft.toProvider(source: ProviderSetting): ProviderSe
 )
 
 internal fun providerAccountAuthMode(provider: ProviderSetting): String? {
-    if (provider is AnthropicProviderSetting || provider is GeminiProviderSetting) return null
+    if (provider is AnthropicProviderSetting) return null
     if (ProviderAuthModes.isOAuth(provider.authMode)) return provider.authMode
     return when (ProviderSourceRegistry.resolve(provider)) {
         ProviderSourceTypes.OPENAI -> ProviderAuthModes.OPENAI_CHATGPT

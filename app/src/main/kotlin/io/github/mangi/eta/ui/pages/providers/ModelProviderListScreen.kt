@@ -116,13 +116,6 @@ internal fun ModelProviderListScreen(
                     },
                     onClick = { onNavigate(AppRoute.ModelProviderNew(NewProviderType.Anthropic)) },
                 )
-                EtaPreferenceDivider()
-                EtaArrowPreference(
-                    title = "新增 Gemini",
-                    summary = "使用 API Key 连接原生 Interactions API",
-                    startAction = { ProviderBrandIcon(ProviderSourceTypes.GEMINI) },
-                    onClick = { onNavigate(AppRoute.ModelProviderNew(NewProviderType.Gemini)) },
-                )
             }
         }
 

@@ -10,7 +10,6 @@ import io.github.mangi.eta.agent.model.ProviderUrls
 import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.core.AndroidAgentLogger
-import io.github.mangi.eta.data.model.GeminiProviderSetting
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.Model
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
@@ -60,14 +59,10 @@ internal object RemoteModelFetcher {
                 controller.throwIfCancelled()
                 val profile = ProviderConnectionProfile.forAuthMode(provider.authMode)
                 val binding = profile?.let { credentials.binding(provider.id, provider.authMode) }
-                val fetched = when {
-                    provider is GeminiProviderSetting -> GeminiModelCatalog.fetch(
-                        provider, controller, maxBytes = MAX_CATALOG_BYTES,
-                    ) { request, maxBytes ->
-                        executeJson(request, provider, controller, client, credentials, maxBytes)
-                    }
-                    profile == null && provider is AnthropicProviderSetting -> fetchAnthropic(provider, controller, client, credentials)
-                    else -> fetchOpenAiCompatible(provider, controller, client, credentials)
+                val fetched = if (profile == null && provider is AnthropicProviderSetting) {
+                    fetchAnthropic(provider, controller, client, credentials)
+                } else {
+                    fetchOpenAiCompatible(provider, controller, client, credentials)
                 }
                 val models = if (profile == ProviderConnectionProfile.OPENAI_CODEX) fetched else fetched.filter(::isChatCapableModel)
                 controller.throwIfCancelled()
@@ -198,7 +193,6 @@ internal object RemoteModelFetcher {
         controller: AgentRunController,
         client: OkHttpClient,
         credentials: Credentials,
-        maxBytes: Long = MAX_CATALOG_BYTES,
     ): String = AuthorizedProviderHttp.execute(
         client = client,
         providerId = provider.id,
@@ -210,8 +204,8 @@ internal object RemoteModelFetcher {
         if (!response.isSuccessful) {
             throw AgentModelFailure.http(response.code, response.peekBody(16_384).string())
         }
-        val body = response.peekBody(maxBytes + 1).bytes()
-        require(body.size <= maxBytes) { "服务商模型目录超过大小限制" }
+        val body = response.peekBody(MAX_CATALOG_BYTES + 1).bytes()
+        require(body.size <= MAX_CATALOG_BYTES) { "服务商模型目录超过大小限制" }
         body.toString(Charsets.UTF_8)
     }
 

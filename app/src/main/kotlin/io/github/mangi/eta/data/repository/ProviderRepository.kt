@@ -7,7 +7,6 @@ import io.github.mangi.eta.data.db.ProviderWithModelsSeed
 import io.github.mangi.eta.data.db.toDomain
 import io.github.mangi.eta.data.db.toEntity
 import io.github.mangi.eta.data.db.toModelEntities
-import io.github.mangi.eta.data.model.GeminiProviderSetting
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.Model
@@ -156,10 +155,7 @@ internal object ProviderRepository {
             val existingIds = current.mapTo(mutableSetOf()) { it.id }
             val missing = BuiltinProviders.PROVIDERS.filterNot { it.id in existingIds }
             if (missing.isNotEmpty()) {
-                val nextOrder = (current.maxOfOrNull { it.sortOrder } ?: -1) + 1
-                insertProviders(missing.mapIndexed { index, provider ->
-                    seedOfficialModelsIfEmpty(provider.withSortOrder(nextOrder + index))
-                })
+                insertProviders(missing.map(::seedOfficialModelsIfEmpty))
             }
             val appliedRevision = SettingsDataStore.officialModelCatalogRevision()
             if (appliedRevision < OfficialModelCatalog.CURRENT_REVISION) {
@@ -334,14 +330,6 @@ internal object ProviderRepository {
         }
         return when (this) {
             is OpenAiCompatibleProviderSetting -> copy(
-                id = id,
-                name = name,
-                sortOrder = sortOrder,
-                isBuiltIn = builtIn,
-                models = copiedModels,
-            )
-
-            is GeminiProviderSetting -> copy(
                 id = id,
                 name = name,
                 sortOrder = sortOrder,

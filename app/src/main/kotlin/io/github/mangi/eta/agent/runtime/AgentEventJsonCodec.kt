@@ -6,13 +6,12 @@ import org.json.JSONObject
 
 /** Runtime 事件的稳定 JSON 投影；只编码 IPC 已公开的安全字段。 */
 internal object AgentEventJsonCodec {
-    fun encode(event: AgentEvent): String {
-        require(event !is AgentEvent.SearchSuggestions) { "SEARCH_SUGGESTIONS_NOT_PERSISTABLE" }
-        return bundleToJson(AgentRuntimeWire.eventToBundle(event)).toString()
-    }
+    fun encode(event: AgentEvent): String = bundleToJson(
+        AgentRuntimeWire.eventToBundle(event)
+    ).toString()
 
     fun decode(raw: String): AgentEvent? = runCatching {
-        AgentRuntimeWire.eventFromBundle(jsonToBundle(JSONObject(raw)))?.recoveryProjection()
+        AgentRuntimeWire.eventFromBundle(jsonToBundle(JSONObject(raw)))
     }.getOrNull()
 
     @Suppress("DEPRECATION")

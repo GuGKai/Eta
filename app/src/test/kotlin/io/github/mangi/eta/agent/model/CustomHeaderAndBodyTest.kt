@@ -16,7 +16,6 @@ class CustomHeaderAndBodyTest {
             listOf(
                 CustomHeader("Authorization", "Bearer bad"),
                 CustomHeader("x-api-key", "bad"),
-                CustomHeader("X-Goog-Api-Key", "bad"),
                 CustomHeader("host", "example.com"),
                 CustomHeader("x-extra", "ok")
             )
@@ -24,9 +23,6 @@ class CustomHeaderAndBodyTest {
 
         assertEquals(listOf(CustomHeader("x-extra", "ok")), sanitized)
         assertTrue(CustomHeaderFilter.isForbidden("authorization"))
-        assertTrue(CustomHeaderFilter.isForbidden(" X-GOOG-API-KEY "))
-        assertFalse(CustomHeaderFilter.redactForLog(listOf(CustomHeader("x-goog-api-key", "private-key")))
-            .toString().contains("private-key"))
         assertFalse(CustomHeaderFilter.isForbidden("x-extra"))
     }
 

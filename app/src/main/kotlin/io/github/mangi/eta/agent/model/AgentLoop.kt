@@ -101,8 +101,8 @@ internal class AgentLoop(
             runController.throwIfCancelled()
             if (purpose.allowsTools) while (appendPendingSteeringMessage()) { /* FIFO; one planning request for pending inputs. */ }
 
-            // 带签名的工具链沿用发出调用时的请求前缀，工具链完成后再刷新目录。
-            val roundTools = if (SignedToolContext.hasPendingResponse(messages)) {
+            // Anthropic 思考签名绑定发出工具调用时的 system 与 tools；工具结果回传后再刷新目录。
+            val roundTools = if (AnthropicEphemeralState.hasPendingToolResponse(messages)) {
                 precedingTools ?: tools
             } else if (purpose.allowsTools) {
                 toolsForRound?.invoke() ?: tools
@@ -137,7 +137,6 @@ internal class AgentLoop(
                     },
                     onProviderEvent = { attemptRound, providerEvent ->
                         if (!purpose.allowsTools && (providerEvent is ProviderEvent.HostedToolStarted ||
-                                providerEvent is ProviderEvent.SearchSuggestions ||
                                 providerEvent is ProviderEvent.BlockStart && providerEvent.kind == AssistantBlockKind.TOOL_CALL)) {
                             throw AgentModelFailure("REPLY_REWRITE_TOOL_CALL", false, "改写回复时模型请求了工具，已停止；原回复未改变。")
                         }
@@ -690,7 +689,6 @@ internal class AgentLoop(
                 name = name,
                 success = success,
             )
-            is ProviderEvent.SearchSuggestions -> AgentEvent.SearchSuggestions(round, index, html)
             is ProviderEvent.Completed -> null
         }
 

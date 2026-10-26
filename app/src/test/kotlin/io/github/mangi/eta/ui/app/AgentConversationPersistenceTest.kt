@@ -35,18 +35,6 @@ class AgentConversationPersistenceTest {
     }
 
     @Test
-    fun searchSuggestionsStayInLoadedConversationAndNeverReachMessageStorage() = runBlocking {
-        val message = AgentMessageUi("search-answer", "正文与引用", searchSuggestionsHtml = listOf("<div>短期建议</div>"))
-        val conversation = state("search").copy(messages = listOf(message))
-        AgentConversationPersistence().save(context, snapshot(mapOf("search" to conversation)))
-        val restored = AgentConversationStore.loadAllMessages(context, "search").filterIsInstance<AgentMessageUi>().single()
-        assertEquals(message.content, restored.content)
-        assertTrue(restored.searchSuggestionsHtml.isEmpty())
-        val unloaded = AgentConversationStore.unloadConversation(conversation)
-        assertTrue((unloaded.messages.single() as AgentMessageUi).searchSuggestionsHtml.isEmpty())
-    }
-
-    @Test
     fun appendingOnlyWritesTheChangedConversationAndNewMessages() = runBlocking {
         val persistence = AgentConversationPersistence()
         val initial = snapshot(mapOf("active" to state("active"), "dormant" to state("dormant")))

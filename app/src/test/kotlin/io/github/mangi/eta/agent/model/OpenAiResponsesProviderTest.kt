@@ -567,7 +567,7 @@ class OpenAiResponsesProviderTest {
 
     @Test
     fun citationsDeduplicateAndFallBackForInvalidOffsets() {
-        val formatted = CitationFormatter.apply(
+        val formatted = ResponsesCitationFormatter.apply(
             "中文回答",
             listOf(
                 CitationAnnotation(0, 2, "https://example.com/a", "A"),

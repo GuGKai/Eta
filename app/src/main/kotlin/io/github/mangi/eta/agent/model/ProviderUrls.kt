@@ -19,12 +19,6 @@ internal object ProviderUrls {
     fun anthropicModelsUrl(baseUrl: String): String =
         appendPath(baseUrl, "v1/models")
 
-    fun geminiInteractionsUrl(baseUrl: String): String =
-        appendPath(baseUrl, "interactions")
-
-    fun geminiModelsUrl(baseUrl: String): String =
-        appendPath(baseUrl, "models")
-
     private fun appendPath(baseUrl: String, path: String): String =
         "${normalizeBaseUrl(baseUrl)}/${path.trimStart('/')}"
 }
