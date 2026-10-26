@@ -73,3 +73,10 @@
 -keep class io.github.mangi.eta.agent.display.VirtualScreenRootTextInput {
     public static void main(java.lang.String[]);
 }
+
+# Android 16 / ColorOS 上 release 包在工具调用路径抛出
+# "Attempt to invoke virtual method 'boolean java.lang.Boolean.booleanValue()' on a null object reference"：
+# R8 把多个 Kotlin lambda 合并成一个类 + selector 字节后，rootAvailable 之类的 Function0<Boolean>
+# 分支返回了 null。debug 不优化、lambda 不合并时正常，故这里关闭优化阶段（保留 shrink 与混淆）。
+# 回退条件：升级 AGP/R8 或用不同工具链重建后实测工具调用正常，即可删除本行。
+-dontoptimize
