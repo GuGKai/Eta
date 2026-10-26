@@ -303,3 +303,18 @@ Interactions 协议实现、Google 远端模型目录与思考档位，也不改
 2. 归档分支 `archive/*` 只作历史快照，脚本不重放、**不得用于出包**
 3. 发版前递增 `app/build.gradle.kts` 的 versionCode（规则 `yyyyMMdd` + 两位当日序号，且必须大于设备已装值），并回到本文件更新基线版本、更新日期与上述表格
 4. 数据库版本冲突时**不要**让两边共用同一条迁移：上游与本地各改一次 `version` 时，升版本号并写「逐列判断再补」的条件迁移
+
+## 构建约定：release 关闭 R8 优化（2026-10-26 追加）
+
+`app/proguard-rules.pro` 末尾固定保留 `-dontoptimize`。原因：release 包在工具调用路径抛
+`Attempt to invoke virtual method 'boolean java.lang.Boolean.booleanValue()' on a null object reference`，
+定位为 R8 把多个 Kotlin lambda 合并成「单类 + selector 字节」后，`rootAvailable` 这类 `Function0<Boolean>`
+分支返回 null 被外层拆箱；debug（不优化）正常，关优化后正常。
+
+- 已验证无效的手段：换 JDK 21 重建（产物与 JDK 25 几乎逐字节相同：同 5 个类、11 处调用、同行号，体积差 8 字节）。
+- 代价：APK 6.58 MB → 8.29 MB，运行性能略降；shrink 与混淆不受影响。
+- **同步上游时若 `app/proguard-rules.pro` 冲突，必须保留这段 `-dontoptimize` 及其注释**，否则会重新崩溃。
+- 回退条件：升级 AGP/R8 或换工具链后实测工具调用正常，可删除该行并重新验证。
+
+versionCode 约定：2026102601（首次同步）、2026102602（外部 noopt 交付包）、2026102603（本仓库入库优化开关），
+后续自增必须大于设备已装值。
