@@ -196,7 +196,7 @@ internal class AgentExecutionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         // 暂停/恢复用不同 request code 各自持有，避免同一码复用同一个 PendingIntent。
-        val togglePause = if (runPaused) {
+        val togglePause = if ((runStatus == AgentOverlayStatus.Paused)) {
             PendingIntent.getService(
                 this, 4, Intent(this, AgentExecutionService::class.java).setAction(ACTION_RESUME),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -240,7 +240,7 @@ internal class AgentExecutionService : Service() {
             builder.addAction(
                 Notification.Action.Builder(
                     null,
-                    getString(if (runPaused) R.string.execution_resume else R.string.execution_pause),
+                    getString(if ((runStatus == AgentOverlayStatus.Paused)) R.string.execution_resume else R.string.execution_pause),
                     togglePause,
                 ).build(),
             )

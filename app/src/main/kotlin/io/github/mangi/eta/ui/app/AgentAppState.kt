@@ -1958,7 +1958,7 @@ internal class AgentAppState(
                             rewriteTargetMessageId = rewriteTargetMessageId,
                             runId = runId,
                             prompt = prompt,
-                            config = config.copy(supportsSearchSuggestions = true),
+                            config = config,
                             images = modelImages,
                             history = history,
                             handoff = AgentRuntimeWire.EntryHandoff(
@@ -2205,6 +2205,11 @@ internal class AgentAppState(
             AgentFileReferenceGateway.Error.ImportTooLarge -> appContext.getString(R.string.capability_import_too_large)
             AgentFileReferenceGateway.Error.ValidationTimedOut -> appContext.getString(R.string.state_ui_path_verification_timed_out_please_try_again_703687)
         }
+
+    /** 当前界面绑定中的 run；只需一个，后台可并行多个由 runtime 管。 */
+    private var currentRunId: String? = null
+    private var currentRunJob: Job? = null
+    private val runConversationIds = mutableMapOf<String, String>()
 
     private val stopRequestedRunIds = mutableSetOf<String>()
     private val CANCEL_RETRY_WINDOW_MS = 3_000L
