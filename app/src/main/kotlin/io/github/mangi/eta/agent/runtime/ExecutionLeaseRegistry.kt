@@ -100,4 +100,13 @@ internal class ExecutionLeaseRegistry {
         .filterNot { startFailed && it.allowBoundFallback }
         .map { it.onStop }
         .also { leases.clear() }
+
+    /**
+     * 只停止指定 id 的租约。
+     *
+     * 并行任务各自一张通知卡片，卡片上的「停止」必须只结束对应的那一个任务，
+     * 不能像整条通知的停止那样把所有活跃任务一起收掉。
+     */
+    @Synchronized fun drainIds(ids: Set<String>): List<() -> Unit> = ids
+        .mapNotNull { id -> leases.remove(id)?.onStop }
 }
