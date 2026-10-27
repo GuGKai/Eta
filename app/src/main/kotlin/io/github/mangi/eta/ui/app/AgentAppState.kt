@@ -1570,6 +1570,9 @@ internal class AgentAppState(
         val fileReferences = pendingFileReferences.map { it.reference }
         val runtimePrompt = AgentFileReferencePromptCodec.format(prompt, fileReferences)
         val runId = "run-${UUID.randomUUID()}"
+        // 登记本轮 run 与会话的绑定：中途插话（steer）按 runId 找任务，缺了这段插话永远失败。
+        currentRunId = runId
+        runConversationIds[runId] = conversationId
         val userMessage = UserMessageUi(
             id = editBoundary?.userMessage?.id ?: "user-$runId",
             content = runtimePrompt,
@@ -2524,6 +2527,9 @@ internal class AgentAppState(
         refreshConversationSummaries()
         persistRunResult(runId, completedConversationId, result, acknowledgeRuntimeResult,
             explicitlyStoppedByUser, resumeQueue = true)
+        // 本轮已结束：解除插话绑定，否则之后发消息会被当成对已结束任务的插话。
+        runConversationIds.remove(runId)
+        if (currentRunId == runId) currentRunId = null
     }
 
     private fun persistRunResult(
