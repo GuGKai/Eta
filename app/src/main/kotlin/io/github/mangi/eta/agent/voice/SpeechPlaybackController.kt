@@ -416,8 +416,11 @@ private const val PREFETCH_CHUNKS = 2
 /** 高亮比音频晚这么久生效：抵消音轨缓冲带来的提前量。 */
 private const val HIGHLIGHT_DELAY_MS = 300L
 
-/** 系统引擎逐句合成时最多领先播放的句数，够盖住一次合成耗时，又不会在暂停时白合成整篇。 */
-private const val PREFETCH_CLIPS = 2
+/**
+ * 系统引擎逐句合成时最多领先播放的句数：多留一句，让某句合成特别慢时也有余量，
+ * 又不会在暂停时白合成整篇。
+ */
+private const val PREFETCH_CLIPS = 3
 
 internal interface SpeechAudioOutput : Closeable {
     fun write(bytes: ByteArray)
