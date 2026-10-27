@@ -262,14 +262,22 @@ internal object AgentConversationCodec {
 
     private fun sanitizeContentJson(raw: String): String {
         if (raw.isBlank()) return ""
-        val content = runCatching { JSONTokener(raw).nextValue() }.getOrNull()
-        val sanitized = when (content) {
-            is JSONArray -> sanitizeContentArray(content)
-            is JSONObject -> sanitizeContentObject(content)
-            else -> return ""
-        }
-        return sanitized.toString()
+        // 含内联图片（base64 data URL）的 contentJson 只用于历史持久化，图片本身必须剔除；
+        // 直接按长度跳过解析：ColorOS 的 org.json 在解析这类超长串时会抛
+        // ClassCastException: Boolean cannot be cast to Integer，不能让它在 UI 线程炸掉。
+        if (raw.length > MAX_INLINE_CONTENT_CHARS) return ""
+        // 解析、剔除与重新序列化都兜住异常：这份数据只影响历史记录，失败时退化为空即可。
+        return runCatching {
+            when (val content = JSONTokener(raw).nextValue()) {
+                is JSONArray -> sanitizeContentArray(content)
+                is JSONObject -> sanitizeContentObject(content)
+                else -> return ""
+            }.toString()
+        }.getOrElse { "" }
     }
+
+    /** 超过该长度的 contentJson 视为内联图片（base64），不解析、不落库。 */
+    private const val MAX_INLINE_CONTENT_CHARS = 256 * 1024
 
     private fun sanitizeContentArray(source: JSONArray): JSONArray {
         val target = JSONArray()
