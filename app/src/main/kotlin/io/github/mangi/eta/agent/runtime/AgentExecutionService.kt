@@ -34,8 +34,8 @@ internal class AgentExecutionService : Service() {
     private var progress: String = ""
     private var progressOwner: String = ""
 
-    /** 通知去重与节流状态，只在主线程读写。 */
-    private var publishedContent: RenderedText? = null
+    /** 每张卡片的已发布内容，key 为通知 ID；只在主线程读写。 */
+    private var publishedCards: Map<Int, RenderedText> = emptyMap()
     private var pendingPublish: Runnable? = null
     private var lastPublishAt = 0L
 
@@ -57,15 +57,18 @@ internal class AgentExecutionService : Service() {
         if (foregroundActive || startRejected) return
         leases.attachOwner(owner)
         try {
-            val content = renderedText()
+            // 前台服务通知即第一张卡片（有 Agent run 时）或汇总文案（只有终端等任务时）。
+            val cards = expectedCards(runNotices)
+            val head = cards.entries.first()
+            val headNotice = runNotices.firstOrNull()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(NOTIFICATION_ID, notification(content), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                startForeground(head.key, notification(head.value, headNotice, 0), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
-                startForeground(NOTIFICATION_ID, notification(content))
+                startForeground(head.key, notification(head.value, headNotice, 0))
             }
             foregroundActive = true
             lastPublishAt = SystemClock.uptimeMillis()
-            publishedContent = content
+            publishedCards = cards
         } catch (failure: RuntimeException) {
             startRejected = true
             AndroidAgentLogger.warn("Execution service foreground failed: type=${failure.safeLogType()}")
@@ -74,11 +77,13 @@ internal class AgentExecutionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 通知动作按卡片绑定到具体 Agent run：同一个按钮在不同卡片上只作用于该任务。
+        val targetRunId = intent?.getStringExtra(EXTRA_RUN_ID)
         when (intent?.action) {
-            ACTION_STOP -> stopTasks()
+            ACTION_STOP -> stopTasks(ids = targetRunId?.let { setOf("run:$it") })
             // 通知上的「暂停/恢复」：直接落到 runtime 的 run controller。
             // runtime 不在或任务已结束时什么都不做，通知保持原样。
-            ACTION_PAUSE -> AgentRuntimeService.pauseFromNotification()
+            ACTION_PAUSE -> AgentRuntimeService.pauseFromNotification(targetRunId)
             ACTION_RESUME -> AgentRuntimeService.resumeFromNotification()
             else -> {
                 ensureForeground()
@@ -98,8 +103,8 @@ internal class AgentExecutionService : Service() {
         super.onDestroy()
     }
 
-    private fun stopTasks(startFailed: Boolean = false) {
-        val callbacks = leases.drain(startFailed)
+    private fun stopTasks(startFailed: Boolean = false, ids: Set<String>? = null) {
+        val callbacks = if (ids == null) leases.drain(startFailed) else leases.drainIds(ids)
         stopQueue.submit(callbacks) {
             mainHandler.post { if (instance === this) refreshNotification() }
         }
@@ -108,10 +113,13 @@ internal class AgentExecutionService : Service() {
     private fun refreshNotification() {
         if (leases.closeOwnerIfIdle(owner)) {
             cancelPendingPublish()
-            publishedContent = null
             anchorAt = 0L
             foregroundActive = false
+            // 先摘掉前台通知，再清掉其余卡片，避免对前台正在使用的那条调用 cancel。
             stopForeground(STOP_FOREGROUND_REMOVE)
+            val manager = getSystemService(NotificationManager::class.java)
+            publishedCards.keys.forEach { id -> manager.cancel(id) }
+            publishedCards = emptyMap()
             stopSelf()
         } else {
             requestPublish()
@@ -121,15 +129,36 @@ internal class AgentExecutionService : Service() {
     /** 通知的两行文本。用于去重：内容没变就不重发。 */
     private data class RenderedText(val title: String, val text: String)
 
-    private fun renderedText(): RenderedText {
-        val status = runStatus
-        val taskCount = if (activeRunCount > 0) activeRunCount else leases.count()
+    /** 没有任何 Agent run 时的汇总卡片（前端保活、终端任务等）。 */
+    private fun summaryContent(): RenderedText {
+        val count = if (taskCount > 0) taskCount else leases.count()
         return RenderedText(
-            // 第一行：当前正在做的事（环节名）；没有运行中的 run 时退回通用标题。
-            title = status?.let(::currentStepLabel) ?: getString(R.string.execution_title),
-            // 第二行：任务数与当前状态（与上游 executionText 保持一致）。
-            text = executionText(this, status, taskCount),
+            title = getString(R.string.execution_title),
+            text = resources.getQuantityString(R.plurals.execution_summary, count, count),
         )
+    }
+
+    /** 单个 Agent run 的卡片内容：第一行环节名（暂停时改成「暂停中」），第二行已完成步骤数。 */
+    private fun cardContent(notice: ExecutionRunNotice, multi: Boolean): RenderedText {
+        val title = if (notice.paused) getString(R.string.execution_paused) else currentStepLabel(notice.status)
+        val steps = resources.getQuantityString(R.plurals.work_completed_steps, notice.completedSteps, notice.completedSteps)
+        // 并行跑多个任务时，卡片之间只剩环节名往往无法区分，前面补上任务摘要。
+        val text = if (multi && notice.taskLabel.isNotBlank()) "${notice.taskLabel} · $steps" else steps
+        return RenderedText(title = title, text = text)
+    }
+
+    /** 期望的通知卡片：ID 从 [NOTIFICATION_ID] 起按活跃顺序连续分配，第一张兼任前台服务通知。 */
+    private fun expectedCards(notices: List<ExecutionRunNotice>): LinkedHashMap<Int, RenderedText> {
+        val cards = LinkedHashMap<Int, RenderedText>()
+        if (notices.isEmpty()) {
+            cards[NOTIFICATION_ID] = summaryContent()
+            return cards
+        }
+        val multi = notices.size > 1
+        notices.forEachIndexed { index, notice ->
+            cards[NOTIFICATION_ID + index] = cardContent(notice, multi)
+        }
+        return cards
     }
 
     /** 把 elapsedRealtime 意义上的开始时刻换算成墙钟 HH:mm，用于「从几点开始跑」。 */
@@ -148,28 +177,35 @@ internal class AgentExecutionService : Service() {
      * 这里：内容没变不发；距上次发布不足 [MIN_PUBLISH_INTERVAL_MS] 的变化合并成一次尾发。
      */
     private fun requestPublish() {
-        val content = renderedText()
-        if (content == publishedContent) return
+        val cards = expectedCards(runNotices)
+        if (cards == publishedCards) return
         val elapsed = SystemClock.uptimeMillis() - lastPublishAt
         if (elapsed >= MIN_PUBLISH_INTERVAL_MS) {
-            publish(content)
+            publish(cards)
             return
         }
         if (pendingPublish != null) return
         val trailing = Runnable {
             pendingPublish = null
-            val latest = renderedText()
-            if (latest != publishedContent) publish(latest)
+            val latest = expectedCards(runNotices)
+            if (latest != publishedCards) publish(latest)
         }
         pendingPublish = trailing
         mainHandler.postDelayed(trailing, MIN_PUBLISH_INTERVAL_MS - elapsed)
     }
 
-    private fun publish(content: RenderedText) {
+    /** 逐卡片 diff 发布：内容没变的卡片不重发，已结束任务的卡片单独撤销。 */
+    private fun publish(cards: Map<Int, RenderedText>) {
         cancelPendingPublish()
         lastPublishAt = SystemClock.uptimeMillis()
-        publishedContent = content
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(content))
+        val manager = getSystemService(NotificationManager::class.java)
+        for ((id, content) in cards) {
+            if (publishedCards[id] == content) continue
+            val index = id - NOTIFICATION_ID
+            manager.notify(id, notification(content, runNotices.getOrNull(index), index))
+        }
+        for (stale in publishedCards.keys - cards.keys) manager.cancel(stale)
+        publishedCards = cards
     }
 
     private fun cancelPendingPublish() {
@@ -177,36 +213,32 @@ internal class AgentExecutionService : Service() {
         pendingPublish = null
     }
 
-    private fun notification(content: RenderedText): Notification {
-        val status = runStatus
+    /**
+     * 单张卡片的通知。[notice] 为 null 表示汇总卡片（只有保活会话或终端任务，没有 Agent run）。
+     * [index] 是卡片序号：不同卡片的 PendingIntent 用不同 request code，避免互相覆盖。
+     */
+    private fun notification(content: RenderedText, notice: ExecutionRunNotice?, index: Int): Notification {
         // 只有 Agent run 正在跑时才指向虚拟屏查看页；任务跑完或只剩保活会话时指向对话界面，
         // 否则用户点通知会先落在查看页、还要按返回才回到对话。
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, OPEN_REQUEST_BASE + index, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val stopState = Intent(this, AgentExecutionService::class.java).setAction(ACTION_STOP)
+        notice?.let { stopState.putExtra(EXTRA_RUN_ID, it.runId) }
         val stop = PendingIntent.getService(
-            this, 1, Intent(this, AgentExecutionService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        // 「补充」：跳回 Eta 主界面并唤起键盘，用户插话不打断当前操作。
-        val supplement = PendingIntent.getActivity(
-            this, 2,
-            Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_INTERJECT),
+            this, ACTION_REQUEST_BASE + index * 4 + 1, stopState,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         // 暂停/恢复用不同 request code 各自持有，避免同一码复用同一个 PendingIntent。
-        val togglePause = if ((runStatus == AgentOverlayStatus.Paused)) {
-            PendingIntent.getService(
-                this, 4, Intent(this, AgentExecutionService::class.java).setAction(ACTION_RESUME),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        } else {
-            PendingIntent.getService(
-                this, 3, Intent(this, AgentExecutionService::class.java).setAction(ACTION_PAUSE),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        }
+        val paused = notice?.paused == true
+        val toggleState = Intent(this, AgentExecutionService::class.java)
+            .setAction(if (paused) ACTION_RESUME else ACTION_PAUSE)
+        notice?.let { toggleState.putExtra(EXTRA_RUN_ID, it.runId) }
+        val togglePause = PendingIntent.getService(
+            this, ACTION_REQUEST_BASE + index * 4 + if (paused) 3 else 2, toggleState,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         // 通知与流体云胶囊按原样绘制这个小图标：用应用彩色图标，而不是单色通知图标。
         val iconRes = if (Build.VERSION.SDK_INT >= 36 && applicationInfo.icon != 0) {
             applicationInfo.icon
@@ -225,22 +257,19 @@ internal class AgentExecutionService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
-        if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+        if (notice != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
                 .setShortCriticalText(liveTextLabel(content.title))
             // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
-        if (status != null) {
-            // Agent 回答中：补充（插话）/ 暂停(恢复) / 停止任务，三个入口都接回。
-            builder.addAction(
-                Notification.Action.Builder(null, getString(R.string.execution_supplement), supplement).build(),
-            )
+        if (notice != null) {
+            // Agent 回答中：只保留 暂停(恢复) 与 停止任务 两个入口，各自绑定本卡片的 run。
             builder.addAction(
                 Notification.Action.Builder(
                     null,
-                    getString(if ((runStatus == AgentOverlayStatus.Paused)) R.string.execution_resume else R.string.execution_pause),
+                    getString(if (paused) R.string.execution_resume else R.string.execution_pause),
                     togglePause,
                 ).build(),
             )
@@ -268,7 +297,11 @@ internal class AgentExecutionService : Service() {
 
     companion object {
         private const val CHANNEL = "eta_execution"
+        /** 第一张卡片（同时承载前台服务）；后续卡片按序号顺延：1108、1109…… */
         private const val NOTIFICATION_ID = 1107
+        private const val OPEN_REQUEST_BASE = 1200
+        private const val ACTION_REQUEST_BASE = 1300
+        private const val EXTRA_RUN_ID = "io.github.mangi.eta.extra.EXECUTION_RUN_ID"
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
         private const val ACTION_PAUSE = "io.github.mangi.eta.action.PAUSE_USER_EXECUTION"
         private const val ACTION_RESUME = "io.github.mangi.eta.action.RESUME_USER_EXECUTION"
@@ -282,32 +315,25 @@ internal class AgentExecutionService : Service() {
         private val ownerSequence = AtomicLong()
         private val mainHandler = Handler(Looper.getMainLooper())
         @Volatile private var instance: AgentExecutionService? = null
-        private var runStatus: AgentOverlayStatus? = null
-        private var activeRunCount = 0
+        private var runNotices: List<ExecutionRunNotice> = emptyList()
+        private var taskCount = 0
         private var publishedStatusText: String? = null
 
         /**
          * Agent run 的当前状态与已完成步骤数，供通知与状态栏胶囊展示；status 为 null 表示没有 Agent run 在跑。
          * 只在标题或正文变化时刷新通知，避免流式事件把通知更新频率推到系统限流。
          */
-        fun updateRunStatus(context: Context, status: AgentOverlayStatus?, activeRunCount: Int) {
+        fun updateRunStates(context: Context, notices: List<ExecutionRunNotice>, taskCount: Int) {
             mainHandler.post {
-                runStatus = status
-                this.activeRunCount = activeRunCount
-                val count = if (activeRunCount > 0) activeRunCount else leases.count()
-                val text = executionText(context, status, count)
-                if (text == publishedStatusText) return@post
-                publishedStatusText = text
+                this.taskCount = taskCount
+                // 去重键覆盖卡片的全部可见内容：步数、暂停态、任务名在变而文字没变时也要刷新。
+                val key = notices.joinToString("|") {
+                    "${it.runId},${it.status},${it.completedSteps},${it.paused},${it.taskLabel}"
+                } + "#$taskCount"
+                if (key == publishedStatusText) return@post
+                publishedStatusText = key
+                runNotices = notices
                 instance?.takeIf { it.foregroundActive }?.refreshNotification()
-            }
-        }
-
-        private fun executionText(context: Context, status: AgentOverlayStatus?, taskCount: Int): String {
-            val summary = context.resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
-            return when {
-                status == null -> summary
-                taskCount <= 1 -> status.localizedText(context.resources)
-                else -> "$summary · ${status.localizedText(context.resources)}"
             }
         }
 
@@ -359,3 +385,12 @@ internal class AgentExecutionService : Service() {
         }
     }
 }
+
+/** 一个 Agent run 在通知栏里的独立卡片：并行任务各自一张，互不覆盖。 */
+internal data class ExecutionRunNotice(
+    val runId: String,
+    val taskLabel: String = "",
+    val status: AgentOverlayStatus? = null,
+    val completedSteps: Int = 0,
+    val paused: Boolean = false,
+)
