@@ -194,7 +194,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         displayedRun = null
         serviceScope.cancel()
-        AgentExecutionService.updateRunStatus(this, null, activeRunCount = 0)
+        AgentExecutionService.updateRunStates(this, emptyList(), taskCount = 0)
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         AgentOverlayClearance.detach(clearanceHost)
@@ -577,6 +577,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.post {
             if (destroyed) return@post
             run.completedContext = completedContext
+            // 回复完成通知与窗口投影解耦：纯后台运行（本轮没接管手机、不是窗口投影对象）
+            // 同样要提醒，否则用户离开界面后完全收不到结果。notifyReplyCompleted 内部
+            // 已跳过「用户此刻能直接读到回复」的情形。
+            if (result.ok) notifyReplyCompleted(result.content, replyConversationKey)
             val guiState = guiControl.state.value
             if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
                 (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
@@ -584,7 +588,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             updateKeepScreenOn()
             runCatching {
                 if (result.ok) {
-                    notifyReplyCompleted(result.content, replyConversationKey)
                     enterFinalState(
                         state.value.copy(
                             phase = AgentOverlayPhase.FINISHED,
@@ -906,7 +909,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun requestSupplement(runId: String?, text: String): Boolean {
         val supplementText = text.trim()
         if (supplementText.isBlank()) return false
-        val run = displayedRun?.takeIf { it.runId == runId } ?: return false
+        // 先按当前浮层投影的 run 匹配；浮层没显示（或显示的是别的 run）时回退到注册表，
+        // 否则多会话并行/后台续跑时插话会被误判成失败。
+        val run = displayedRun?.takeIf { it.runId == runId }
+            ?: runId?.let(runs::get)
+            ?: return false
         if (guiControl.state.value.userPaused && guiControl.state.value.ownerRunId == null) return false
         setCapsuleInputMode(focusable = false)
         runs.get(run.runId)?.let { active ->
@@ -1034,18 +1041,31 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun publishExecutionState() {
         val guiState = guiControl.state.value
-        val activeRuns = runs.all().filterNot { it.session.isTerminal }
-        val owner = activeRuns.firstOrNull { it.runId == guiState.ownerRunId }
-        val status = if (owner != null && guiState.userPaused) {
-            AgentOverlayStatus.Paused
-        } else {
-            (owner ?: activeRuns.firstOrNull())?.overlayState?.status
+        val ownerRunId = guiState.ownerRunId
+        // 每个活跃 run 各自一张通知卡片：没有 GUI 所有权时（纯终端、文件类任务）同样投影当前环节，
+        // 否则该任务会退回「N 项任务正在运行」，也不显示暂停按钮。
+        val notices = ArrayList<ExecutionRunNotice>()
+        for (active in runs.all()) {
+            if (active.session.isTerminal) continue
+            // 暂停是全局开关，只落到持有 GUI 所有权的那个任务上，避免别的任务被误标成「暂停中」。
+            val paused = guiState.userPaused && active.runId == ownerRunId
+            notices.add(
+                ExecutionRunNotice(
+                    runId = active.runId,
+                    taskLabel = taskLabelOf(active),
+                    status = if (paused) AgentOverlayStatus.Paused else active.overlayState.status,
+                    completedSteps = active.overlayState.completedSteps,
+                    paused = paused,
+                ),
+            )
         }
-        AgentExecutionService.updateRunStatus(
-            this,
-            status,
-            activeRunCount = activeRuns.size,
-        )
+        AgentExecutionService.updateRunStates(this, notices, taskCount = notices.size)
+    }
+
+    /** 卡片上的任务摘要：取首轮用户输入的第一行，截短到能在一行里显示。 */
+    private fun taskLabelOf(run: RuntimeRunRegistry.Run): String {
+        val firstLine = run.request.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        return firstLine.take(12)
     }
 
     private fun setKeepScreenOn(enabled: Boolean) {
@@ -1539,11 +1559,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
          * 返回 false 表示此刻没有正在跑的会话（runtime 服务不在、或任务已到终态），
          * 调用方据此不把通知切成暂停态。
          */
-        fun pauseFromNotification(): Boolean {
+        fun pauseFromNotification(runId: String? = null): Boolean {
             val service = activeInstance ?: return false
-            val displayed = service.displayedRun ?: return false
-            if (service.runs.get(displayed.runId)?.session?.isTerminal != false) return false
-            service.mainHandler.post { service.requestPause(displayed.runId) }
+            // 通知卡片带着自己的 runId：并行任务时只暂停被点的那一个，不落到别的任务上。
+            val target = runId?.let { service.runs.get(it) } ?: service.displayedRun ?: return false
+            if (service.runs.get(target.runId)?.session?.isTerminal != false) return false
+            service.mainHandler.post { service.requestPause(target.runId) }
             return true
         }
 
