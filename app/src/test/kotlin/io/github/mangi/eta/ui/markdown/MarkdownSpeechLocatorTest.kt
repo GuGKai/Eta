@@ -2,9 +2,9 @@ package io.github.mangi.eta.ui.markdown
 
 import io.github.mangi.eta.agent.voice.SpeechText
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** 朗读高亮定位：句子表与渲染块来自两条不同的管线，靠拼文本 + 顺序游标对齐。 */
@@ -22,9 +22,14 @@ class MarkdownSpeechLocatorTest {
         val sentences = sentencesOf(markdown)
         val highlight = MarkdownSpeechHighlightCache().highlight(document.blocks, sentences, index)
             ?: return null
-        val block = document.blocks.flattenTextBlocks().firstOrNull { it.offset == highlight.blockOffset }
-            ?: return null
-        return condensed(block.text.text.substring(highlight.start, highlight.end))
+        val blocks = document.blocks.flattenTextBlocks()
+        // 一句可能跨多个块（表格同一行被拆成多个单元格），把所有命中的段拼回来比较。
+        return condensed(
+            highlight.ranges.mapNotNull { range ->
+                blocks.firstOrNull { it.offset == range.blockOffset }
+                    ?.let { it.text.text.substring(range.start, range.end) }
+            }.joinToString(""),
+        )
     }
 
     @Test
@@ -47,25 +52,92 @@ class MarkdownSpeechLocatorTest {
         val second = cache.highlight(document.blocks, sentences, 1)
         assertNotNull(first)
         assertNotNull(second)
-        assertEquals(0, first!!.start)
-        assertEquals(3, second!!.start)
+        assertEquals(0, first!!.ranges.first().start)
+        assertEquals(3, second!!.ranges.first().start)
     }
 
     @Test
     fun inlineEmphasisDoesNotBreakHighlighting() {
         val markdown = "**重点**在这里，还有 `code` 与 [链接](https://example.com)。"
-        // 行内代码不朗读：句子在这里断开，代码本身不进朗读文本。
-        assertEquals(listOf("重点在这里，还有", "与 链接。"), sentencesOf(markdown))
+        // 行内代码照读：整句连成一句，代码内容进了朗读文本。
+        assertEquals(listOf("重点在这里，还有 code 与 链接。"), sentencesOf(markdown))
         val text = highlighted(markdown, 0)
         assertNotNull(text)
-        // 轮到这句时高亮仍一路盖到下一句开头，被跳过的行内代码不会成为空档。
-        assertEquals("重点在这里，还有code", text)
+        // 读到哪高亮到哪：整句（含行内代码）一起高亮。
+        assertEquals("重点在这里，还有code与链接。", text)
     }
 
     @Test
-    fun inlineCodeIsNotSpoken() {
-        assertFalse(SpeechText.readable("运行 `./gradlew assembleRelease` 即可。").contains("gradlew"))
-        assertFalse(SpeechText.readable("装好后的版本号是 `2026102502`。").contains("2026102502"))
+    fun inlineCodeIsSpoken() {
+        assertTrue(SpeechText.readable("运行 `./gradlew assembleRelease` 即可。").contains("gradlew"))
+        assertTrue(SpeechText.readable("装好后的版本号是 `2026102502`。").contains("2026102502"))
+    }
+
+    @Test
+    fun fencedCodeIsSpokenAndHighlightedPerLine() {
+        val markdown = "改这两行：\n\n```kotlin\nval a = 1\nval b = 2\n```\n\n就这么多。"
+        val sentences = sentencesOf(markdown)
+        // 围栏标记不读，只读代码内容；每行单独成句。
+        assertEquals(listOf("改这两行：", "val a = 1", "val b = 2", "就这么多。"), sentences)
+        assertEquals(condensed("val a = 1"), highlighted(markdown, 1))
+        assertEquals(condensed("val b = 2"), highlighted(markdown, 2))
+        assertEquals("就这么多。", highlighted(markdown, 3))
+    }
+
+    @Test
+    fun indentedCodeIsSpoken() {
+        val markdown = "示例：\n\n    val c = 3\n\n结束。"
+        assertEquals(listOf("示例：", "val c = 3", "结束。"), sentencesOf(markdown))
+        assertEquals(condensed("val c = 3"), highlighted(markdown, 1))
+    }
+
+    @Test
+    fun tableCellsAreReadAndHighlightedSeparately() {
+        // 单元格之间按换行断开：每格单独成句、单独高亮，朗读在格与格之间停顿。
+        val markdown = "| 现象 | 根因 |\n| --- | --- |\n| 副标题不高亮 | 只按长度合并跨行照并 |"
+        val sentences = sentencesOf(markdown)
+        assertEquals(listOf("现象", "根因", "副标题不高亮", "只按长度合并跨行照并"), sentences)
+        assertEquals("副标题不高亮", highlighted(markdown, 2))
+        assertEquals("只按长度合并跨行照并", highlighted(markdown, 3))
+    }
+
+    @Test
+    fun tableCellWithInlineCodeKeepsItsOwnPunctuation() {
+        // 单元格里有行内代码时同样只覆盖本格，冒号与代码都在高亮区间内。
+        val markdown = "| 项 | 说明 |\n| --- | --- |\n| 甲 | 句尾紧跟 `code`：看这里 |"
+        assertEquals(
+            condensed("句尾紧跟 code：看这里"),
+            highlighted(markdown, 3),
+        )
+    }
+
+    @Test
+    fun shortHeadingIsItsOwnSentenceAndHighlight() {
+        // 短标题以前会被当成硬切零头并进上一段，导致标题所在块压根没有高亮。
+        val markdown = "先说一句总结。\n\n## 📦 产物\n\n产物在下面。"
+        assertEquals(listOf("先说一句总结。", "📦 产物", "产物在下面。"), sentencesOf(markdown))
+        assertEquals(condensed("📦 产物"), highlighted(markdown, 1))
+        assertEquals("产物在下面。", highlighted(markdown, 2))
+    }
+
+    @Test
+    fun trailingPunctuationAfterInlineCodeIsHighlighted() {
+        // 行内代码两侧渲染时会补窄空格，整句 indexOf 失败就退化成句首近似，句尾一两个字和标点会被漏掉。
+        val markdown = "签名核对通过，`aapt2 dump badging` 显示版本号 2026102610。\n\n结尾一句。"
+        assertEquals(
+            condensed("签名核对通过，aapt2 dump badging 显示版本号 2026102610。"),
+            highlighted(markdown, 0),
+        )
+    }
+
+    @Test
+    fun sentenceBeforeShortHeadingStillCoversItsOwnPunctuation() {
+        val markdown = "改了两个地方（`feat/local`，未提交）：\n\n## 🧪 验证\n\n测试全过。"
+        assertEquals(
+            condensed("改了两个地方（feat/local，未提交）："),
+            highlighted(markdown, 0),
+        )
+        assertEquals("测试全过。", highlighted(markdown, 2))
     }
 
     @Test
@@ -84,7 +156,7 @@ class MarkdownSpeechLocatorTest {
         val cache = MarkdownSpeechHighlightCache()
         val last = cache.highlight(document.blocks, sentences, sentences.lastIndex)
         assertNotNull(last)
-        val range = requireNotNull(last)
+        val range = requireNotNull(last).ranges.first()
         val block = document.blocks.flattenTextBlocks().firstOrNull { it.offset == range.blockOffset }
         assertEquals("结尾一句。", block?.text?.text?.substring(range.start, range.end))
     }

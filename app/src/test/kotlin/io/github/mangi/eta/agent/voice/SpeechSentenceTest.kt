@@ -41,7 +41,7 @@ class SpeechSentenceTest {
         val result = sentences("这是很长的一句话，".repeat(30) + "结束。")
         result.forEach { println("[分片 ${it.length}字] …${it.takeLast(14)}") }
         assertTrue(result.size > 1)
-        assertTrue(result.all { it.length <= 120 })
+        assertTrue(result.all { it.length <= 80 })
     }
 
     @Test
@@ -85,10 +85,11 @@ class SpeechSentenceTest {
         val readable = SpeechText.readable(markdown)
         val result = sentences(readable)
         result.forEachIndexed { index, sentence -> println("[${index + 1}] $sentence") }
-        assertFalse(readable.contains("val x = 1"))
+        // 代码块照读：围栏标记不出现，代码内容会出现。
+        assertTrue(readable.contains("val x = 1"))
         assertFalse(readable.contains("##"))
         assertTrue(result.isNotEmpty())
-        assertTrue(result.all { it.length <= 120 })
+        assertTrue(result.all { it.length <= 80 })
         assertEquals("最后一句结论。", result.last())
     }
 }

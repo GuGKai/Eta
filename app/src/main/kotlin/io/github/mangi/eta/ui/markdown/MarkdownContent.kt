@@ -123,15 +123,25 @@ private class MarkdownRenderScope(
 private val LocalListDepth = compositionLocalOf { 0 }
 
 /**
- * 朗读进度高亮：命中 [blockOffset] 这一块时，把块内 [start] until [end] 涂上主题色背景。
- * 只有正在朗读的那一块会命中，其余块读取到的仍是原文。
+ * 朗读进度高亮：把正在朗读的那一句涂上主题色背景。
+ *
+ * 一句理论上可能跨多块（排版把一句话拆进相邻块时），所以按块拆成多段 [Range]，
+ * 每个块只涂属于自己那一段，其余块读取到的仍是原文。
  */
 @Immutable
 internal data class MarkdownSpeechHighlight(
-    val blockOffset: Int,
-    val start: Int,
-    val end: Int,
-)
+    val ranges: List<Range>,
+) {
+    @Immutable
+    data class Range(
+        val blockOffset: Int,
+        val start: Int,
+        val end: Int,
+    )
+
+    /** 这个块需要涂的部分；没有就是空。 */
+    fun rangesFor(blockOffset: Int): List<Range> = ranges.filter { it.blockOffset == blockOffset }
+}
 
 internal val LocalMarkdownSpeechHighlight = compositionLocalOf<MarkdownSpeechHighlight?> { null }
 
@@ -224,15 +234,19 @@ private fun MarkdownText(
  */
 @Composable
 private fun markdownSpeechHighlighted(text: AnnotatedString, blockOffset: Int): AnnotatedString {
-    val highlight = LocalMarkdownSpeechHighlight.current
-    if (highlight == null || highlight.blockOffset != blockOffset) return text
-    val start = highlight.start.coerceIn(0, text.length)
-    val end = highlight.end.coerceIn(start, text.length)
-    if (end <= start) return text
+    val highlight = LocalMarkdownSpeechHighlight.current ?: return text
+    val ranges = highlight.rangesFor(blockOffset)
+    if (ranges.isEmpty()) return text
     val background = MiuixTheme.colorScheme.primary.copy(alpha = SPEECH_HIGHLIGHT_ALPHA)
-    return remember(text, start, end, background) {
+    return remember(text, ranges, background) {
         AnnotatedString.Builder(text)
-            .apply { addStyle(SpanStyle(background = background), start, end) }
+            .apply {
+                for (range in ranges) {
+                    val start = range.start.coerceIn(0, text.length)
+                    val end = range.end.coerceIn(start, text.length)
+                    if (end > start) addStyle(SpanStyle(background = background), start, end)
+                }
+            }
             .toAnnotatedString()
     }
 }
