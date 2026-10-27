@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpeechTextTest {
-    @Test fun spokenTextOmitsCodeAndKeepsLinkLabelAndInlineIdentifiers() {
+    @Test fun spokenTextReadsCodeKeepsLinkLabelAndInlineIdentifiers() {
         val text = SpeechText.readable("""
             # 操作说明
 
@@ -23,8 +23,9 @@ class SpeechTextTest {
         assertTrue(text.contains("帮助"))
         assertTrue(text.contains("user_name"))
         assertFalse(text.contains("https://"))
-        assertFalse(text.contains("secretCommand"))
-        assertFalse(text.contains("anotherSecretCommand"))
+        // 代码块与缩进代码都照读，只丢掉围栏与缩进标记。
+        assertTrue(text.contains("secretCommand()"))
+        assertTrue(text.contains("anotherSecretCommand()"))
         assertFalse(text.contains("**"))
         assertTrue(text.endsWith("完成。"))
     }
@@ -36,7 +37,8 @@ class SpeechTextTest {
         assertTrue(chunks.all { it.length <= 17 && !it.last().isHighSurrogate() && !it.first().isLowSurrogate() })
     }
 
-    @Test fun codeOnlyAnswerHasNothingToRead() {
-        assertEquals("", SpeechText.readable("```\nhello\n```"))
+    @Test fun codeOnlyAnswerReadsTheCodeBody() {
+        // 只有代码块的回答也要读：只跳过围栏标记，代码内容照读。
+        assertEquals("hello", SpeechText.readable("```\nhello\n```"))
     }
 }

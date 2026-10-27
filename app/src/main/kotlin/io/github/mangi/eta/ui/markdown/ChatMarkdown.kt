@@ -56,10 +56,10 @@ internal fun StaticMarkdown(
             null
         } else {
             remember(document.blocks, speechSentences, speechSentenceIndex) {
-                highlightCache.highlight(document.blocks, speechSentences, speechSentenceIndex).also { range ->
+                highlightCache.highlight(document.blocks, speechSentences, speechSentenceIndex).also { hit ->
                     AndroidAgentLogger.info(
-                        "Eta speech range index=$speechSentenceIndex block=${range?.blockOffset} " +
-                            "chars=${range?.start}..${range?.end}",
+                        "Eta speech range index=$speechSentenceIndex " +
+                            "ranges=${hit?.ranges?.joinToString { "${it.blockOffset}:${it.start}..${it.end}" }}",
                     )
                 }
             }
