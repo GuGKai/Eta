@@ -2,9 +2,30 @@
 
 - 上游基线：**v3.3.4**（`Mangi-11/Eta` @ `de12fc3`，2026-10-26 合并）
 - 本地工作分支：`feat/local`（单一工作分支）
-- 最后更新：2026-10-26
-- 出包版本：versionCode `2026102601`，versionName `3.3.4`
+- 最后更新：2026-10-28
+- 出包版本：versionCode `2026102614`，versionName `3.3.4`
 - 本次同步备份分支：`backup/pre-sync-20261026-1311-feat-local`（同步前 `feat/local`=`031ed3f`，长期保留）
+
+## 本轮入库（2026-10-28，工作区遗留改动一并提交）
+
+工作区里攒下的未提交改动（含 2026-10-25～27 出过的包）本轮全部入库，按主题拆成 6 个提交：
+
+| 提交 | 内容 |
+|---|---|
+| `c8e8258` | 含 base64 内联图片的超长 `contentJson` 直接跳过解析（ColorOS 的 `org.json` 会抛 `ClassCastException`），解析链路整段兜异常 |
+| `2a4775e` | 记忆/技能写入立即生效：`memory_write`、`skills_manage` 的提示词与工具描述去掉「待审批」措辞 |
+| `b1e8fa1` | 通知按 run 分卡片：`ExecutionRunNotice`、`updateRunStates`、`drainIds`，动作携带 `EXTRA_RUN_ID` 只作用于本卡片；纯后台运行也提醒回复完成；插话回退运行时注册表 |
+| `7dba01d` | `AgentAppState` 登记 `currentRunId`／`runConversationIds`，回合结束解绑 |
+| `17d401f` | 朗读与高亮：代码块/行内代码照读、表格逐格断开、紧凑文本定位（窄空格不再吃掉句尾标点）、短残句不跨行合并、`MarkdownSpeechHighlight` 改多段 ranges、单句上限 120→80 |
+| `e3bcff2` | 系统引擎逐句合成的领先量 `PREFETCH_CLIPS` 2→3 |
+| `881485a` | versionCode `2026102614` |
+
+朗读侧的调试要点（下次动它先看这段）：
+
+- 朗读文本与渲染文本的唯一契约是「去掉所有空白后字序一致」，定位在紧凑文本上做；
+- 表格单元格之间是换行（每格一句），跨格拼句的能力（多段 ranges）保留但默认不再触发；
+- 切句合并只在同一行内进行，否则短标题会被并进上一段、整块拿不到高亮；
+- 界面高亮用 `rememberSpeechSentences`，与播放侧共用 `SpeechText.sentences`，改切句必须两边一起。
 
 ## 本次同步（2026-10-26，上游 3.3.3 → 3.3.4）
 
