@@ -53,6 +53,30 @@ internal object AgentBatchToolCatalog {
         return result
     }
 
+    /**
+     * wrapper 自身参数是否合法；返回 null 表示结构可用。
+     * 这些检查必须在任何子调用执行前完成，否则模型给错参数时会先执行一部分再失败。
+     */
+    fun problem(argumentsJson: String): String? {
+        val arguments = runCatching { JSONObject(argumentsJson) }.getOrNull()
+            ?: return "arguments 不是合法的 JSON 对象"
+        val calls = arguments.optJSONArray("calls") ?: return "缺少 calls 数组"
+        if (calls.length() == 0) return "calls 至少需要 1 项"
+        if (calls.length() > MAX_CALLS) return "calls 最多 $MAX_CALLS 项，当前 ${calls.length()} 项"
+        for (index in 0 until calls.length()) {
+            val call = calls.optJSONObject(index) ?: return "calls[$index]: 每一项都必须是对象"
+            if (call.optString("tool").isBlank()) return "calls[$index]: 缺少 tool"
+            if (call.optJSONObject("arguments") == null) return "calls[$index]: 缺少 arguments 对象"
+        }
+        val mode = arguments.optString("mode", "auto")
+        if (mode != "auto" && mode != "sequential") return "mode 只支持 auto 或 sequential"
+        val onError = arguments.optString("on_error", "")
+        if (onError.isNotEmpty() && onError != "stop" && onError != "continue") {
+            return "on_error 只支持 stop 或 continue"
+        }
+        return null
+    }
+
     fun calls(parent: AgentModelClient.ToolCall): List<AgentModelClient.ToolCall> {
         val calls = JSONObject(parent.argumentsJson).getJSONArray("calls")
         return (0 until calls.length()).map { index ->

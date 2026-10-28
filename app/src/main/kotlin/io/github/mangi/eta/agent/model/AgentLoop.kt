@@ -6,6 +6,7 @@ import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentModelInterruptedException
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
+import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutionException
@@ -40,6 +41,7 @@ internal class AgentLoop(
     private val onTranscript: (List<AgentModelClient.ConversationMessage>) -> Unit = {},
     private val purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
     private val roleplayContext: RoleplayRunContext? = null,
+    private val capabilitiesProvider: () -> AgentToolCapabilities = { AgentToolCapabilities(rootAvailable = false) },
     initialSupplementIndex: Int = 0,
 ) {
     data class Result(
@@ -54,6 +56,8 @@ internal class AgentLoop(
     )
 
     private var availableToolNames = emptySet<String>()
+    /** 本轮工具 Schema，用于 batch 子调用的执行前参数校验。 */
+    private var roundToolSchemas = JSONArray()
     private val accumulatedReasoning = StringBuilder()
     private val sensitiveToolCallIds = linkedSetOf<String>()
     private var pendingToolImageMessage: JSONObject? = null
@@ -113,6 +117,7 @@ internal class AgentLoop(
             availableToolNames = (0 until roundTools.length()).mapNotNullTo(mutableSetOf()) { index ->
                 roundTools.optJSONObject(index)?.optJSONObject("function")?.optString("name")
             }
+            roundToolSchemas = roundTools
             publishTranscript()
             if (purpose.allowsTools) context.compact()
             val requestMessages = AssistantScreenContextProjection.project(
@@ -442,15 +447,19 @@ internal class AgentLoop(
         toolCall: AgentModelClient.ToolCall,
     ): ToolOutcome {
         runController.throwIfCancelled()
-        if (toolCall.name !in availableToolNames) {
-            return rejectedToolOutcome(
-                round = round,
-                toolCall = toolCall,
-                code = "TOOL_NOT_AVAILABLE",
-                message = "工具未在本轮能力目录中提供，请使用当前可用工具",
-            )
-        }
         if (toolCall.name == AgentBatchToolCatalog.NAME) {
+            // wrapper 本身被能力/限制裁掉时也按参数层拒绝：模型看到的目录里没有它，说明本轮不允许。
+            if (toolCall.name !in availableToolNames) {
+                return rejectedToolOutcome(
+                    round = round,
+                    toolCall = toolCall,
+                    code = "INVALID_TOOL_ARGUMENTS",
+                    message = "batch 未在本轮能力目录中提供，请分别调用允许的工具",
+                )
+            }
+            AgentBatchToolCatalog.problem(toolCall.argumentsJson)?.let { problem ->
+                return rejectedToolOutcome(round, toolCall, "INVALID_TOOL_ARGUMENTS", problem)
+            }
             val arguments = JSONObject(toolCall.argumentsJson)
             val calls = AgentBatchToolCatalog.calls(toolCall)
             val sequential = arguments.optString("mode", "auto") == "sequential"
@@ -463,8 +472,7 @@ internal class AgentLoop(
                     call.name == AgentBatchToolCatalog.NAME -> "不能在 batch 中嵌套 batch"
                     !sequential && call.name !in AgentToolBatchPlanner.batchTools ->
                         "auto 模式只支持只读查询；需要执行此工具时请设置 mode=sequential"
-                    call.name !in availableToolNames -> "工具未在本轮能力目录中提供，请使用当前可用工具"
-                    else -> null
+                    else -> subcallProblem(call)
                 }
                 if (validation != null) return rejectedToolOutcome(round, toolCall,
                     "INVALID_TOOL_ARGUMENTS", "calls[$index]: $validation")
@@ -523,8 +531,41 @@ internal class AgentLoop(
                 stop = stop,
             ))
         }
+        if (toolCall.name !in availableToolNames) {
+            return rejectedToolOutcome(
+                round = round,
+                toolCall = toolCall,
+                code = "TOOL_NOT_AVAILABLE",
+                message = "工具未在本轮能力目录中提供，请使用当前可用工具",
+            )
+        }
         emitToolStarted(round, toolCall)
         return finishTool(round, toolCall, invokeTool(toolCall))
+    }
+
+    /**
+     * batch 子调用的执行前校验：目录可见性、Schema 必填项与 Root 身份能力。
+     * 返回 null 表示可以执行；同一批里任一项返回问题就整批拒绝，避免部分执行。
+     */
+    private fun subcallProblem(call: AgentModelClient.ToolCall): String? {
+        if (call.name !in availableToolNames) return "工具未在本轮能力目录中提供，请使用当前可用工具"
+        val function = (0 until roundToolSchemas.length()).firstNotNullOfOrNull { index ->
+            roundToolSchemas.optJSONObject(index)?.optJSONObject("function")
+                ?.takeIf { it.optString("name") == call.name }
+        }
+        val arguments = runCatching { JSONObject(call.argumentsJson) }.getOrNull()
+            ?: return "arguments 不是合法的 JSON 对象"
+        val required = function?.optJSONObject("parameters")?.optJSONArray("required")
+        if (required != null) {
+            for (index in 0 until required.length()) {
+                val key = required.optString(index)
+                if (!key.isNullOrBlank() && !arguments.has(key)) return "缺少必填参数 $key"
+            }
+        }
+        if (arguments.optString("identity") == "root" && !capabilitiesProvider().rootAvailable) {
+            return "identity=root 需要 Root 授权，当前未确认可用"
+        }
+        return null
     }
 
     private fun invokeTool(toolCall: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
