@@ -80,3 +80,19 @@
 # 分支返回了 null。debug 不优化、lambda 不合并时正常，故这里关闭优化阶段（保留 shrink 与混淆）。
 # 回退条件：升级 AGP/R8 或用不同工具链重建后实测工具调用正常，即可删除本行。
 -dontoptimize
+
+# 同一台一加（Android 16 / ColorOS）上，release 包混淆下面几个值对象后，
+# 运行期读出的 request / references 会变成 null，导致启动即崩溃（`-dontoptimize` 覆盖不到）：
+#   Cannot create an instance of class ...（ViewModel 反射创建）
+#   Caused by: NullPointerException at AgentFileReferencePolicy.titleSource(AgentFileReference.kt:28)
+#   修掉启动崩溃后渲染会话时：Collection.isEmpty() on a null object reference（ChatMessageItem.kt:429）
+# 源码里 parse() 的每条返回路径都传非空 request 与 emptyList()，构造器也有 Kotlin 非空检查，
+# 故判定为 release-only 的 R8/ART 兼容问题（与上游 issue #192 同类），不是业务逻辑缺陷。
+# 对照实测：release + -dontobfuscate 正常；只 keep 这 5 个类不混淆也正常；原样混淆必崩。
+# 取舍：仅这几个值对象不混淆，其余代码继续混淆，包体约 +0.3 MB。
+# 回退条件：升级 AGP/R8 后重新出 release 包、冷启动与会话渲染实测正常，即可删除本段。
+-keep class io.github.mangi.eta.agent.model.AgentFileReference { *; }
+-keep class io.github.mangi.eta.agent.model.AgentFileReferenceKind { *; }
+-keep class io.github.mangi.eta.agent.model.AgentFileReferencePrompt { *; }
+-keep class io.github.mangi.eta.agent.model.AgentFileReferencePolicy { *; }
+-keep class io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec { *; }
