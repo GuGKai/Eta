@@ -29,7 +29,11 @@ class AgentExecutionServiceTest {
         val context = RuntimeEnvironment.getApplication()
         val leaseId = "test:terminal-session"
         assertTrue(AgentExecutionService.acquire(context, leaseId) {})
-        AgentExecutionService.updateRunStatus(context, AgentOverlayStatus.Reasoning, activeRunCount = 1)
+        AgentExecutionService.updateRunStates(
+            context,
+            listOf(ExecutionRunNotice(runId = "test:run", status = AgentOverlayStatus.Reasoning)),
+            taskCount = 1,
+        )
         shadowOf(Looper.getMainLooper()).idle()
         val controller = Robolectric.buildService(AgentExecutionService::class.java).create()
         try {
@@ -40,7 +44,7 @@ class AgentExecutionServiceTest {
                 assertEquals(context.getString(R.string.overlay_reasoning), notification.extras.getString("android.shortCriticalText"))
             }
 
-            AgentExecutionService.updateRunStatus(context, null, activeRunCount = 0)
+            AgentExecutionService.updateRunStates(context, emptyList(), taskCount = 0)
             shadowOf(Looper.getMainLooper()).idle()
             val remaining = context.getSystemService(NotificationManager::class.java).activeNotifications.single().notification
             assertFalse(remaining.extras.getBoolean("android.requestPromotedOngoing"))

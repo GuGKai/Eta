@@ -84,7 +84,6 @@ internal object RuntimeConfigRepository {
             thinkingEnabled = effort.enablesReasoning,
             reasoningEffort = effort,
             autoCompactionEnabled = primaryConfig.autoCompactionEnabled,
-            supportsSearchSuggestions = false,
         )
     }
 

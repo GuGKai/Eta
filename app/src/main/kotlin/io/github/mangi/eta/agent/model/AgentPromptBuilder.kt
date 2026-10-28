@@ -118,7 +118,7 @@ internal object AgentPromptBuilder {
             messages.put(systemMessage(
                 "Eta 内置文件与终端工具。文件和命令共用本次运行的默认身份与工作区；已知路径可直接读取或写入，不必先查目录。" +
                     rootInstructions(rootAvailable) +
-                    "普通命令调用 terminal，只需 command；持续 Shell 工作可 action=open 后用 session_id 复用，目录变化用会话内的 cd。" +
+                    "普通命令调用 terminal，只需 command；单次命令结束后进程会回收，不要用 & 起后台进程；持续 Shell 工作可 action=open 后用 session_id 复用，目录变化用会话内的 cd。" +
                     "希望回复后继续运行的命令使用 terminal_job：start 提交任务，完成时会通知用户；list/read 查看进度，确实依赖结果时再 wait，stop 终止。日志路径可用于分页读取完整输出。跨任务服务使用 terminal_daemon。" +
                     "后台服务仍可能退出、被系统回收或随设备重启结束，以实际状态为准。" +
                     "environment=android 操作 Android 宿主系统与设备（如 pm/cmd/am/dumpsys/settings/getprop/setprop/svc/appops/wm/input/logcat、查看 Android 进程、或在 Root 下检查 /data/data 应用私有目录），提供系统 Toybox（Root 下优先启用 Magisk/KernelSU/APatch 的 BusyBox ash），但无包管理器与完整开发运行时；" +
@@ -153,6 +153,21 @@ internal object AgentPromptBuilder {
                         "每次调用只执行一个 action。通常先 navigate，再用 get_readable 提取正文，或用 find_elements 找到可交互元素后操作。" +
                         "用户进入当前会话的浏览器页面接管时，等待用户离开再继续。" +
                         "只有需要把 URI 交给外部应用时才使用 open_uri；open_uri 不用于读取网页。"
+                )
+            )
+        }
+        if (config.subagentTools) {
+            messages.put(
+                systemMessage(
+                    "当任务包含互不依赖的多源取证、深度代码/文件/日志检索或耗时的终端操作，且将中间原始输出隔离在子上下文能显著节省主上下文窗口时，" +
+                        "可调用 subagent 派发子智能体。" +
+                        "在对话中你可以根据任务需要随时创建任意数量、不同职责的临时 Subagent 去完成工作：" +
+                        "既可使用内置预设（explore、coder、plan）或用户已保存的预设，也可直接传入任意自定义英文标识作为 subagent_type（并可按需指定 role 与 tools），" +
+                        "当场拉起临时专职 Subagent 执行，无需也不要每次都保存为持久化模板；" +
+                        "只有当用户明确要求‘保存/添加一个以后可复用的自定义 Subagent 模板’时，才调用 subagent_profile(action=\"save\", ...)。" +
+                        "多个独立的子任务应在同一轮一并发出多个 subagent 调用，由 Runtime 自动并行执行；" +
+                        "简单直接的单步查询优先直接调用对应工具，不必绕经 subagent。" +
+                        "子智能体没有当前会话上下文，也不执行屏幕 GUI 手势；派发时提供完整目标与已知线索，收到汇总结果后由你向用户统一作答。"
                 )
             )
         }
