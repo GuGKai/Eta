@@ -2,9 +2,25 @@
 
 - 上游基线：**v3.3.5**（`Mangi-11/Eta` @ `6bedba98`，2026-10-28 合并）
 - 本地工作分支：`feat/local`（单一工作分支）
-- 最后更新：2026-10-28
-- 出包版本：versionCode `2026102803`，versionName `3.3.5`
+- 最后更新：2026-10-29
+- 出包版本：versionCode `2026102901`，versionName `3.3.5`
 - 本次同步备份分支：`backup/pre-sync-20261028-1325-main`、`backup/pre-sync-20261028-1325-feat-local`（长期保留）
+
+## 修复：release 包启动即崩（2026-10-29）
+
+3.3.5 release 包装机后点图标闪退（同一份源码的 debug 包正常），用本次构建的 mapping retrace 出两个 NPE，
+都指向 `AgentFileReferencePrompt` 实例的 `request`／`references` 在 release 包里为 null：
+
+- 启动阶段：`Cannot create an instance of class ...`（ViewModel 反射创建）→ `AgentFileReferencePolicy.titleSource(AgentFileReference.kt:28)`，调用方 `AgentAppState.refreshConversationSummaries`
+- 修掉启动崩溃后、渲染会话时：`boolean java.util.Collection.isEmpty() on a null object reference`（`ChatMessageItem.kt:429`）
+
+源码 `AgentFileReferencePromptCodec.parse()` 的每条返回路径都传非空 `request` 与 `emptyList()`，构造器也有 Kotlin 非空检查，
+可排除业务逻辑缺陷。对照实测：原 release 启动崩 / release + `-dontobfuscate` 正常 / release 只对这几个类 `-keep` 也正常，
+判定为 release-only 的 R8 混淆问题，`-dontoptimize` 覆盖不到（不同于 3.3.4 的 lambda 合并问题）。
+
+修复：`app/proguard-rules.pro` 末尾新增 5 条 `-keep class io.github.mangi.eta.agent.model.AgentFileReference{,Kind,Prompt,Policy,PromptCodec}`，
+其余代码继续混淆，包体约 +0.3 MB。同类问题在 release 上已出现两次（3.3.4 用 `-dontoptimize` 兜过、3.3.5 需要本段），
+建议连同回归步骤一起反馈上游 `Mangi-11/Eta`（同类 issue #192）。
 
 ## 本次同步（2026-10-28，上游 3.3.4 → 3.3.5）
 
