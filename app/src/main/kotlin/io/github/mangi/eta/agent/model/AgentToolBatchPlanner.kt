@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
 import org.json.JSONObject
 
 /** Independent reads may overlap; all other calls form an execution barrier. */
@@ -41,13 +42,28 @@ internal object AgentToolBatchPlanner {
             }
         }
 
-        calls.forEach { call ->
+        var index = 0
+        while (index < calls.size) {
+            val call = calls[index]
+            // 同一轮里连续的 subagent 调用互不抢占屏幕与记忆锁，按上游语义整段并发派发；
+            // 与只读查询不同，它们不是单条调用成段，必须聚成一批才能真并行。
+            if (call.name == AgentSubagentToolCatalog.TOOL_NAME) {
+                val run = mutableListOf<AgentModelClient.ToolCall>()
+                while (index < calls.size && calls[index].name == AgentSubagentToolCatalog.TOOL_NAME) {
+                    run += calls[index]
+                    index += 1
+                }
+                flushParallel()
+                segments += Segment(parallel = run.size > 1, calls = run.toList())
+                continue
+            }
             if (isParallelSafe(call)) {
                 parallelRun += call
             } else {
                 flushParallel()
                 segments += Segment(parallel = false, calls = listOf(call))
             }
+            index += 1
         }
         flushParallel()
         return segments
