@@ -347,12 +347,13 @@ internal class AgentLoop(
         val segments = if (parallel) AgentToolBatchPlanner.plan(toolCalls) else
             listOf(AgentToolBatchPlanner.Segment(parallel = false, calls = toolCalls))
         for (segment in segments) {
-            // Bounded waves prevent queued work from starting beyond a pause/cancellation.
-            for (wave in segment.calls.chunked(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS)) {
-                // 上游 Subagent 段：同一批里连续的 subagent 调用互不抢占屏幕，可并发派发。
-                val subagentWave = wave.size > 1 &&
-                    wave.all { it.name == AgentSubagentToolCatalog.TOOL_NAME }
-                if ((segment.parallel || subagentWave) && wave.size > 1 && stop == null && !stopOnError &&
+            // 整段 subagent 由 planner 聚成一批（上游同轮并发派发语义），不再按并发上限切碎；
+            // 其它段仍按有界 wave 推进，避免排队的工作越过暂停/取消点。
+            val subagentBatch = segment.calls.all { it.name == AgentSubagentToolCatalog.TOOL_NAME }
+            val waves = if (segment.parallel && subagentBatch) listOf(segment.calls)
+            else segment.calls.chunked(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS)
+            for (wave in waves) {
+                if (segment.parallel && wave.size > 1 && stop == null && !stopOnError &&
                     !runController.hasPendingSteering
                 ) {
                     executeParallelTools(round, wave, onBeforeCall, ::record)
