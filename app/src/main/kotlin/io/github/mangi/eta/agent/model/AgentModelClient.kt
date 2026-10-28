@@ -220,6 +220,7 @@ internal object AgentModelClient {
             messages = messages,
             tools = tools,
             provider = provider,
+            capabilitiesProvider = capabilitiesProvider,
             // 目录在运行内只增不减，可见不再等于可用：执行前用同一规则复核，
             // 中途失去的能力返回与目录过滤一致的错误码，而不是让底层接口给出含糊的失败。
             // 自动复盘这类受限目录再叠一层白名单：名单外的调用直接按目录拒绝处理。

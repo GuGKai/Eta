@@ -139,7 +139,8 @@ class AgentBatchToolTest {
             item("launch_app", JSONObject().put("package_name", "com.example.app")),
             write("done"),
             item("read_file", JSONObject().put("path", "note.txt")),
-            item("tap", JSONObject().put("x", 20).put("y", 30)),
+            // coordinate_space 在 tap 的 Schema 里是必填项，测试数据按真实参数补齐。
+            item("tap", JSONObject().put("x", 20).put("y", 30).put("coordinate_space", "normalized")),
             item("terminal", JSONObject().put("action", "exec").put("command", "true")),
             item("mcp_example", JSONObject().put("value", "known")),
         )
