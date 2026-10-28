@@ -1,10 +1,45 @@
 # Eta 本地改动清单（fork: GuGKai/Eta）
 
-- 上游基线：**v3.3.4**（`Mangi-11/Eta` @ `de12fc3`，2026-10-26 合并）
+- 上游基线：**v3.3.5**（`Mangi-11/Eta` @ `6bedba98`，2026-10-28 合并）
 - 本地工作分支：`feat/local`（单一工作分支）
 - 最后更新：2026-10-28
-- 出包版本：versionCode `2026102614`，versionName `3.3.4`
-- 本次同步备份分支：`backup/pre-sync-20261026-1311-feat-local`（同步前 `feat/local`=`031ed3f`，长期保留）
+- 出包版本：versionCode `2026102802`，versionName `3.3.5`
+- 本次同步备份分支：`backup/pre-sync-20261028-1325-main`、`backup/pre-sync-20261028-1325-feat-local`（长期保留）
+
+## 本次同步（2026-10-28，上游 3.3.4 → 3.3.5）
+
+上游 6 个提交（`d1012a0a`…`6bedba98`）：Subagent 并发派发与独立模型配置、运行浮窗前台策略与结果卡自动收起、
+后台任务 Live Updates 与 GUI 控制权解耦（API 36 通知提升）、工具结果摘要拆分与时间位置展示、Subagent 测试约定、3.3.5 版本。
+118 个本地提交全部重放；本轮上游**没有数据库 schema 变更**，不需要写迁移。
+
+### 冲突处理（9 个文件）
+
+| 文件 | 处理 |
+|---|---|
+| `AgentExecutionService.kt` | 上游改用 `SDK_INT >= BAKLAVA` + `extras["android.requestPromotedOngoing"]`，彻底替代本地「36.1 → 36.0 门槛」补丁 → 丢弃该本地提交；短文本仍用本地 `liveTextLabel(...)` |
+| `AgentRuntimeService.kt` | 本地 `instance` 统一为上游 `activeInstance`；保留本地「每个 run 一张通知卡」`updateRunStates(notices)` 与 `pauseFromNotification(runId)`，并入上游 GUI 解耦逻辑 |
+| `AgentModelClient.kt` | 工具目录过滤改三段串联：`restrictedToolNames` → `AgentBatchToolCatalog.project` → 上游 `toolFilter`；`ToolResult` 同时保留上游 `command` 与本地 `stop` |
+| `AgentLoop.kt` | 以本地 steering／批量／checkpoint 版 `executeToolBatch` 为骨架，合入上游 Subagent 并发：wave 全为 `subagent` 时走本地线程池并行；补回 `command = result.command` |
+| `SettingsDataStore.kt` | 上游 `subagentSettings*` 与本地会话工作区并存 |
+| `AgentRuntimeSession.kt` | 保留本地 `recoveryProjection()` 命名 + 上游 `SubagentProgress` 去重 |
+| `AgentEventRecoveryProjection.kt` | 合并为单一 `recoveryProjection`；本地已删除网页建议事件，故不再过滤 `SearchSuggestions` |
+| `AgentPromptBuilder.kt` | 保留本地 memory_write 措辞；补回上游 Subagent 系统提示、终端 `common_tools`／`profiles` 说明与「不要用 & 起后台进程」 |
+| `app/build.gradle.kts` | versionCode 按约定先取上游再递增 |
+
+丢弃的本地提交：`e3cd36b4`（流体云门槛 36.1 → 36.0），被上游 `2c648690` 覆盖。
+
+### 编译与测试
+
+- `:app:compileReleaseKotlin` 通过（仅既有 deprecation 警告）。
+- 单测 1953 个：492 失败全部落在两类，均非本轮引入——① 本机 aarch64 跑不了 Robolectric（含上游新增的 `SubagentTest`、`AgentRuntimeScreenOnTest`）；
+  ② `AgentBatchToolTest` 6 个既有失败（在 `backup/pre-sync-20261028-1325-feat-local` 上同样失败，已用 worktree 复核）。
+- 为让上游新增测试可编译，`AgentExecutionServiceTest` 的 `updateRunStatus` 调用改为本地 `updateRunStates(notices)`。
+
+### 注意
+
+- 本地删除过 `supportsSearchSuggestions` 字段与 `AgentEvent.SearchSuggestions`，上游 `SubagentExecutor`／`RuntimeConfigRepository` 的对应传参已删除；下次上游再动这块要一起看。
+- 本地裁剪 `MainActivity`（拆分版）曾是上游改动最容易丢的点：`startedInstances`／`isInForeground` 这次是手工补回的，`AgentRuntimeService` 依赖它判断 Eta 是否前台。
+- 用整文件 `git checkout --theirs/--ours` 解冲突会丢该文件里其它已自动合并的上游改动，本轮 `AgentPromptBuilder`、`MainActivity` 都踩到，必须事后逐条比对。
 
 ## 本轮入库（2026-10-28，工作区遗留改动一并提交）
 
