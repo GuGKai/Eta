@@ -3,7 +3,7 @@
 - 上游基线：**v3.3.5**（`Mangi-11/Eta` @ `6bedba98`，2026-10-28 合并）
 - 本地工作分支：`feat/local`（单一工作分支）
 - 最后更新：2026-10-28
-- 出包版本：versionCode `2026102802`，versionName `3.3.5`
+- 出包版本：versionCode `2026102803`，versionName `3.3.5`
 - 本次同步备份分支：`backup/pre-sync-20261028-1325-main`、`backup/pre-sync-20261028-1325-feat-local`（长期保留）
 
 ## 本次同步（2026-10-28，上游 3.3.4 → 3.3.5）
@@ -31,9 +31,31 @@
 ### 编译与测试
 
 - `:app:compileReleaseKotlin` 通过（仅既有 deprecation 警告）。
-- 单测 1953 个：492 失败全部落在两类，均非本轮引入——① 本机 aarch64 跑不了 Robolectric（含上游新增的 `SubagentTest`、`AgentRuntimeScreenOnTest`）；
-  ② `AgentBatchToolTest` 6 个既有失败（在 `backup/pre-sync-20261028-1325-feat-local` 上同样失败，已用 worktree 复核）。
+- 单测 1953 个：486 失败全部是本机环境造成的 Robolectric 不可用（`The Robolectric native runtime is not supported on Linux (aarch64)`、
+  `SystemClock not mocked` 一类）与其它既有环境性失败；这些在同步前的备份分支上同样失败。
+- `AgentBatchToolTest` 22/22 通过（修复前 6 个失败，见下节）。
 - 为让上游新增测试可编译，`AgentExecutionServiceTest` 的 `updateRunStatus` 调用改为本地 `updateRunStates(notices)`。
+
+### 修掉的既有缺陷：batch 整批预检（2026-10-28）
+
+`batch` 的注释一直写着「执行前预检整批」，但实现只检查了「不能嵌套 batch / auto 只读 / 工具在目录内」，
+**没有校验子调用参数**，早前删掉的 `toolCallValidator` 也没补回，于是：
+
+- 子调用缺必填参数（如 `search_apps` 缺 `query`）时，前面的调用已经执行，最后才失败；
+- `calls` 为空 / 超过 8 项 / `mode`、`on_error` 非法时，wrapper 不报 `INVALID_TOOL_ARGUMENTS`（结果里甚至没有 `code`）；
+- `read_file` 带 `identity=root` 而当前没有 Root 授权时，预检不拦；
+- wrapper 被能力或限制过滤掉时返回 `TOOL_NOT_AVAILABLE`，与本轮目录语义不一致。
+
+修法（`AgentBatchToolCatalog.problem` + `AgentLoop.subcallProblem`）：
+
+1. wrapper 自身：`calls` 非空、≤ `MAX_CALLS`、每项有 `tool` 与 `arguments` 对象、`mode` ∈ {auto, sequential}、`on_error` ∈ {stop, continue}；
+2. 子调用：目录可见性 + 本轮 Schema 的 `required` 必填项 + `identity=root` 需要 `capabilitiesProvider().rootAvailable`；
+3. 任一项返回问题 → 整批 `INVALID_TOOL_ARGUMENTS`（子调用带 `calls[N]:` 前缀），一项都不执行；
+4. wrapper 不在本轮目录时同样按参数层拒绝（`INVALID_TOOL_ARGUMENTS`），不再是 `TOOL_NOT_AVAILABLE`。
+
+`AgentLoop` 因此多了一个 `capabilitiesProvider` 构造参数（默认 `rootAvailable = false`），由 `AgentModelClient.complete` 透传。
+`AgentBatchToolTest` 里 `sequentialModeAdmitsGuiFilesTerminalAndMcp...` 的 `tap` 参数补了 `coordinate_space`：该字段在 Schema 里是必填，
+原测试数据不符合真实工具契约，不是放宽校验放过去的。
 
 ### 注意
 
