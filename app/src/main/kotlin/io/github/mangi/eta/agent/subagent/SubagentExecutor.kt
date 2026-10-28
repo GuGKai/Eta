@@ -155,7 +155,6 @@ internal class SubagentExecutor(
         val subagentConfig = resolvedConfig.copy(
             systemPrompt = profile.buildSystemPrompt(),
             subagentTools = false,
-            supportsSearchSuggestions = false,
         )
 
         return try {

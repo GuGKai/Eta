@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.AppearanceThemeMode
@@ -22,6 +23,8 @@ import io.github.mangi.eta.ui.app.AgentAppRoot
 import io.github.mangi.eta.ui.app.AgentAppTheme
 import io.github.mangi.eta.ui.app.PredictiveBackController
 import io.github.mangi.eta.ui.app.installStartupSplash
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -102,6 +105,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        startedInstances.add(this)
+        isInForeground = true
+        AgentRuntimeService.onEtaUiVisibilityChanged()
+    }
+
+    override fun onStop() {
+        startedInstances.remove(this)
+        isInForeground = startedInstances.isNotEmpty() || isChangingConfigurations
+        AgentRuntimeService.onEtaUiVisibilityChanged()
+        super.onStop()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val fromLauncher = intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)
@@ -111,6 +128,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        startedInstances.remove(this)
+        isInForeground = startedInstances.isNotEmpty() || isChangingConfigurations
         AndroidAgentLogger.info(
             "Agent UI destroyed: task=$taskId changing_configuration=$isChangingConfigurations finishing=$isFinishing",
         )
@@ -162,6 +181,12 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private val startedInstances = Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
+
+        @Volatile
+        internal var isInForeground: Boolean = false
+            private set
+
         const val ACTION_OPEN_TERMINAL = "io.github.mangi.eta.action.OPEN_TERMINAL"
         /** 运行浮层的结果卡片回到本体：App 发起的 run 带会话 ID，直接打开该会话。 */
         const val ACTION_OPEN_CONVERSATION_ID = "io.github.mangi.eta.action.OPEN_CONVERSATION_ID"
