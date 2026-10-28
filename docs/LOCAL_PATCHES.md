@@ -57,6 +57,31 @@
 `AgentBatchToolTest` 里 `sequentialModeAdmitsGuiFilesTerminalAndMcp...` 的 `tap` 参数补了 `coordinate_space`：该字段在 Schema 里是必填，
 原测试数据不符合真实工具契约，不是放宽校验放过去的。
 
+### 修掉的合并回归：Subagent 同轮并发被吞掉（2026-10-28）
+
+合上游 `d1012a0a` 时，`AgentLoop` 的 subagent 并发我用了「同一个 wave 全是 subagent 才走线程池」的判断，
+但 `AgentToolBatchPlanner.plan()` 对非只读工具是**每条调用单独成段**，wave 恒为 1，条件永远不成立——
+上游这版的核心能力「同轮多个 subagent 自动并行派发」实际退化成串行执行，编译和大多数测试都发现不了。
+
+- 发现方式：上游 `SubagentTest` 的并发用例跑在本机永远失败（Robolectric 不支持 aarch64），
+  所以把它的并发语义搬到无 Robolectric 的 `AgentSubagentConcurrencyTest`，首跑就暴露。
+- 修法：`plan()` 把连续的 subagent 调用聚成一个 `parallel` 段；`AgentLoop.executeOrderedTools`
+  对该段不再按 `MAX_CONCURRENT_CALLS` 切碎，整段一次交给线程池并发执行，结果顺序仍按调用顺序回收。
+- 有效性验证：临时关掉聚段分支后 `AgentSubagentConcurrencyTest` 失败，恢复后通过——测试不是摆设，
+  也证明修复前的实现确实是串行。
+
+### 本次完整性核查（安装前，2026-10-28）
+
+不是「编译过就发」，而是核对了两个方向：
+
+1. **上游 6 个提交的新增行**：4441 行逐一在当前 HEAD 中查找，缺失 85 行，全部为有意替换
+   （本地改名 `instance`→`activeInstance`、每 run 多卡替代 `updateRunStatus`、`supportsSearchSuggestions`
+   与 `SearchSuggestions` 因本地已移除该能力、memory 措辞、versionCode 等），没有静默丢失。
+2. **本地 118 个提交的新增行**：13923 行逐一核对，缺失 26 行，均为有意改写
+   （变量改名、batch 预检重写、文档与版本号、测试参数补 `coordinate_space`）；
+   42 个「已删文件」全部是本地早就移除的 Gemini Interactions、网页建议、一圈即搜/HyperOS/ColorDirect 钩子，
+   在同步前的 `feat/local` 里就已经不存在，不是这次删的。
+
 ### 注意
 
 - 本地删除过 `supportsSearchSuggestions` 字段与 `AgentEvent.SearchSuggestions`，上游 `SubagentExecutor`／`RuntimeConfigRepository` 的对应传参已删除；下次上游再动这块要一起看。
