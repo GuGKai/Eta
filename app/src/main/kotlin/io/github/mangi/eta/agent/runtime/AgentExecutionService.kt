@@ -258,12 +258,10 @@ internal class AgentExecutionService : Service() {
             .setOnlyAlertOnce(true)
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         if (notice != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            // 流体云 / 实时活动卡片只保留标题、副标题与两个按钮。
-            // ProgressStyle 仍是申请 promoted ongoing 的必备样式（去掉就连提升资格都没有、只剩普通前台通知），
-            // 所以保留样式、但不再设置 indeterminate 或分段进度：卡片不绘制进度条。
-            builder
-                .setStyle(Notification.ProgressStyle())
-                .setShortCriticalText(liveTextLabel(content.title))
+            // 不设置任何 Notification.Style：本机 ColorOS 的流体云只要收到 promoted 请求就会绘制卡片，
+            // 而 ProgressStyle（哪怕是空实例）都会在卡片上画出进度条与左侧图标。
+            // 3.3.4 一直用「shortCriticalText + 提升请求」这条写法，卡片只有标题、副标题与两个按钮。
+            builder.setShortCriticalText(liveTextLabel(content.title))
             // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
             builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
