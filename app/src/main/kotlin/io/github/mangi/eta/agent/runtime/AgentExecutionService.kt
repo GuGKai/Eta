@@ -258,12 +258,12 @@ internal class AgentExecutionService : Service() {
             .setOnlyAlertOnce(true)
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
         if (notice != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            // 不设置任何 Notification.Style：本机 ColorOS 的流体云只要收到 promoted 请求就会绘制卡片，
+            // 不设置任何 Notification.Style：本机 ColorOS 的流体云只要收到提升请求就会绘制卡片，
             // 而 ProgressStyle（哪怕是空实例）都会在卡片上画出进度条与左侧图标。
-            // 3.3.4 一直用「shortCriticalText + 提升请求」这条写法，卡片只有标题、副标题与两个按钮。
+            // 3.3.4 一直用「shortCriticalText + setRequestPromotedOngoing」这条写法，
+            // 卡片只有标题、副标题与两个按钮，没有任何进度条。
             builder.setShortCriticalText(liveTextLabel(content.title))
-            // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
-            builder.extras.putBoolean("android.requestPromotedOngoing", true)
+            requestPromotedOngoing(builder)
         }
         if (notice != null) {
             // Agent 回答中：只保留 暂停(恢复) 与 停止任务 两个入口，各自绑定本卡片的 run。
@@ -282,6 +282,21 @@ internal class AgentExecutionService : Service() {
             )
         }
         return builder.build()
+    }
+
+    /**
+     * 申请把通知提升为 Live Update（流体云 / 实时活动）。
+     * 优先用公开 API [Notification.Builder.setRequestPromotedOngoing]：本机 Android 17（API 37）已提供，
+     * 3.3.4 用的就是它，且不需要任何 Notification.Style——这正是“有流体云、没进度条”的关键。
+     * 反射调用可避免在缺少该方法的旧系统上抛 NoSuchMethodError；失败时退回标准 extra。
+     */
+    private fun requestPromotedOngoing(builder: Notification.Builder) {
+        val applied = runCatching {
+            Notification.Builder::class.java
+                .getMethod("setRequestPromotedOngoing", java.lang.Boolean.TYPE)
+                .invoke(builder, true)
+        }.isSuccess
+        if (!applied) builder.extras.putBoolean("android.requestPromotedOngoing", true)
     }
 
     /** 第一行「当前正在做的事」：执行工具时用本地化工具名，其余阶段用状态文案。 */
