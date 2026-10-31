@@ -72,6 +72,8 @@ data class AgentMessageUi(
     val selectedCandidate: Int = 0,
     /** 本轮消耗金额（首尾余额差）；老消息为 null，底部操作栏不显示这一项。 */
     val roundCost: Double? = null,
+    /** 本轮用时（用户发出消息 → 整轮结束）；老消息为 null，底部操作栏不显示这一项。 */
+    val roundDurationMs: Long? = null,
 ) : AgentChatMessageUi
 
 enum class SystemNoticeCode(val wireValue: String) {
@@ -98,6 +100,8 @@ data class SystemNoticeMessageUi(
     val contextTokens: Int? = null,
     /** 仅运行期存在的进行中标记，不随消息持久化；恢复的历史通知始终视为已结束。 */
     val running: Boolean = false,
+    /** 这一轮从用户发出消息到中止（停止/失败）的用时；显示在停止位置。 */
+    val roundDurationMs: Long? = null,
 ) : AgentChatMessageUi
 
 @Immutable

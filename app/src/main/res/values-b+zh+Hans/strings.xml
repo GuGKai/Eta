@@ -197,7 +197,7 @@
   <string name="conversation_search_hint">搜索对话</string>
   <string name="conversation_search_action">搜索</string>
   <string name="conversation_top_bar_placeholder">新任务</string>
-  <string name="chat_round_cost">本轮消耗¥%1$s</string>
+  <string name="chat_round_cost">¥%1$s</string>
   <string name="conversation_empty">还没有对话</string>
   <string name="conversation_no_results">没有匹配的对话</string>
   <string name="conversation_rename_title">重命名对话</string>
@@ -414,6 +414,7 @@
   <string name="ui_about_feedback_title">问题反馈</string>
   <string name="ui_update_already_latest">当前已是最新版本</string>
   <string name="ui_update_check_failed">检查更新失败，请稍后重试</string>
+  <string name="ui_update_available_toast">已有新版本</string>
   <string name="ui_update_available_title">发现新版本</string>
   <string name="ui_update_available_message">最新版本 %1$s，当前版本 %2$s</string>
   <string name="ui_update_go_download">前往下载</string>

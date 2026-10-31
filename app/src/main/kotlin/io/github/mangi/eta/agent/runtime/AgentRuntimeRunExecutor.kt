@@ -89,7 +89,7 @@ internal class AgentRuntimeRunExecutor(
 
         // 失败清理需要在 try 外拿到会话 id。
         var memoryConversationId: String? = null
-        val result = try {
+        val rawResult = try {
             val contextWindow = request.config.knownContextWindow
             checkpointRecorder = AgentRunCheckpointRecorder.create(appContext, request)
             entrySurfaceGuard = EntrySurfaceGuard.from(
@@ -435,6 +435,10 @@ internal class AgentRuntimeRunExecutor(
             runCatching { guiRun?.close() }
             runCatching { browserBinding?.close() }
         }
+        // 清理也计入这一轮：界面要的是「从发出消息到彻底结束」的总时长。
+        val result = rawResult.copy(
+            elapsedMs = rawResult.elapsedMs.takeIf { it > 0 } ?: timing.runElapsedMs(),
+        )
 
         if (cancelled && session.isTerminal) {
             runCatching {

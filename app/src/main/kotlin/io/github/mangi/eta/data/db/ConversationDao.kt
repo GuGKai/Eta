@@ -206,6 +206,9 @@ internal interface ConversationDao : ChunkedTextDao {
     @Query("UPDATE conversation_messages SET round_cost = :cost WHERE conversation_id = :conversationId AND id = :messageId")
     suspend fun updateMessageRoundCost(conversationId: String, messageId: String, cost: Double)
 
+    @Query("UPDATE conversation_messages SET round_duration_ms = :durationMs WHERE conversation_id = :conversationId AND id = :messageId")
+    suspend fun updateMessageRoundDuration(conversationId: String, messageId: String, durationMs: Long)
+
     @Transaction
     suspend fun insertMessages(messages: List<ConversationMessageEntity>) {
         messages.forEach { row ->

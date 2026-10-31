@@ -88,6 +88,7 @@ internal object AgentRunArchiveStore {
             rewriteTargetMessageId = result.rewriteTargetMessageId,
             userImagePreviewsJson = JSONArray(userImagePreviews).toString(),
             createdAt = createdAt,
+            elapsedMs = result.elapsedMs,
         )
 
     private fun ArchivedRun.toEventEntities(archiveRunId: String): List<RuntimeArchiveEventEntity> =
@@ -114,6 +115,7 @@ internal object AgentRunArchiveStore {
                     content = run.content,
                     error = run.error,
                     errorCode = run.errorCode,
+                    elapsedMs = run.elapsedMs,
                     reasoningContent = run.reasoningContent,
                     contextSnapshot = AgentContextSnapshot.decode(run.contextSnapshotJson),
                     operation = run.operation,

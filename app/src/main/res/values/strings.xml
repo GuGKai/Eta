@@ -196,7 +196,7 @@
   <string name="conversation_search_hint">Search conversations</string>
   <string name="conversation_search_action">Search</string>
   <string name="conversation_top_bar_placeholder">New task</string>
-  <string name="chat_round_cost">Spent ¥%1$s</string>
+  <string name="chat_round_cost">¥%1$s</string>
   <string name="conversation_empty">No conversations yet</string>
   <string name="conversation_no_results">No matching conversations</string>
   <string name="conversation_rename_title">Rename conversation</string>
@@ -421,6 +421,7 @@
   <string name="ui_about_feedback_title">Feedback</string>
   <string name="ui_update_already_latest">Already on the latest version</string>
   <string name="ui_update_check_failed">Update check failed. Try again later</string>
+  <string name="ui_update_available_toast">A new version is available</string>
   <string name="ui_update_available_title">Update available</string>
   <string name="ui_update_available_message">Latest version %1$s, current version %2$s</string>
   <string name="ui_update_go_download">Download</string>

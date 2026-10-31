@@ -2389,6 +2389,45 @@ internal class AgentAppState(
         }
     }
 
+    /**
+     * 把本轮用时写到该会话最后一条消息上，随消息一起落库。
+     *
+     * 正常结束时最后一条是回答；被停止/失败时最后一条是「已停止」之类的系统提示，
+     * 用时跟着它显示，就是用户要求的「停在哪儿就在哪儿显示已用时间」。
+     */
+    private fun attachRoundDuration(conversationId: String, durationMs: Long) {
+        if (durationMs <= 0L) return
+        val conversation = conversationsById[conversationId] ?: return
+        val index = conversation.messages.indexOfLast {
+            it is AgentMessageUi || it is SystemNoticeMessageUi
+        }
+        if (index < 0) return
+        val target = conversation.messages[index]
+        val messages = conversation.messages.toMutableList()
+        when (target) {
+            is AgentMessageUi -> {
+                if (target.roundDurationMs != null) return
+                messages[index] = target.copy(roundDurationMs = durationMs)
+            }
+            is SystemNoticeMessageUi -> {
+                if (target.roundDurationMs != null) return
+                messages[index] = target.copy(roundDurationMs = durationMs)
+            }
+            else -> return
+        }
+        val message = messages[index]
+        updateConversation(conversationId, conversation.copy(messages = messages))
+        // 与消耗金额同样只精确更新这一行：整会话重写在大对话里很慢。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                EtaDatabase.get(appContext).conversationDao()
+                    .updateMessageRoundDuration(conversationId, message.id, durationMs)
+            }.onFailure { failure ->
+                AndroidAgentLogger.warn("Round duration persist failed: type=${failure.safeLogType()}")
+            }
+        }
+    }
+
     private fun isReplyRewrite(runId: String): Boolean =
         conversationsById[conversationIdForRun(runId)]?.roleplayMessages?.pendingRewrites?.containsKey(runId) == true
 
@@ -2527,6 +2566,17 @@ internal class AgentAppState(
             updateConversation(id, RoleplayConversationReducer.linkRun(it, runId))
         } }
         runMessageProjector.clearRun(runId)
+        // 本轮用时：从用户发出消息算到本轮结束（含工具往返）。正常结束写到最后一条回答；
+        // 中途停止/失败时同样记一笔，显示在停止位置。
+        // 优先用 Runtime 回报的实际耗时：浮窗/语音等外部入口的会话由它先跑完再导入，
+        // 界面这边根本没有发送时刻，只能靠它；本地聊天仍回退到发送时刻。
+        if (result.operation != AgentRuntimeWire.OP_COMPACT) {
+            val elapsed = result.elapsedMs.takeIf { it > 0 }
+                ?: runStore.startedAtMs(runId)?.let { startedAt ->
+                    System.currentTimeMillis() - startedAt
+                }
+            elapsed?.let { attachRoundDuration(completedConversationId, it) }
+        }
         refreshConversationSummaries()
         persistRunResult(runId, completedConversationId, result, acknowledgeRuntimeResult,
             explicitlyStoppedByUser, resumeQueue = true)

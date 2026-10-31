@@ -139,4 +139,6 @@ internal data class ConversationMessageEntity(
     @ColumnInfo(name = "tools_json") val toolsJson: String = "[]",
     /** 本轮（整个 run）的消耗金额；老会话为 null，界面据此决定显不显示。 */
     @ColumnInfo(name = "round_cost") val roundCost: Double? = null,
+    /** 本轮（整个 run）的总用时（毫秒）；老会话为 null，界面据此决定显不显示。 */
+    @ColumnInfo(name = "round_duration_ms") val roundDurationMs: Long? = null,
 )
