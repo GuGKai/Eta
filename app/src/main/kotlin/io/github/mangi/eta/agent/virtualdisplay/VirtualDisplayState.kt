@@ -49,6 +49,11 @@ internal data class VirtualDisplaySnapshot(
     val userControlling: Boolean = false,
     /** 是否正在执行从虚拟屏到物理主屏的破壁全屏放大动画。 */
     val materializingToMain: Boolean = false,
+    /**
+     * 任务已全屏搬到物理主屏、原虚拟屏仍完整保留：
+     * 用户离开该应用时把同一个 RootTask 原位搬回，胶囊小窗随之恢复。
+     */
+    val externalizedToMain: Boolean = false,
     /** 最新采集的画面帧。 */
     val frame: ImageBitmap? = null,
     val frameSequence: Long = 0L,

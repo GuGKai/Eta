@@ -18,6 +18,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.localizedText
 import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.ui.MainActivity
@@ -85,6 +86,12 @@ internal class AgentExecutionService : Service() {
             // runtime 不在或任务已结束时什么都不做，通知保持原样。
             ACTION_PAUSE -> AgentRuntimeService.pauseFromNotification(targetRunId)
             ACTION_RESUME -> AgentRuntimeService.resumeFromNotification()
+            ACTION_TOGGLE_VIRTUAL_CAPSULE -> {
+                VirtualDisplayController.toggleCapsuleVisible()
+                // 标题与副标题没变，但按钮文案要从「隐藏胶囊」翻成「显示胶囊」，
+                // 必须绕过按文本去重，否则这条通知根本不会重发。
+                refreshNotification(force = true)
+            }
             else -> {
                 ensureForeground()
                 refreshNotification()
@@ -110,7 +117,7 @@ internal class AgentExecutionService : Service() {
         }
     }
 
-    private fun refreshNotification() {
+    private fun refreshNotification(force: Boolean = false) {
         if (leases.closeOwnerIfIdle(owner)) {
             cancelPendingPublish()
             anchorAt = 0L
@@ -122,7 +129,7 @@ internal class AgentExecutionService : Service() {
             publishedCards = emptyMap()
             stopSelf()
         } else {
-            requestPublish()
+            requestPublish(force)
         }
     }
 
@@ -176,9 +183,13 @@ internal class AgentExecutionService : Service() {
      * 而一次工具调用会带来工具开始、工具结束、前台租约收放等多处刷新，短时间连发就会看到文字闪跳。
      * 这里：内容没变不发；距上次发布不足 [MIN_PUBLISH_INTERVAL_MS] 的变化合并成一次尾发。
      */
-    private fun requestPublish() {
+    private fun requestPublish(force: Boolean = false) {
         val cards = expectedCards(runNotices)
-        if (cards == publishedCards) return
+        if (!force && cards == publishedCards) return
+        if (force) {
+            publish(cards, force = true)
+            return
+        }
         val elapsed = SystemClock.uptimeMillis() - lastPublishAt
         if (elapsed >= MIN_PUBLISH_INTERVAL_MS) {
             publish(cards)
@@ -195,12 +206,12 @@ internal class AgentExecutionService : Service() {
     }
 
     /** 逐卡片 diff 发布：内容没变的卡片不重发，已结束任务的卡片单独撤销。 */
-    private fun publish(cards: Map<Int, RenderedText>) {
+    private fun publish(cards: Map<Int, RenderedText>, force: Boolean = false) {
         cancelPendingPublish()
         lastPublishAt = SystemClock.uptimeMillis()
         val manager = getSystemService(NotificationManager::class.java)
         for ((id, content) in cards) {
-            if (publishedCards[id] == content) continue
+            if (!force && publishedCards[id] == content) continue
             val index = id - NOTIFICATION_ID
             manager.notify(id, notification(content, runNotices.getOrNull(index), index))
         }
@@ -275,6 +286,20 @@ internal class AgentExecutionService : Service() {
                 ).build(),
             )
             builder.addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
+            // 第三个按钮：显示/隐藏虚拟屏微缩镜胶囊。按钮常驻，文案按当前状态翻转。
+            val toggleCapsuleState = Intent(this, AgentExecutionService::class.java).setAction(ACTION_TOGGLE_VIRTUAL_CAPSULE)
+            val toggleCapsule = PendingIntent.getService(
+                this, ACTION_REQUEST_BASE + index * 4, toggleCapsuleState,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val showCapsule = VirtualDisplayController.capsuleVisible.value
+            builder.addAction(
+                Notification.Action.Builder(
+                    null,
+                    getString(if (showCapsule) R.string.vd_capsule_hide else R.string.vd_capsule_show),
+                    toggleCapsule,
+                ).build(),
+            )
         } else if (leases.taskCount() > 0) {
             // 后台命令没有「插话」「暂停」的概念，只保留一个停止入口。
             builder.addAction(
@@ -321,6 +346,7 @@ internal class AgentExecutionService : Service() {
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
         private const val ACTION_PAUSE = "io.github.mangi.eta.action.PAUSE_USER_EXECUTION"
         private const val ACTION_RESUME = "io.github.mangi.eta.action.RESUME_USER_EXECUTION"
+        private const val ACTION_TOGGLE_VIRTUAL_CAPSULE = "io.github.mangi.eta.action.TOGGLE_VIRTUAL_CAPSULE"
 
         /** 状态栏胶囊右侧文字：固定 4 个中文字符宽度。 */
         private const val LIVE_TEXT_LIMIT = 4

@@ -53,6 +53,10 @@ internal object VirtualDisplayController {
     private val mutableSnapshots = MutableStateFlow(VirtualDisplaySnapshot.Inactive)
     val snapshots: StateFlow<VirtualDisplaySnapshot> = mutableSnapshots.asStateFlow()
 
+    /** 顶部胶囊是否显示虚拟屏微缩镜/装裱视窗：由执行通知的第三个按钮开关。 */
+    private val mutableCapsuleVisible = MutableStateFlow(true)
+    val capsuleVisible: StateFlow<Boolean> = mutableCapsuleVisible.asStateFlow()
+
     private val frameSequenceGenerator = AtomicLong(0L)
     private val touchSequenceGenerator = AtomicLong(0L)
 
@@ -74,11 +78,27 @@ internal object VirtualDisplayController {
     private var lastUiFrameAtElapsedMs: Long = 0L
     private val mutedPackages = linkedSetOf<String>()
 
+    /** 创建虚拟屏时的应用上下文，供全屏外置后自动搬回使用。 */
+    private var activeContext: Context? = null
+
+    /** 主屏最近一次获得前台焦点的包名，由无障碍窗口事件回报。 */
+    @Volatile
+    private var lastMainDisplayForegroundPackage: String = ""
+
+    private val restoreLock = Any()
+    private var restoreWatcher: Thread? = null
+    private var restoreFailureCount: Int = 0
+
     fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
         rootAvailable || lsposedAvailable
 
     fun setStageExpanded(expanded: Boolean) {
         highFrequencyPreview = expanded
+    }
+
+    /** 开关顶部胶囊的虚拟屏微缩镜显示；供执行通知第三个按钮调用。 */
+    fun toggleCapsuleVisible() {
+        mutableCapsuleVisible.value = !mutableCapsuleVisible.value
     }
 
     fun setUserControlling(controlling: Boolean) {
@@ -91,6 +111,9 @@ internal object VirtualDisplayController {
     }
 
     fun currentDisplayId(): Int = synchronized(lock) {
+        // 全屏破壁期间任务在物理主屏：Agent 的观测与手势必须跟随主屏，
+        // 但虚拟屏仍保留，搬回后 currentDisplayId 会自动回到原 displayId。
+        if (mutableSnapshots.value.externalizedToMain) return@synchronized Display.DEFAULT_DISPLAY
         activeDisplayId.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) } ?: Display.DEFAULT_DISPLAY
     }
 
@@ -107,6 +130,7 @@ internal object VirtualDisplayController {
             }
         }
         val appContext = context.applicationContext
+        activeContext = appContext
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
         synchronized(lock) {
             if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
@@ -187,6 +211,8 @@ internal object VirtualDisplayController {
         launchIntent: Intent,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
+        // 若上一轮仍停留在全屏外置状态，先把原任务搬回虚拟屏，再启动新应用。
+        restoreExternalizedToVirtualDisplay(rootAvailable)
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
         mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
@@ -236,6 +262,7 @@ internal object VirtualDisplayController {
                     appName = appName,
                     packageName = packageName,
                     materializingToMain = false,
+                    externalizedToMain = false,
                 )
             }
         }
@@ -251,6 +278,8 @@ internal object VirtualDisplayController {
         targetLabel: String,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
+        // 若上一轮仍停留在全屏外置状态，先把原任务搬回虚拟屏，再打开新 URI。
+        restoreExternalizedToVirtualDisplay(rootAvailable)
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
         val started = runCatching {
@@ -283,6 +312,7 @@ internal object VirtualDisplayController {
                 mutableSnapshots.value = current.copy(
                     appName = targetLabel.ifBlank { current.appName },
                     materializingToMain = false,
+                    externalizedToMain = false,
                 )
             }
         }
@@ -305,6 +335,7 @@ internal object VirtualDisplayController {
             mutableSnapshots.value = current.copy(
                 userControlling = false,
                 materializingToMain = true,
+                externalizedToMain = false,
             )
             highFrequencyPreview = true
             current
@@ -313,9 +344,10 @@ internal object VirtualDisplayController {
         val appContext = context.applicationContext
         restoreMutedPackages(appContext, rootAvailable)
 
-        val moved = moveVirtualTaskToMainDisplay(
+        val moved = moveVirtualTaskToDisplay(
             context = appContext,
-            displayId = snapshot.displayId,
+            sourceDisplayId = snapshot.displayId,
+            targetDisplayId = Display.DEFAULT_DISPLAY,
             packageName = snapshot.packageName,
             rootAvailable = rootAvailable,
         )
@@ -327,7 +359,138 @@ internal object VirtualDisplayController {
             Thread.currentThread().interrupt()
         }
 
-        release(appContext, rootAvailable)
+        if (!moved) {
+            // 搬运失败：沿用原行为释放虚拟屏，避免留下看不见的空画布。
+            release(appContext, rootAvailable)
+            return false
+        }
+
+        // C 方案：全屏后不销毁虚拟屏，只把任务挪到物理主屏；
+        // 用户离开该应用时由主屏窗口事件把同一个 RootTask 搬回，胶囊小窗立即恢复。
+        synchronized(lock) {
+            val current = mutableSnapshots.value
+            if (!current.active) return moved
+            mutableSnapshots.value = current.copy(
+                userControlling = false,
+                materializingToMain = false,
+                externalizedToMain = true,
+            )
+            highFrequencyPreview = false
+            restoreFailureCount = 0
+        }
+        return moved
+    }
+
+    /**
+     * 无障碍服务回报主屏前台包名。全屏外置期间，只要前台不再是原应用，
+     * 就把同一个 RootTask 搬回原虚拟屏，用户随时能回到胶囊小窗继续看。
+     */
+    fun onMainDisplayForegroundPackage(packageName: String) {
+        if (packageName.isBlank()) return
+        lastMainDisplayForegroundPackage = packageName
+        val snapshot = mutableSnapshots.value
+        if (!snapshot.active || !snapshot.externalizedToMain) return
+        // 系统窗口（下拉通知、锁屏、音量条）抢占焦点不代表用户离开了应用。
+        if (packageName == snapshot.packageName ||
+            packageName == "android" ||
+            packageName == "com.android.systemui"
+        ) {
+            return
+        }
+        scheduleRestoreToVirtualDisplay(packageName)
+    }
+
+    /**
+     * 手动把全屏外置的任务搬回虚拟屏（供胶囊/结果卡片等入口复用）。
+     */
+    fun restoreExternalizedToVirtualDisplay(
+        rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    ): Boolean {
+        val snapshot = mutableSnapshots.value
+        if (!snapshot.active || !snapshot.externalizedToMain) return false
+        return restoreToVirtualDisplayInternal(snapshot, rootAvailable)
+    }
+
+    private fun scheduleRestoreToVirtualDisplay(leftForPackage: String) {
+        synchronized(restoreLock) {
+            if (restoreWatcher?.isAlive == true) return
+            restoreWatcher = thread(name = "eta-vd-restore-watch", isDaemon = true) {
+                try {
+                    // 600ms 确认窗：系统弹窗、音量条等短暂抢占焦点时不要立刻搬回。
+                    try {
+                        Thread.sleep(600L)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return@thread
+                    }
+                    val snapshot = mutableSnapshots.value
+                    if (!snapshot.active || !snapshot.externalizedToMain) return@thread
+                    val foreground = lastMainDisplayForegroundPackage
+                    if (foreground.isNotBlank() && foreground == snapshot.packageName) return@thread
+                    AndroidAgentLogger.info(
+                        "Virtual display restore: $leftForPackage left foreground, " +
+                            "moving ${snapshot.packageName} back to display=${snapshot.displayId}",
+                    )
+                    val restored = restoreToVirtualDisplayInternal(
+                        snapshot = snapshot,
+                        rootAvailable = { RootAccess.isGranted },
+                    )
+                    if (!restored) {
+                        restoreFailureCount += 1
+                        AndroidAgentLogger.warn(
+                            "Virtual display restore failed: package=${snapshot.packageName} " +
+                                "attempt=$restoreFailureCount",
+                        )
+                        if (restoreFailureCount >= 3) {
+                            // 任务已被划掉或系统连续拒绝搬移：释放虚拟屏，避免留下不可见的后台画布。
+                            synchronized(lock) {
+                                if (mutableSnapshots.value.externalizedToMain) {
+                                    AndroidAgentLogger.info(
+                                        "Virtual display released after repeated restore failures",
+                                    )
+                                    releaseLocked(activeContext, { RootAccess.isGranted })
+                                }
+                            }
+                            restoreFailureCount = 0
+                        }
+                    } else {
+                        restoreFailureCount = 0
+                    }
+                } finally {
+                    synchronized(restoreLock) {
+                        if (restoreWatcher === Thread.currentThread()) restoreWatcher = null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun restoreToVirtualDisplayInternal(
+        snapshot: VirtualDisplaySnapshot,
+        rootAvailable: () -> Boolean,
+    ): Boolean {
+        val appContext = activeContext ?: return false
+        val moved = moveVirtualTaskToDisplay(
+            context = appContext,
+            sourceDisplayId = Display.DEFAULT_DISPLAY,
+            targetDisplayId = snapshot.displayId,
+            packageName = snapshot.packageName,
+            rootAvailable = rootAvailable,
+        )
+        if (!moved) return false
+        synchronized(lock) {
+            val current = mutableSnapshots.value
+            if (!current.active || !current.externalizedToMain) return moved
+            mutableSnapshots.value = current.copy(
+                userControlling = false,
+                materializingToMain = false,
+                externalizedToMain = false,
+            )
+            highFrequencyPreview = false
+        }
+        AndroidAgentLogger.info(
+            "Virtual display restored: package=${snapshot.packageName} display=${snapshot.displayId}",
+        )
         return moved
     }
 
@@ -478,6 +641,8 @@ internal object VirtualDisplayController {
     ) {
         highFrequencyPreview = false
         activeDisplayId = Display.DEFAULT_DISPLAY
+        activeContext = null
+        lastMainDisplayForegroundPackage = ""
         mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
 
         if (context != null && mutedPackages.isNotEmpty()) {
@@ -724,9 +889,10 @@ internal object VirtualDisplayController {
         return id
     }
 
-    private fun moveVirtualTaskToMainDisplay(
+    private fun moveVirtualTaskToDisplay(
         context: Context,
-        displayId: Int,
+        sourceDisplayId: Int,
+        targetDisplayId: Int,
         packageName: String,
         rootAvailable: () -> Boolean,
     ): Boolean {
@@ -744,25 +910,33 @@ internal object VirtualDisplayController {
                 4 -> getTasks.invoke(service, 40, false, false, Display.INVALID_DISPLAY)
                 else -> null
             } as? List<*> ?: emptyList<Any?>()
-            var targetTaskId = -1
+            var onSourceDisplayTaskId = -1
+            var samePackageTaskId = -1
             for (item in tasks) {
                 val info = item as? android.app.TaskInfo ?: continue
                 val taskDisplay = runCatching {
                     android.app.TaskInfo::class.java.getField("displayId").getInt(info)
                 }.getOrDefault(Display.INVALID_DISPLAY)
+                // 已在目标屏的任务不需要再搬，避免把主屏复用任务误判为本次搬运对象。
+                if (taskDisplay == targetDisplayId) continue
                 val topPkg = info.topActivity?.packageName ?: info.baseActivity?.packageName
-                if (taskDisplay == displayId || (packageName.isNotEmpty() && topPkg == packageName)) {
-                    targetTaskId = info.taskId
-                    if (taskDisplay == displayId) break
+                val packageMatches = packageName.isEmpty() || topPkg == packageName
+                if (taskDisplay == sourceDisplayId && packageMatches) {
+                    onSourceDisplayTaskId = info.taskId
+                    break
+                }
+                if (packageName.isNotEmpty() && topPkg == packageName && samePackageTaskId <= 0) {
+                    samePackageTaskId = info.taskId
                 }
             }
+            val targetTaskId = if (onSourceDisplayTaskId > 0) onSourceDisplayTaskId else samePackageTaskId
             if (targetTaskId > 0) {
                 val moveMethod = service.javaClass.getMethod(
                     "moveRootTaskToDisplay",
                     Int::class.javaPrimitiveType,
                     Int::class.javaPrimitiveType,
                 )
-                moveMethod.invoke(service, targetTaskId, Display.DEFAULT_DISPLAY)
+                moveMethod.invoke(service, targetTaskId, targetDisplayId)
                 true
             } else {
                 false
@@ -777,8 +951,9 @@ internal object VirtualDisplayController {
             val cmd = "CLASSPATH=${DeviceToolContract.quote(apkPath)} app_process /system/bin " +
                 "io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayCommandMain"
             val req = JSONObject()
-                .put("action", "move_to_main")
-                .put("display_id", displayId)
+                .put("action", "move_to_display")
+                .put("display_id", sourceDisplayId)
+                .put("target_display_id", targetDisplayId)
                 .put("package_name", packageName)
                 .toString() + "\n"
             val supervisor = ShellProcessSupervisor(rootAvailable = rootAvailable)
@@ -802,13 +977,13 @@ internal object VirtualDisplayController {
             }
         }
 
-        // 3. 兜底：以 SINGLE_TOP + NEW_TASK 在 DEFAULT_DISPLAY 唤起该应用
+        // 3. 兜底：以 SINGLE_TOP + NEW_TASK 在目标显示上唤起该应用
         if (packageName.isNotBlank()) {
             return runCatching {
                 val intent = context.packageManager.getLaunchIntentForPackage(packageName)
                     ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     ?: return@runCatching false
-                val options = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY)
+                val options = ActivityOptions.makeBasic().setLaunchDisplayId(targetDisplayId)
                 context.startActivity(intent, options.toBundle())
                 true
             }.getOrDefault(false)

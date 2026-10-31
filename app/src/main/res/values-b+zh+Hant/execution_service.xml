@@ -9,6 +9,8 @@
     <string name="execution_supplement">補充</string>
     <string name="execution_pause">暫停</string>
     <string name="execution_resume">恢復</string>
+    <string name="vd_capsule_hide">隱藏膠囊</string>
+    <string name="vd_capsule_show">顯示膠囊</string>
     <string name="execution_paused">暫停中</string>
     <string name="execution_chip_running">操作中</string>
     <string name="execution_chip_answering">回答中</string>

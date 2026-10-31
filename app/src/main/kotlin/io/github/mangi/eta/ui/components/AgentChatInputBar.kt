@@ -1,6 +1,5 @@
 package io.github.mangi.eta.ui.components
 
-import io.github.mangi.eta.ui.voice.SpeechDictationButton
 import io.github.mangi.eta.ui.voice.SpeechInputFeedback
 import io.github.mangi.eta.ui.voice.rememberSpeechInput
 import androidx.compose.ui.text.TextRange
@@ -452,11 +451,6 @@ internal fun AgentChatInputBar(
                         if (showContextUsage) {
                             AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
 
-                            Spacer(modifier = Modifier.width(2.dp))
-                        }
-
-                        if (recognitionEnabled) {
-                            SpeechDictationButton(dictation, enabled = !isCompacting)
                             Spacer(modifier = Modifier.width(2.dp))
                         }
 

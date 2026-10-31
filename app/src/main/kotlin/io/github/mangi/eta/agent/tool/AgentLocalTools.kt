@@ -481,6 +481,9 @@ internal class AgentLocalTools(
         val id = activeDisplayId
         if (!CanvasRoutingPolicy.isVirtualDisplay(id)) return Display.DEFAULT_DISPLAY
         val vd = VirtualDisplayController.snapshots.value
+        // 全屏破壁期间任务在物理主屏：Agent 的观测与手势必须落在主屏；
+        // 这里不重置 activeDisplayId，任务搬回虚拟屏后自动恢复。
+        if (vd.externalizedToMain) return Display.DEFAULT_DISPLAY
         return if (vd.active && vd.displayId == id) {
             id
         } else {

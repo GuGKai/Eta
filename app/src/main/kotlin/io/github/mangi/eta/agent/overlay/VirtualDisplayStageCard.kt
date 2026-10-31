@@ -147,6 +147,7 @@ internal fun VirtualDisplayStageSection(
     onTakeOver: () -> Unit,
     onResumeAuto: () -> Unit,
     onFullscreen: () -> Unit,
+    onCollapse: () -> Unit,
     onTapCanvas: (Float, Float, Boolean) -> Unit,
     onSwipeCanvas: (Float, Float, Float, Float, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -248,36 +249,17 @@ internal fun VirtualDisplayStageSection(
 
         Spacer(Modifier.height(10.dp))
 
-        // ── 极简画廊信息与接管栏 ───────────────────────────────────────────
+        // ── 接管栏：接管/继续、全屏、收起 三枚胶囊按钮，等分画布宽度 ──────────
+        // 用 weight 等分而不是各自按文字撑开，避免文字被挤到只剩一个字。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(PillGap, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val modeLabel = stringResource(
-                if (snapshot.userControlling || isPaused) {
-                    R.string.overlay_virtual_canvas_takeover
-                } else {
-                    R.string.overlay_virtual_canvas_auto
-                },
-            )
-            val footerTitle = if (snapshot.appName.isNotBlank()) {
-                "${snapshot.appName} · $modeLabel"
-            } else {
-                modeLabel
-            }
-            Text(
-                text = footerTitle,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
             StagePillButton(
+                modifier = Modifier.weight(1f),
                 label = stringResource(
                     if (snapshot.userControlling || isPaused) {
                         R.string.overlay_virtual_continue
@@ -291,12 +273,19 @@ internal fun VirtualDisplayStageSection(
                     if (snapshot.userControlling || isPaused) onResumeAuto() else onTakeOver()
                 },
             )
-            Spacer(Modifier.width(6.dp))
             StagePillButton(
+                modifier = Modifier.weight(1f),
                 label = stringResource(R.string.overlay_virtual_fullscreen),
                 highlighted = false,
                 accent = accent,
                 onClick = onFullscreen,
+            )
+            StagePillButton(
+                modifier = Modifier.weight(1f),
+                label = stringResource(R.string.overlay_virtual_collapse),
+                highlighted = false,
+                accent = accent,
+                onClick = onCollapse,
             )
         }
     }
@@ -308,6 +297,7 @@ private fun StagePillButton(
     highlighted: Boolean,
     accent: Color,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val bg = if (highlighted) {
         accent.copy(alpha = 0.16f)
@@ -320,7 +310,7 @@ private fun StagePillButton(
         MiuixTheme.colorScheme.onSurface
     }
     Box(
-        modifier = Modifier
+        modifier = modifier
             .height(27.dp)
             .clip(RoundedCornerShape(13.5.dp))
             .background(bg)
@@ -329,15 +319,17 @@ private fun StagePillButton(
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 11.dp),
+            .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             color = textColor,
-            fontSize = 11.5.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Visible,
         )
     }
 }
@@ -485,6 +477,8 @@ internal fun VirtualDisplayMaterializeOverlay(
 }
 
 private val StageMattePadding = 10.dp
+/** 三枚胶囊按钮之间的间距。 */
+private val PillGap = 4.dp
 private val StageCanvasCorner = 18.dp
 internal val StageCanvasHeight = 336.dp
 internal val StageCapsuleWidth = 296.dp

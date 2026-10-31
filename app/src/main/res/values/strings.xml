@@ -15,7 +15,7 @@
     <string name="overlay_virtual_takeover">Take over</string>
     <string name="overlay_virtual_continue">Continue</string>
     <string name="overlay_virtual_fullscreen">Fullscreen</string>
-    <string name="overlay_virtual_collapse">Collapse stage</string>
+    <string name="overlay_virtual_collapse">Collapse</string>
     <string name="overlay_result_open_virtual_app">Open screen</string>
   <string name="permission_local_network_title">Local network access</string>
   <string name="permission_local_network_summary">Allow models, MCP, the built-in browser and terminals to access your local network when needed. Internet access remains available without this permission.</string>

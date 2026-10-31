@@ -15,7 +15,7 @@
   <string name="overlay_virtual_takeover">接管</string>
   <string name="overlay_virtual_continue">继续</string>
   <string name="overlay_virtual_fullscreen">全屏</string>
-  <string name="overlay_virtual_collapse">收起画板</string>
+  <string name="overlay_virtual_collapse">收起</string>
   <string name="overlay_result_open_virtual_app">打开画面</string>
   <string name="browser_clear_shared_data">清除全部浏览器数据</string>
   <string name="browser_clear_shared_data_message">将关闭全部页面，清除 Cookie、缓存和网站数据，包括登录状态。</string>

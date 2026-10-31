@@ -34,6 +34,7 @@ import io.github.mangi.eta.agent.device.ScrollDirection
 import io.github.mangi.eta.agent.device.ScrollEvidence
 import io.github.mangi.eta.agent.device.ScrollEvidenceContract
 import io.github.mangi.eta.agent.device.ScrollMovementSource
+import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import io.github.mangi.eta.agent.device.RootScrollMotionContract
 import io.github.mangi.eta.core.AndroidAgentLogger
 import java.util.ArrayDeque
@@ -119,11 +120,14 @@ class AgentAccessibilityService : AccessibilityService() {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val packageName = event.packageName?.toString().orEmpty()
             val eventWindow = windows.firstOrNull { it.id == event.windowId }
-            if (eventWindow?.displayId == android.view.Display.DEFAULT_DISPLAY &&
-                packageName.isNotBlank() && packageName != lastTriggerPackage) {
-                lastTriggerPackage = packageName
-                if (packageName != this.packageName) {
-                    io.github.mangi.eta.agent.automation.AgentTaskScheduler.publish(this, "app_foreground", "${event.eventTime}:$packageName", JSONObject().put("packageName", packageName))
+            if (eventWindow?.displayId == android.view.Display.DEFAULT_DISPLAY && packageName.isNotBlank()) {
+                // 主屏前台变化回报给虚拟屏控制器：全屏破壁期间用户退出该应用，即把同一个任务搬回小窗。
+                VirtualDisplayController.onMainDisplayForegroundPackage(packageName)
+                if (packageName != lastTriggerPackage) {
+                    lastTriggerPackage = packageName
+                    if (packageName != this.packageName) {
+                        io.github.mangi.eta.agent.automation.AgentTaskScheduler.publish(this, "app_foreground", "${event.eventTime}:$packageName", JSONObject().put("packageName", packageName))
+                    }
                 }
             }
         }

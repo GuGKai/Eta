@@ -61,8 +61,9 @@ internal object VirtualDisplaySurfaceRegistry {
  * 支持两种模式：
  * 1. action="hold_display"：通过 ContentProvider 取得 Eta 进程的 Surface，以系统身份创建
  *    TRUSTED VirtualDisplay，输出 ETA_VD_READY:<displayId> 后保持存活；stdin 断开即自动释放。
- * 2. action="move_to_main"：查找指定 displayId 或 packageName 的 RootTask 并调用
- *    IActivityTaskManager.moveRootTaskToDisplay 迁移至物理主屏（DEFAULT_DISPLAY）。
+ * 2. action="move_to_display"（兼容 "move_to_main"）：查找指定 displayId 或 packageName
+ *    的 RootTask，并调用 IActivityTaskManager.moveRootTaskToDisplay 迁移到 target_display_id
+ *    （缺省为物理主屏 DEFAULT_DISPLAY）。全屏破壁与退出后搬回虚拟屏共用这段桥。
  */
 internal object VirtualDisplayCommandMain {
     const val READY_PREFIX = "ETA_VD_READY:"
@@ -84,8 +85,8 @@ internal object VirtualDisplayCommandMain {
             val request = JSONObject(firstLine)
             when (request.optString("action")) {
                 "hold_display" -> holdVirtualDisplay(request, reader)
-                "move_to_main" -> {
-                    val result = moveTaskToMainDisplay(request)
+                "move_to_main", "move_to_display" -> {
+                    val result = moveTaskToDisplay(request)
                     println(RESULT_PREFIX + result.toString())
                     exitProcess(0)
                 }
@@ -267,8 +268,9 @@ internal object VirtualDisplayCommandMain {
         }
     }.getOrNull()
 
-    private fun moveTaskToMainDisplay(request: JSONObject): JSONObject {
+    private fun moveTaskToDisplay(request: JSONObject): JSONObject {
         val displayId = request.optInt("display_id", Display.INVALID_DISPLAY)
+        val targetDisplayId = request.optInt("target_display_id", Display.DEFAULT_DISPLAY)
         val targetPackage = request.optString("package_name").trim()
         val atmClass = Class.forName("android.app.ActivityTaskManager")
         val service = atmClass.getMethod("getService").invoke(null)
@@ -297,7 +299,7 @@ internal object VirtualDisplayCommandMain {
                 ?: taskInfo.baseActivity?.packageName
                 ?: taskInfo.baseIntent.component?.packageName
                 ?: taskInfo.baseIntent.`package`
-            val displayMatches = displayId > 0 && taskDisplayId == displayId
+            val displayMatches = displayId != Display.INVALID_DISPLAY && taskDisplayId == displayId
             val pkgMatches = targetPackage.isNotEmpty() && topPkg == targetPackage
             if (displayMatches || pkgMatches) {
                 matchedTaskId = taskInfo.taskId
@@ -313,7 +315,7 @@ internal object VirtualDisplayCommandMain {
             it.name == "moveRootTaskToDisplay" && it.parameterCount == 2
         } ?: return JSONObject().put("ok", false).put("code", "MOVE_METHOD_NOT_FOUND")
 
-        moveMethod.invoke(service, matchedTaskId, Display.DEFAULT_DISPLAY)
+        moveMethod.invoke(service, matchedTaskId, targetDisplayId)
         runCatching {
             serviceClass.methods.firstOrNull {
                 it.name == "setFocusedRootTask" && it.parameterCount == 1
@@ -322,6 +324,6 @@ internal object VirtualDisplayCommandMain {
         return JSONObject()
             .put("ok", true)
             .put("task_id", matchedTaskId)
-            .put("target_display_id", Display.DEFAULT_DISPLAY)
+            .put("target_display_id", targetDisplayId)
     }
 }

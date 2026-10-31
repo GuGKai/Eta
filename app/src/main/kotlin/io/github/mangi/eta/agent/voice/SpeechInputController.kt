@@ -70,8 +70,11 @@ internal class SpeechInputController(
                 lease = SpeechAudioLease(context, interrupt = { cancel() })
                     .also { it.acquire(playback = false, muteMedia = true) }
                 val config = settings ?: SpeechSettingsRepository.settings()
-                if (!config.recognitionEnabled) return@launch
-                lease = SpeechAudioLease(context, interrupt = { cancel() }).also { it.acquire(playback = false) }
+                // 识别已关闭：连刚拿到的静音租约一起放开，否则媒体音量会一直停在 0。
+                if (!config.recognitionEnabled) {
+                    cancel()
+                    return@launch
+                }
                 val secrets = credentials ?: SpeechSettingsRepository.credentials(context)
                 validateSpeechSettings(config, secrets, synthesis = false)
                 val endpointSilenceMs = if (automaticEndpoint && !holdToTalk) config.autoSendSilenceMs else 0
