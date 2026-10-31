@@ -679,25 +679,25 @@ private fun AgentMessageBlock(
                             enabled = messageActionsEnabled,
                         )
                     }
-                    // 本轮消耗：整轮完整结束后写入；老会话没有这个值就不显示。
+                    // 本轮用时：紧跟删除按钮，只显示「多少分多少秒」，不加任何前缀文字。
                     // 间距与图标按钮之间保持同一条视觉留白（见 AnswerActionGap 的注释）。
-                    message.roundCost?.let { cost ->
+                    message.roundDurationMs?.let { duration ->
                         Text(
-                            text = stringResource(R.string.chat_round_cost, plainCost(cost)),
+                            text = plainDuration(duration),
                             modifier = Modifier.padding(start = AnswerTextGap),
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             style = MiuixTheme.textStyles.footnote1,
                             maxLines = 1,
                         )
                     }
-                    // 本轮用时：紧跟消耗之后，只显示「多少分多少秒」，不加任何前缀文字。
-                    // 金额没显示时（这轮余额没变化），前面就是删除按钮，补一样的 10dp 即可，
-                    // 否则会叠成 30dp，看着像「删除」和用时之间空了一倍。
-                    message.roundDurationMs?.let { duration ->
+                    // 本轮消耗：整轮完整结束后写入，排在本轮用时之后；老会话没有这个值就不显示。
+                    // 用时没显示时（老会话或本轮没记时），前面就是删除按钮，补一样的 10dp 即可，
+                    // 否则会叠成 30dp，看着像「删除」和金额之间空了一倍。
+                    message.roundCost?.let { cost ->
                         Text(
-                            text = plainDuration(duration),
+                            text = stringResource(R.string.chat_round_cost, plainCost(cost)),
                             modifier = Modifier.padding(
-                                start = if (message.roundCost != null) AnswerActionGap else AnswerTextGap,
+                                start = if (message.roundDurationMs != null) AnswerActionGap else AnswerTextGap,
                             ),
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             style = MiuixTheme.textStyles.footnote1,
