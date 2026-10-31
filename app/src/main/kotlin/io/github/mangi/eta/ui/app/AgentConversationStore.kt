@@ -433,6 +433,7 @@ internal object AgentConversationStore {
                         cachedTokens = usage?.cachedTokens,
                         requestDurationMs = usage?.requestDurationMs,
                         roundCost = roundCost,
+                        roundDurationMs = roundDurationMs,
                     )
                 }
             }
@@ -446,6 +447,7 @@ internal object AgentConversationStore {
                 resultSummary = detail,
                 contextTokens = contextTokens,
                 renderMarkdown = false,
+                roundDurationMs = roundDurationMs,
             )
 
             is ThinkingMessageUi -> ConversationMessageEntity(
@@ -505,6 +507,7 @@ internal object AgentConversationStore {
                     requestDurationMs = requestDurationMs,
                 ).takeUnless { it.isEmpty },
                 roundCost = roundCost,
+                roundDurationMs = roundDurationMs,
             )
 
             TYPE_SYSTEM_NOTICE -> SystemNoticeCode.fromWireValue(content)?.let { code ->
@@ -513,6 +516,7 @@ internal object AgentConversationStore {
                     code = code,
                     detail = resultSummary,
                     contextTokens = contextTokens,
+                    roundDurationMs = roundDurationMs,
                 )
             }
 

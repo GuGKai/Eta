@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 30,
+    version = 32,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -76,6 +76,8 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_27_28,
                         MIGRATION_28_29,
                         MIGRATION_29_30,
+                        MIGRATION_30_31,
+                        MIGRATION_31_32,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -234,6 +236,29 @@ internal abstract class EtaDatabase : RoomDatabase() {
         internal val MIGRATION_29_30 = Migration(29, 30) { database ->
             if (!database.columnExists("model_providers", "auth_mode")) {
                 database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
+            }
+        }
+
+        /**
+         * 31 → 32：归档表加「本轮耗时」列。
+         *
+         * 浮窗/语音入口的会话是 Runtime 先跑完再导入，界面这边不知道起点，
+         * 只能靠结果里带的耗时；不落这一列，导入时就丢了。
+         */
+        internal val MIGRATION_31_32 = Migration(31, 32) { database ->
+            if (!database.columnExists("runtime_archive_runs", "elapsed_ms")) {
+                database.execSQL("ALTER TABLE runtime_archive_runs ADD COLUMN elapsed_ms INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * 30 → 31：消息表加「本轮用时」列。
+         *
+         * 只加列、不回填：老会话该列为 null，界面据此不显示这一项。
+         */
+        internal val MIGRATION_30_31 = Migration(30, 31) { database ->
+            if (!database.columnExists("conversation_messages", "round_duration_ms")) {
+                database.execSQL("ALTER TABLE conversation_messages ADD COLUMN round_duration_ms INTEGER")
             }
         }
 

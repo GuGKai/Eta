@@ -259,6 +259,7 @@ internal fun ChatMessageItem(
                         }
                     },
                     renderMarkdown = false,
+                    roundDurationMs = message.roundDurationMs,
                 ),
                 assistantOverlay = false,
                 retainedStreamingState = null,
@@ -556,10 +557,6 @@ private fun AgentMessageBlock(
     onSelectCandidate: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    @Suppress("DEPRECATION")
-    val clipboardManager = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
-    var copied by remember(message.id) { mutableStateOf(false) }
     val keepStreamingMarkdown = remember(message.id) { message.isStreaming }
     DisposableEffect(retainedStreamingState) {
         retainedStreamingState?.attachContent()
@@ -581,12 +578,6 @@ private fun AgentMessageBlock(
         (streamingState == null || completedDocument != null)
     LaunchedEffect(retainedStreamingState, revealComplete, message.content) {
         retainedStreamingState?.revealedContent = message.content.takeIf { revealComplete }
-    }
-    LaunchedEffect(copied) {
-        if (copied) {
-            kotlinx.coroutines.delay(1_400)
-            copied = false
-        }
     }
 
     // 只对正在朗读的这条消息订阅句级进度，其余消息保持不重组。
@@ -670,19 +661,6 @@ private fun AgentMessageBlock(
                     .padding(top = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AnswerActionButton(
-                    icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                    contentDescription = stringResource(
-                        if (copied) R.string.copy_copied else R.string.copy_answer,
-                    ),
-                    onClick = {
-                        @Suppress("DEPRECATION")
-                        clipboardManager.setText(AnnotatedString(message.content))
-                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                        copied = true
-                    },
-                    tint = if (copied) MiuixTheme.colorScheme.primary else null,
-                )
                 if (allowSpeech) SpeechReadAloudButton(message.id, message.content)
                 if (showMessageActions) {
                     if (message.characterEditable) {
@@ -690,14 +668,6 @@ private fun AgentMessageBlock(
                             icon = Icons.Rounded.Edit,
                             contentDescription = stringResource(R.string.chat_edit_character_reply),
                             onClick = onEdit,
-                            enabled = messageActionsEnabled,
-                        )
-                    }
-                    TooltipBox(text = stringResource(R.string.ui_regenerate_2e1905), enabled = messageActionsEnabled) {
-                        AnswerActionButton(
-                            icon = Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.ui_regenerate_reply_84a7d9),
-                            onClick = onRegenerate,
                             enabled = messageActionsEnabled,
                         )
                     }
@@ -710,10 +680,25 @@ private fun AgentMessageBlock(
                         )
                     }
                     // 本轮消耗：整轮完整结束后写入；老会话没有这个值就不显示。
+                    // 间距与图标按钮之间保持同一条视觉留白（见 AnswerActionGap 的注释）。
                     message.roundCost?.let { cost ->
                         Text(
                             text = stringResource(R.string.chat_round_cost, plainCost(cost)),
-                            modifier = Modifier.padding(start = 6.dp),
+                            modifier = Modifier.padding(start = AnswerTextGap),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            style = MiuixTheme.textStyles.footnote1,
+                            maxLines = 1,
+                        )
+                    }
+                    // 本轮用时：紧跟消耗之后，只显示「多少分多少秒」，不加任何前缀文字。
+                    // 金额没显示时（这轮余额没变化），前面就是删除按钮，补一样的 10dp 即可，
+                    // 否则会叠成 30dp，看着像「删除」和用时之间空了一倍。
+                    message.roundDurationMs?.let { duration ->
+                        Text(
+                            text = plainDuration(duration),
+                            modifier = Modifier.padding(
+                                start = if (message.roundCost != null) AnswerActionGap else AnswerTextGap,
+                            ),
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             style = MiuixTheme.textStyles.footnote1,
                             maxLines = 1,
@@ -736,6 +721,12 @@ private fun AgentMessageBlock(
 
 /** 开场白消息由开始对话时写入，标识前缀与写入方保持一致。 */
 private const val GreetingMessagePrefix = "greeting-"
+
+/** 本轮用时按「多少分多少秒」显示，秒补两位（125 秒 → 2分05秒）。 */
+private fun plainDuration(durationMs: Long): String {
+    val totalSeconds = (durationMs / 1000L).coerceAtLeast(0L)
+    return "%d分%02d秒".format(totalSeconds / 60, totalSeconds % 60)
+}
 
 /** 消耗金额按分显示，去掉多余的 0（0.10 → 0.1）。 */
 private fun plainCost(value: Double): String = java.math.BigDecimal(value)
@@ -790,9 +781,20 @@ private const val ChatCardOutlineAlpha = 0.5f
 
 /** 回答操作按钮的触控尺寸；行整体左移半个尺寸减去图标半宽，使图标落在工作过程图标的中心线上。 */
 internal val AnswerActionSize = 36.dp
+
+/** 操作行各项之间的视觉间距：图标按钮 36dp 里含 16dp 图标，相邻图标之间正好留下这一空隙。 */
+private val AnswerActionGap = AnswerActionSize - 16.dp
+
+/** 文字项自身没有按钮留白，只需补上图标右侧那 10dp。 */
+private val AnswerTextGap = AnswerActionGap - (AnswerActionSize - 16.dp) / 2
 private val AnswerActionCenterOffset = 11.dp
 
-/** 回答下方的轻量操作：图标显式着色，因此禁用态需要自己换成禁用色，否则看起来仍可点。 */
+/**
+ * 回答下方的轻量操作：图标显式着色，因此禁用态需要自己换成更淡的同色，否则看起来仍可点。
+ *
+ * 禁用态**不能**用 disabledOnSurface：它是不透明的实色，亮色下近黑、暗色下近白，
+ * 比旁边的朗读、金额、用时重得多（旋转重建等时机按钮会短暂进入禁用态，一眼就看得出来）。
+ */
 @Composable
 internal fun AnswerActionButton(
     icon: ImageVector,
@@ -812,8 +814,8 @@ internal fun AnswerActionButton(
             contentDescription = contentDescription,
             modifier = Modifier.size(16.dp),
             tint = when {
-                !enabled -> MiuixTheme.colorScheme.disabledOnSurface
                 tint != null -> tint
+                !enabled -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.38f)
                 else -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f)
             },
         )

@@ -12,7 +12,12 @@ internal class AgentRunStore(
     private val scope: CoroutineScope,
     private val onEvent: (String, AgentEvent) -> Unit,
 ) {
-    private class Entry(val conversationId: String, val observed: Boolean) {
+    private class Entry(
+        val conversationId: String,
+        val observed: Boolean,
+        /** 用户发出这一轮消息的时刻（毫秒），用于底部操作行的「本轮用时」。 */
+        val startedAtMs: Long,
+    ) {
         var job: Job? = null
         var flushJob: Job? = null
         var stopRequested = false
@@ -35,11 +40,19 @@ internal class AgentRunStore(
 
     fun conversationId(runId: String): String? = entries[runId]?.conversationId
 
-    fun register(runId: String, conversationId: String, observed: Boolean = true): Boolean {
+    fun register(
+        runId: String,
+        conversationId: String,
+        observed: Boolean = true,
+        startedAtMs: Long = System.currentTimeMillis(),
+    ): Boolean {
         if (runId in entries || observed && activeRunId(conversationId) != null) return false
-        entries[runId] = Entry(conversationId, observed)
+        entries[runId] = Entry(conversationId, observed, startedAtMs)
         return true
     }
+
+    /** 这一轮的计时起点（用户发出消息的时刻）；run 已结算后为 null。 */
+    fun startedAtMs(runId: String): Long? = entries[runId]?.startedAtMs
 
     fun observe(runId: String, job: Job) {
         val entry = checkNotNull(entries[runId])

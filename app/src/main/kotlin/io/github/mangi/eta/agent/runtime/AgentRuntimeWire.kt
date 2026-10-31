@@ -168,6 +168,7 @@ internal object AgentRuntimeWire {
         "handoff_dismiss_entry_surface_on_foreground_operation"
     private const val LEGACY_BREENO_HANDOFF_SOURCE = "breeno"
     private const val KEY_CREATED_AT = "created_at"
+    private const val KEY_ELAPSED_MS = "elapsed_ms"
     private const val KEY_RESULTS = "results"
     private const val MAX_RESULT_CONTENT_CHARS = 64_000
     private const val MAX_RESULT_REASONING_CHARS = 32_000
@@ -266,6 +267,8 @@ internal object AgentRuntimeWire {
         val operation: String = OP_CHAT,
         val rewriteTargetMessageId: String? = null,
         val errorCode: String = "",
+        /** 这一轮从 Runtime 收到请求到结束的实际耗时（毫秒）；浮窗等外部入口的会话计时靠它。 */
+        val elapsedMs: Long = 0,
     )
 
     data class EntryHandoff(
@@ -594,6 +597,7 @@ internal object AgentRuntimeWire {
         )
         putString(KEY_ERROR, error?.boundedText(MAX_DRAIN_CONTENT_CHARS))
         putString("error_code", errorCode)
+        putLong(KEY_ELAPSED_MS, elapsedMs)
         putString(
             KEY_TRANSCRIPT_JSON,
             if (compactForDrain) {
@@ -615,6 +619,7 @@ internal object AgentRuntimeWire {
             content = bundle.getString(KEY_CONTENT).orEmpty(),
             error = bundle.getString(KEY_ERROR),
             errorCode = bundle.getString("error_code").orEmpty(),
+            elapsedMs = bundle.getLong(KEY_ELAPSED_MS),
             reasoningContent = bundle.getString(KEY_REASONING_CONTENT).orEmpty(),
             transcript = AgentConversationCodec.decodeTranscript(bundle.getString(KEY_TRANSCRIPT_JSON)),
         )

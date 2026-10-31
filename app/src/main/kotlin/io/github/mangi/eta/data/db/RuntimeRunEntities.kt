@@ -59,6 +59,8 @@ internal data class RuntimeArchiveRunEntity(
     @ColumnInfo(name = "rewrite_target_message_id") val rewriteTargetMessageId: String? = null,
     @ColumnInfo(name = "user_image_previews_json") val userImagePreviewsJson: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+    /** 这一轮的实际耗时；浮窗等外部入口的会话导入后靠它显示「本轮用时」。 */
+    @ColumnInfo(name = "elapsed_ms", defaultValue = "0") val elapsedMs: Long = 0,
 )
 
 @Entity(
