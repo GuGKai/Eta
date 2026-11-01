@@ -278,11 +278,15 @@ private fun MarkdownText(
             }
         }
     }
+    // 显现裁剪按字素边界逐帧变化，关闭像素对齐可避免裁剪边缘抖动。静态视图必须用同一
+    // 度量参数：逐字显现结束后切静态时若换回线性度量，整篇会重新折行——长正文会表现为
+    // 「往里缩一下」。两条分支共用一份 style，排版只在文本变化时重新计算。
+    val animatedStyle = remember(style) { style.copy(textMotion = TextMotion.Animated) }
     // 空单元格没有可显现的文字，也不占用显现协调器的 key。
     if (reveal == null || block.text.isEmpty()) {
         Text(
             text = text,
-            style = style,
+            style = animatedStyle,
             softWrap = softWrap,
             modifier = modifier.then(probeModifier),
             onTextLayout = recordFirstLine,
@@ -290,8 +294,6 @@ private fun MarkdownText(
         return
     }
     val revealState = rememberSmoothTextRevealState(block.revealKey, reveal)
-    // 显现裁剪按字素边界逐帧变化，关闭像素对齐可避免裁剪边缘抖动。
-    val animatedStyle = remember(style) { style.copy(textMotion = TextMotion.Animated) }
     Text(
         text = text,
         style = animatedStyle,
