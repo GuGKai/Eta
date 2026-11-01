@@ -60,6 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
@@ -209,6 +211,8 @@ internal fun ChatMessageItem(
     onDeleteMessage: (String) -> Unit = {},
     onRegenerateMessage: (String) -> Unit = {},
     onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
+    /** 正文首行字顶相对本条消息顶边的偏移（px）：只有最后一条消息需要，用于正文停靠。 */
+    onAnswerFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     when (message) {
         is UserMessageUi -> UserMessageBubble(
@@ -232,6 +236,7 @@ internal fun ChatMessageItem(
             onRegenerate = { onRegenerateMessage(message.id) },
             onEdit = { onEditMessage(message.id) },
             onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
+            onAnswerFirstLineTop = onAnswerFirstLineTop,
             modifier = modifier,
         )
         is SystemNoticeMessageUi -> if (message.code == SystemNoticeCode.ContextCompaction) {
@@ -556,6 +561,8 @@ private fun AgentMessageBlock(
     onEdit: () -> Unit = {},
     onSelectCandidate: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
+    /** 正文首行字顶相对本条消息顶边的偏移（px）：正文停靠要贴的是首行文字，不是条目顶边。 */
+    onAnswerFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val keepStreamingMarkdown = remember(message.id) { message.isStreaming }
     DisposableEffect(retainedStreamingState) {
@@ -593,6 +600,9 @@ private fun AgentMessageBlock(
 
     val character = LocalRoleplayChat.current.takeUnless { assistantOverlay }
     val isGreeting = character != null && message.id.startsWith(GreetingMessagePrefix)
+    // 停靠基准：直接把正文首行字顶的窗口 y 上报给列表层，列表层用
+    // 「首行窗口 y − 顶栏底边」闭环滚动；不经过条目顶边换算，内边距与行高留白都不参与。
+    val bodyFirstLineReporter: ((Float) -> Unit)? = onAnswerFirstLineTop
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -619,6 +629,7 @@ private fun AgentMessageBlock(
                     tone = MarkdownTone.Answer,
                     onRevealCompleteChange = { streamingRevealComplete = it },
                     modifier = Modifier.fillMaxWidth(),
+                    onFirstLineTop = bodyFirstLineReporter,
                 )
             }
             message.renderMarkdown -> {
@@ -630,6 +641,7 @@ private fun AgentMessageBlock(
                         modifier = Modifier.fillMaxWidth(),
                         speechSentences = speechSentences,
                         speechSentenceIndex = speakingIndex,
+                        onFirstLineTop = bodyFirstLineReporter,
                     )
                 }
             }

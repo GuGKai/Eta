@@ -45,6 +45,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -53,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
@@ -71,6 +74,7 @@ import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlin.math.abs
 
 /**
  * 绘制一份已解析的 [MarkdownDocument]。
@@ -84,9 +88,17 @@ internal fun MarkdownContent(
     style: MarkdownStyle,
     modifier: Modifier = Modifier,
     reveal: SmoothTextRevealCoordinator? = null,
+    /** 首个文本块首行字顶的窗口坐标（px）：正文停靠要贴的是首行文字，不是条目顶边。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val scope = remember(style, reveal) { MarkdownRenderScope(style, reveal) }
-    MarkdownBlockColumn(blocks = document.blocks, scope = scope, compact = false, modifier = modifier)
+    MarkdownBlockColumn(
+        blocks = document.blocks,
+        scope = scope,
+        compact = false,
+        modifier = modifier,
+        onFirstLineTop = onFirstLineTop,
+    )
 }
 
 /**
@@ -156,6 +168,8 @@ private fun MarkdownBlockColumn(
     modifier: Modifier = Modifier,
     /** 分页渲染时上一页的最后一个块：块间距按相邻块计算，跨页边界也要接上。 */
     leadingPrevious: MarkdownBlock? = null,
+    /** 只挂给第一个文本块：它的首行决定正文停靠的落点。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     Column(modifier) {
@@ -168,28 +182,47 @@ private fun MarkdownBlockColumn(
                     markdownBlockGap(previous, block, scope.style.tone)
                 }
                 if (gap.value > 0f) Spacer(Modifier.height(with(density) { gap.toDp() }))
-                MarkdownBlockView(block, scope)
+                MarkdownBlockView(
+                    block = block,
+                    scope = scope,
+                    onFirstLineTop = onFirstLineTop.takeIf { index == 0 },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MarkdownBlockView(block: MarkdownBlock, scope: MarkdownRenderScope) {
+private fun MarkdownBlockView(
+    block: MarkdownBlock,
+    scope: MarkdownRenderScope,
+    onFirstLineTop: ((Float) -> Unit)? = null,
+) {
     when (block) {
-        is MarkdownParagraph -> MarkdownText(block, scope.style.body, scope)
+        is MarkdownParagraph -> MarkdownText(
+            block = block,
+            style = scope.style.body,
+            scope = scope,
+            onFirstLineTop = onFirstLineTop,
+        )
         is MarkdownHeading -> MarkdownText(
             block = block,
             style = scope.style.heading(block.level),
             scope = scope,
             modifier = Modifier.semantics { heading() },
+            onFirstLineTop = onFirstLineTop,
         )
         is MarkdownCode -> MarkdownCodeBlock(block, scope)
         is MarkdownQuote -> MarkdownQuoteBlock(block, scope)
         is MarkdownAlert -> MarkdownAlertBlock(block, scope)
         is MarkdownList -> MarkdownListBlock(block, scope)
         is MarkdownTable -> MarkdownTableBlock(block, scope)
-        is MarkdownTableCell -> MarkdownText(block, scope.style.table, scope)
+        is MarkdownTableCell -> MarkdownText(
+            block = block,
+            style = scope.style.table,
+            scope = scope,
+            onFirstLineTop = onFirstLineTop,
+        )
         is MarkdownRule -> Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -207,12 +240,53 @@ private fun MarkdownText(
     scope: MarkdownRenderScope,
     modifier: Modifier = Modifier,
     softWrap: Boolean = true,
+    /** 上报首行文字上沿的窗口坐标（px）：正文停靠要贴的是字形上沿，不是块顶边。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val reveal = scope.reveal
     val text = markdownSpeechHighlighted(block.text, block.offset)
+    // 首行字顶 = 文本节点窗口 y + 首行字符框相对文本布局框的 top。
+    var textWindowTop by remember { mutableStateOf<Float?>(null) }
+    var firstLineLocalTop by remember { mutableStateOf<Float?>(null) }
+    val emitFirstLineTop: () -> Unit = {
+        val reporter = onFirstLineTop
+        val windowTop = textWindowTop
+        val localTop = firstLineLocalTop
+        if (reporter != null && windowTop != null && localTop != null) {
+            reporter(windowTop + localTop)
+        }
+    }
+    val probeModifier = if (onFirstLineTop != null) {
+        Modifier.onGloballyPositioned { coordinates ->
+            val y = coordinates.positionInWindow().y
+            val current = textWindowTop
+            if (current == null || abs(current - y) > 0.5f) {
+                textWindowTop = y
+                emitFirstLineTop()
+            }
+        }
+    } else {
+        Modifier
+    }
+    val recordFirstLine: (TextLayoutResult) -> Unit = { layout ->
+        if (layout.lineCount > 0 && layout.layoutInput.text.isNotEmpty()) {
+            val top = layout.getBoundingBox(0).top
+            val current = firstLineLocalTop
+            if (current == null || abs(current - top) > 0.5f) {
+                firstLineLocalTop = top
+                emitFirstLineTop()
+            }
+        }
+    }
     // 空单元格没有可显现的文字，也不占用显现协调器的 key。
     if (reveal == null || block.text.isEmpty()) {
-        Text(text = text, style = style, softWrap = softWrap, modifier = modifier)
+        Text(
+            text = text,
+            style = style,
+            softWrap = softWrap,
+            modifier = modifier.then(probeModifier),
+            onTextLayout = recordFirstLine,
+        )
         return
     }
     val revealState = rememberSmoothTextRevealState(block.revealKey, reveal)
@@ -222,8 +296,11 @@ private fun MarkdownText(
         text = text,
         style = animatedStyle,
         softWrap = softWrap,
-        modifier = modifier.smoothTextReveal(revealState),
-        onTextLayout = { layout -> revealState.onTextLayout(block.text.text, layout) },
+        modifier = modifier.then(probeModifier).smoothTextReveal(revealState),
+        onTextLayout = { layout ->
+            revealState.onTextLayout(block.text.text, layout)
+            recordFirstLine(layout)
+        },
     )
 }
 

@@ -35,6 +35,8 @@ internal fun StaticMarkdown(
     speechSentences: List<String>? = null,
     /** 正在读第几句；null 表示这条消息没在朗读。 */
     speechSentenceIndex: Int? = null,
+    /** 首个文本块首行字顶的窗口坐标（px）：正文停靠要贴的是首行文字。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val style = rememberMarkdownStyle(tone)
     val reusable = parsed?.takeIf { it.inlineStyle == style.inline }
@@ -65,7 +67,12 @@ internal fun StaticMarkdown(
             }
         }
         CompositionLocalProvider(LocalMarkdownSpeechHighlight provides highlight) {
-            MarkdownContent(document = document, style = style, modifier = modifier)
+            MarkdownContent(
+                document = document,
+                style = style,
+                modifier = modifier,
+                onFirstLineTop = onFirstLineTop,
+            )
         }
     }
 }
@@ -85,6 +92,8 @@ internal fun StreamingMarkdown(
     tone: MarkdownTone,
     modifier: Modifier = Modifier,
     onRevealCompleteChange: (Boolean) -> Unit = {},
+    /** 首个文本块首行字顶的窗口坐标（px）：正文停靠要贴的是首行文字。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val style = rememberMarkdownStyle(tone)
     // 思考紧跟已收到的增量，避免高速思考先排版占位、再受正文逐字速度限制而积压。
@@ -141,6 +150,7 @@ internal fun StreamingMarkdown(
         document = parsed.document,
         style = style,
         reveal = reveal,
+        onFirstLineTop = onFirstLineTop,
         modifier = modifier.onGloballyPositioned {
             // 恢复基线对应的文档真正排版后才开放增量动画，解析耗时不受帧数限制。
             if (state.restoreState.completeLayout(

@@ -16,6 +16,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -86,7 +87,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.browser.BrowserSessionSnapshot
 import io.github.mangi.eta.data.model.ReasoningEffort
@@ -557,8 +557,12 @@ internal fun AgentConversationMessages(
     }
     val densityScale = LocalDensity.current.density
     val density = LocalDensity.current
-    // 顶栏高度（px）：本轮工作过程卡片停靠时要把卡片落在顶栏下方，而不是屏幕最顶端。
+    // 顶栏占据的高度（px）：正文停靠后首行要落在它下面。
     val topInsetPx = with(density) { topInset.roundToPx() }
+    // 首行与顶栏底边之间只留这么点缝：必须远小于正文行距，看起来才是「贴着顶栏」。
+    val dockGapPx = with(density) { DockGap.roundToPx() }
+    // 守卫的提前量（px）：首行进到这个范围就冻结跟底，再交给停靠闭环慢慢收到落点。
+    val dockLookaheadPx = with(density) { DockLookahead.roundToPx() }
     val coroutineScope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val imeInsets = WindowInsets.ime
@@ -604,40 +608,29 @@ internal fun AgentConversationMessages(
         }
     }
 
-    // 每轮最终正式回答开始输出时，把视口停靠在「本轮工作过程卡片」顶部并停止跟底，
-    // 让用户从正文第一行往下读，而不是被一路拖到最新一行。卡片的收尾折叠由上游自己完成。
+    // 正文停靠：本轮正式回答开始出字就先冻结跟底（不再向下滚），确认它不是过渡文本后，
+    // 再把视口收到「正文首行贴着顶栏下方」。中途冒出工具步骤说明是过渡文本，只解冻、不位移。
     var finalAnswerAnchored by remember { mutableStateOf(false) }
     var finalAnswerHandledId by remember { mutableStateOf<String?>(null) }
     var wasUserDragging by remember { mutableStateOf(false) }
-    // 待执行的停靠目标：写入后交给独立协程滚动，避免流式结束（含后台完成）把滚动一起取消。
-    var pendingAnchorIndex by remember { mutableStateOf<Int?>(null) }
-    // 每次回到前台自增：后台挂起的停靠会在回到前台后重试。
-    var resumeTick by remember { mutableStateOf(0) }
-    // 停靠意图产生时所在的前台会话序号，用来识别「迟到的停靠」（见独立执行停靠）。
-    var anchorRequestResumeTick by remember { mutableStateOf(0) }
-    // 应用此刻是否在前台：后台跑完的那轮回复不做位移动画，直接落到停靠位置。
-    var appResumed by remember { mutableStateOf(false) }
-    val latestTailMessage by rememberUpdatedState(tailMessage)
+    // 正文首行字顶的窗口 y（px）：停靠闭环直接拿它和顶栏底边比，不换算条目顶边。
+    var answerFirstLineWindowY by remember { mutableStateOf<Float?>(null) }
+    // 上面这个测量值属于哪一条：换轮之后旧值必须作废，否则会拿上一轮的首行位置误判。
+    var answerFirstLineOwnerKey by remember { mutableStateOf<String?>(null) }
     val latestTimelineEntries by rememberUpdatedState(timelineEntries)
-    val latestStreaming by rememberUpdatedState(isStreaming)
     val streamingAnswerId = tailMessage
         ?.takeIf { message -> message.content.isNotBlank() }
         ?.id
 
     LaunchedEffect(isStreaming) {
         if (isStreaming) {
-            // 新一轮开始：清掉上一轮的停靠，恢复跟底等待这一轮的最终正文。
+            // 新一轮开始：清掉上一轮的停靠，恢复跟底等待这一轮的正文。
             finalAnswerAnchored = false
             finalAnswerHandledId = null
             wasUserDragging = false
-            pendingAnchorIndex = null
+            answerFirstLineWindowY = null
+            answerFirstLineOwnerKey = null
         }
-    }
-
-    LifecycleResumeEffect(Unit) {
-        resumeTick++
-        appResumed = true
-        onPauseOrDispose { appResumed = false }
     }
 
     LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging) {
@@ -668,75 +661,135 @@ internal fun AgentConversationMessages(
         onLoadEarlier = onLoadEarlierMessages,
         onViewportChanged = onHistoryViewportChanged,
     )
-    // key 只挂 answerId，不挂 isStreaming：回复在应用后台完成时 isStreaming 会由 true 变 false，
-    // 若把它放进 key，判定协程连同停靠意图会被一起取消，回到前台就只能停在回答末尾。
-    LaunchedEffect(streamingAnswerId) {
+    // 停靠落点：把正文首行的字顶压到「顶栏底边 + DockGap」。
+    // 基准是首行的窗口 y（屏幕坐标），不是条目顶边：条目内边距、列表 contentPadding、
+    // 行高留白都不参与计算，逐帧重新量一次差距闭环，不做一次性位移。
+    suspend fun dockAnswerToTop(key: String, itemIndex: Int): Boolean {
+        if (scrollState.layoutInfo.visibleItemsInfo.none { item -> item.key == key }) {
+            scrollState.animateScrollToItem(itemIndex)
+            withFrameNanos { }
+        }
+        // 这里不能再用「条目高度不足一屏」提前否决：跟底时条目底部还要让出输入器浮层与
+        // 底部内边距，首行刚够到顶栏时条目高度本来就比 viewportHeight 小一截，
+        // 拿它判断会把正常长度的正文误判成矮正文，直接放弃停靠、一路跟到底。
+        // 矮正文的分流交给守卫：它的首行永远到不了顶栏，根本走不到这里。
+        // 落点：首行字顶的窗口 y 应该正好落在顶栏底边。
+        val target = topInsetPx + dockGapPx
+        var previousFrameNanos = 0L
+        var stableFrames = 0
+        // 只统计真正推动滚动的帧：「等正文继续长高」的帧单独计，
+        // 否则等待本身就把帧预算烧光，长正文反而等不到收口。
+        var frames = 0
+        var waitedFrames = 0
+        while (frames < 900 && waitedFrames < 900) {
+            // 用户正在手动滑动，或下方又冒出工具链（这段只是过渡文本）：立刻放弃停靠，交回默认跟底。
+            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
+            val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it2 -> it2.key == key }
+            if (item == null) {
+                scrollState.scrollToItem(itemIndex)
+                withFrameNanos { }
+                continue
+            }
+            // 首块不是文本块（代码/表格/引用）时拿不到首行字顶，退化为「条目顶边贴顶栏」。
+            val delta = (answerFirstLineWindowY ?: item.offset.toFloat()) - target
+            if (abs(delta) <= 1f) {
+                stableFrames++
+                if (stableFrames >= 3) return true
+                withFrameNanos { }
+                continue
+            }
+            stableFrames = 0
+            // 还要往下沉却已经到底：没有可滚空间，等正文继续长高再收口，不空转报错。
+            if (delta > 0f && !scrollState.canScrollForward) {
+                waitedFrames++
+                withFrameNanos { }
+                continue
+            }
+            val frameNanos = withFrameNanos { it }
+            val elapsedSeconds = if (previousFrameNanos == 0L) {
+                1f / 60f
+            } else {
+                ((frameNanos - previousFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+            }
+            previousFrameNanos = frameNanos
+            // 指数缓出：前段快、后段慢，收口时没有可见的一跳。
+            frames++
+            var step = delta * (1f - exp(-elapsedSeconds / DockTimeConstantSeconds))
+            if (abs(step) < 1f) step = if (delta > 0f) 1f else -1f
+            if (abs(step) > abs(delta)) step = delta
+            try {
+                scrollState.scroll { scrollBy(step) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return true
+            }
+        }
+        return false
+    }
+
+    // 停靠守卫：跟着跟底引擎逐帧盯正文首行的窗口 y，一旦首行逼近顶栏就立刻返回 true，
+    // 让调用方马上冻结跟底、再交给 dockAnswerToTop 收口。
+    // 关键是「不许过冲」：以前要等正文长够一屏才动手，等待期间跟底一路把首行推出屏幕，
+    // 门槛满足后只能大幅回拉，看起来就是「先滚过头再突然拉回来」。
+    // 矮正文的首行永远到不了顶栏，这里就一直等到本轮结束，保持默认跟底行为。
+    suspend fun awaitAnswerReachTop(key: String): Boolean {
+        val threshold = topInsetPx + dockGapPx + dockLookaheadPx
+        while (currentCoroutineContext().isActive) {
+            if (isUserDragging) return false
+            // 下方又冒出工具链：这段只是过渡正文，交给默认跟底。
+            if (latestTimelineEntries.lastOrNull()?.key != key) return false
+            val firstLineY = answerFirstLineWindowY
+                ?.takeIf { answerFirstLineOwnerKey == key }
+            if (firstLineY != null) {
+                if (firstLineY <= threshold) return true
+            } else {
+                // 首块不是文本块（代码/表格/引用）时量不到首行字顶，退化成看条目顶边。
+                val item = scrollState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { info -> info.key == key }
+                if (item != null && item.offset <= threshold) return true
+            }
+            withFrameNanos { }
+        }
+        return false
+    }
+
+    // 正文一出现就盯住它，不等整轮结束：时间线末尾这段长正文就该顶到顶栏。
+    // 门槛只有一个：首行逼近顶栏（矮正文保持默认跟底）。
+    LaunchedEffect(streamingAnswerId, timelineEntries.lastOrNull()?.key) {
         val answerId = streamingAnswerId ?: return@LaunchedEffect
         if (finalAnswerHandledId == answerId) return@LaunchedEffect
-        // 只在「这一轮确实在流式」时开始判定；判定过程中允许它结束。
-        if (!latestStreaming) return@LaunchedEffect
-        // 中间过渡文本后面往往还会跟工具调用：先等一小段时间再确认它仍是本轮收尾正文。
-        delay(FinalAnswerAnchorSettleMillis)
-        if (latestTailMessage?.id != answerId) return@LaunchedEffect
+        if (wasUserDragging) return@LaunchedEffect
         val entries = latestTimelineEntries
-        val answerIndex = entries.indexOfLast { entry ->
-            entry is AgentTimelineEntry.Message && entry.message.id == answerId
-        }
+        val answerIndex = entries.indexOfLast { entry -> entry.key == answerId }
         if (answerIndex < 0) return@LaunchedEffect
-        val isLastEntry = (entries.lastOrNull() as? AgentTimelineEntry.Message)?.message?.id == answerId
-        if (!isLastEntry) return@LaunchedEffect
-        val lastUserIndex = entries.indexOfLast { entry ->
-            entry is AgentTimelineEntry.Message && entry.message is UserMessageUi
-        }
-        val previousIndex = answerIndex - 1
-        // 停靠在本轮已收起的工作过程卡片上：卡片整条落在顶部窗口组件下方，正文第一行紧随其后。
-        val targetIndex = if (previousIndex > lastUserIndex &&
-            entries.getOrNull(previousIndex) is AgentTimelineEntry.WorkProcess
-        ) {
-            previousIndex
-        } else {
-            answerIndex
-        }
-        // 卡片收起由上游在正文开始输出时自动完成；前台时等这段收起动画播完再交给停靠协程，
-        // 否则卡片高度还在变化，滚动落点会偏。后台没有帧、这段动画也不会播，就不用等。
-        if (appResumed && targetIndex == previousIndex) {
-            delay(WorkProcessCollapseMillis)
-        }
-        finalAnswerHandledId = answerId
-        finalAnswerAnchored = true
-        if (appResumed) {
-            anchorRequestResumeTick = resumeTick
-            pendingAnchorIndex = targetIndex
-        } else {
-            // 这一轮是应用不在前台时跑完的：后台拿不到帧，动画只会挂起到回到前台才补播，
-            // 用户点通知进来看到的就是那半截位移。这里直接落到停靠位置，
-            // 等回到前台时画面已经是最终状态，不再动。
-            scrollState.scrollToItem(targetIndex, -topInsetPx)
-        }
-    }
-
-    // 独立执行停靠：key 不随 isStreaming 变化，后台完成回复也不会丢；后台拿不到帧时动画挂起，
-    // 回到前台（resumeTick 变化）会重新执行一次。
-    LaunchedEffect(pendingAnchorIndex, resumeTick) {
-        val target = pendingAnchorIndex ?: return@LaunchedEffect
-        // 等折叠动画播完，避免卡片高度还在变化时滚动、停靠位置偏掉。
-        delay(WorkProcessCollapseMillis)
-        // 只有从产生停靠意图到执行之间一直待在前台才播动画；期间切过后台、或者回到前台才补做的
-        // 停靠直接到位，免得用户从通知进来时看到半截位移动画。
-        val shouldAnimate = appResumed && resumeTick == anchorRequestResumeTick
-        if (shouldAnimate) {
-            scrollState.animateScrollToItem(target, -topInsetPx)
-        } else {
-            scrollState.scrollToItem(target, -topInsetPx)
-        }
-        pendingAnchorIndex = null
-    }
-
-    LaunchedEffect(isStreaming, latestTailMessage?.id) {
-        if (isStreaming && finalAnswerAnchored && latestTailMessage?.id != finalAnswerHandledId) {
-            // 停靠之后又冒出新的工具步骤：刚才停住的只是过渡文本，恢复跟底。
+        // 时间线最后一条不是它：下方还有工具链，交给默认跟底，等收尾正文再停。
+        if (entries.lastOrNull()?.key != answerId) return@LaunchedEffect
+        val itemIndex = answerIndex + earlierMessagesItemCount
+        // 首行逼近顶栏就立刻冻结跟底（矮正文到不了顶栏，始终走默认跟底）。
+        // 一次没停成也不就此罢手：正文还在长，交回跟底、隔几帧再收一次。
+        // 只试一次的话，任何一次提前失败都会变成「一路跟到底、完全不停靠」。
+        var attempts = 0
+        while (attempts < 4 && currentCoroutineContext().isActive) {
+            attempts++
+            if (!awaitAnswerReachTop(key = answerId)) return@LaunchedEffect
+            finalAnswerAnchored = true
+            if (dockAnswerToTop(key = answerId, itemIndex = itemIndex)) {
+                // 只有真正停住了才标记已处理：矮正文、被夹住时要允许正文变长后重来。
+                finalAnswerHandledId = answerId
+                return@LaunchedEffect
+            }
             finalAnswerAnchored = false
+            repeat(6) { withFrameNanos { } }
         }
+    }
+
+    // 停靠之后下方又冒出工具链（时间线末尾不再是这段正文）：立刻解冻，恢复流式默认滚动。
+    LaunchedEffect(timelineEntries.lastOrNull()?.key) {
+        if (!finalAnswerAnchored) return@LaunchedEffect
+        val handled = finalAnswerHandledId ?: return@LaunchedEffect
+        if (timelineEntries.lastOrNull()?.key == handled) return@LaunchedEffect
+        finalAnswerAnchored = false
+        finalAnswerHandledId = null
     }
 
     LaunchedEffect(isUserDragging, isAtBottom) {
@@ -946,7 +999,7 @@ internal fun AgentConversationMessages(
                 .overScrollVertical(),
             contentPadding = PaddingValues(
                 // 列表视口铺满整屏，顶栏高度在这里做内边距，正文才能滑到顶栏毛玻璃下方。
-                top = topInset + 14.dp,
+                top = topInset + ChatTopContentPadding,
                 bottom = bottomInset + 14.dp,
             ),
             overscrollEffect = null,
@@ -1001,6 +1054,14 @@ internal fun AgentConversationMessages(
                             onDeleteMessage = onDeleteMessage,
                             onRegenerateMessage = onRegenerateMessage,
                             onSelectReplyCandidate = onSelectReplyCandidate,
+                            onAnswerFirstLineTop = if (entry.key == timelineEntries.lastOrNull()?.key) {
+                                { windowY ->
+                                    answerFirstLineWindowY = windowY
+                                    answerFirstLineOwnerKey = entry.key
+                                }
+                            } else {
+                                null
+                            },
                             modifier = itemModifier,
                         )
                     }
@@ -1373,11 +1434,17 @@ private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f
 internal const val KEYBOARD_LIFT_RESPONSE_SECONDS = 0.06f
 internal const val KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND = 2000f
 private const val BOTTOM_FOLLOW_MIN_STEP_PX = 0.5f
-// 最终正文开始输出后先等这么久，确认它仍是本轮收尾正文再停靠视口。
-private const val FinalAnswerAnchorSettleMillis = 420L
-// 工作过程卡片收起动画的等待时长：收起播完再停靠，避免卡片高度还在变化时滚动偏位。
-private const val WorkProcessCollapseMillis = 360L
 private const val BOTTOM_FOLLOW_SNAP_DISTANCE_PX = 0.75f
+// 停靠后正文首行与顶栏底边的缝：必须远小于正文行距，看起来才是「贴着顶栏」。
+private val DockGap = 0.dp
+// 提前量：守卫比落点早这么多就冻结跟底，用来吃掉「一帧测量滞后 + 一帧跟底位移」。
+// 必须小于一个正文行高，否则矮正文会被误判成需要停靠。
+private val DockLookahead = 16.dp
+// 列表内容顶部内边距（顶栏高度之外的额外留白）。
+private val ChatTopContentPadding = 14.dp
+// 停靠位移的时间常数（秒）：逐帧指数缓出，前段快、后段收敛，避免观感生硬或像瞬移。
+private const val DockTimeConstantSeconds = 0.085f
+
 
 internal fun resolveKeepBottomAnchored(
     current: Boolean,
