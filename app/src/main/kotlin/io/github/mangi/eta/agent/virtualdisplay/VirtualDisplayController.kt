@@ -29,6 +29,7 @@ import io.github.mangi.eta.core.safeLogType
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
@@ -89,6 +90,18 @@ internal object VirtualDisplayController {
     private var restoreWatcher: Thread? = null
     private var restoreFailureCount: Int = 0
 
+    /** 虚拟屏 IME 策略最近一次成功下发的目标；displayId 不匹配或 policy<0 表示需要重新下发。 */
+    @Volatile private var appliedImePolicyDisplayId: Int = Display.INVALID_DISPLAY
+    @Volatile private var appliedImePolicy: Int = -1
+
+    /** 最新下发意图的代际号：排队期间被新意图取代的旧任务直接作废，避免慢路径盖掉新状态。 */
+    private val imePolicyGeneration = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 串行执行 WMS 策略调用：用户快速点「接管/继续」时不会并发乱序。 */
+    private val imePolicyExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "eta-vd-ime-policy").apply { isDaemon = true }
+    }
+
     fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
         rootAvailable || lsposedAvailable
 
@@ -101,13 +114,24 @@ internal object VirtualDisplayController {
         mutableCapsuleVisible.value = !mutableCapsuleVisible.value
     }
 
-    fun setUserControlling(controlling: Boolean) {
-        synchronized(lock) {
+    fun setUserControlling(
+        controlling: Boolean,
+        rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    ) {
+        val displayId = synchronized(lock) {
             val current = mutableSnapshots.value
             if (!current.active || current.userControlling == controlling) return
             mutableSnapshots.value = current.copy(userControlling = controlling)
             if (controlling) highFrequencyPreview = true
+            activeDisplayId
         }
+        // 接管：用户要亲手打字，把虚拟屏 IME 策略放回 FALLBACK，软键盘才能弹出来。
+        // 继续托管：收回键盘，避免 Agent 自己聚焦输入框时键盘反复冒到物理主屏。
+        updateVirtualDisplayImePolicy(
+            displayId = displayId,
+            hide = !controlling,
+            rootAvailable = rootAvailable,
+        )
     }
 
     fun currentDisplayId(): Int = synchronized(lock) {
@@ -126,7 +150,11 @@ internal object VirtualDisplayController {
     ): Int? {
         synchronized(lock) {
             if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
-                return activeDisplayId
+                val existingId = activeDisplayId
+                if (!mutableSnapshots.value.userControlling) {
+                    hideImeOnVirtualDisplay(existingId, rootAvailable)
+                }
+                return existingId
             }
         }
         val appContext = context.applicationContext
@@ -169,6 +197,7 @@ internal object VirtualDisplayController {
                         height = height,
                     )
                     AndroidAgentLogger.info("Virtual display created in-process: displayId=$id size=${width}x$height")
+                    hideImeOnVirtualDisplay(id, rootAvailable)
                     return id
                 }
                 runCatching { createdInProcess.release() }
@@ -192,6 +221,7 @@ internal object VirtualDisplayController {
                         height = height,
                     )
                     AndroidAgentLogger.info("Virtual display created via root bridge: displayId=$rootId size=${width}x$height")
+                    hideImeOnVirtualDisplay(rootId, rootAvailable)
                     return rootId
                 }
             }
@@ -491,6 +521,12 @@ internal object VirtualDisplayController {
         AndroidAgentLogger.info(
             "Virtual display restored: package=${snapshot.packageName} display=${snapshot.displayId}",
         )
+        // 回到虚拟屏后按当前归属重设 IME 策略：用户控制态保持 FALLBACK，托管态恢复 HIDE。
+        updateVirtualDisplayImePolicy(
+            displayId = snapshot.displayId,
+            hide = !mutableSnapshots.value.userControlling,
+            rootAvailable = rootAvailable,
+        )
         return moved
     }
 
@@ -644,6 +680,8 @@ internal object VirtualDisplayController {
         activeContext = null
         lastMainDisplayForegroundPackage = ""
         mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
+        appliedImePolicyDisplayId = Display.INVALID_DISPLAY
+        appliedImePolicy = -1
 
         if (context != null && mutedPackages.isNotEmpty()) {
             restoreMutedPackages(context.applicationContext, rootAvailable)
@@ -788,7 +826,7 @@ internal object VirtualDisplayController {
         }
         val dm = appContext.getSystemService(DisplayManager::class.java) ?: return@runCatching null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val config = VirtualDisplayConfig.Builder(
+            val builder = VirtualDisplayConfig.Builder(
                 CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
                 width,
                 height,
@@ -796,7 +834,8 @@ internal object VirtualDisplayController {
             )
                 .setSurface(surface)
                 .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
-                .build()
+            val config = builder.build()
+            AndroidAgentLogger.info("[vd] in-process 虚拟屏创建：size=${width}x$height")
             dm.createVirtualDisplay(config)
         } else {
             dm.createVirtualDisplay(
@@ -809,6 +848,158 @@ internal object VirtualDisplayController {
             )
         }
     }.getOrNull()
+
+    /** IWindowManager 事务码：本机 framework.jar 中 IWindowManager$Stub.TRANSACTION_setDisplayImePolicy。 */
+    private const val WMS_TRANSACTION_SET_DISPLAY_IME_POLICY = 108
+
+    /** IWindowManager 事务码：本机 framework.jar 中 IWindowManager$Stub.TRANSACTION_getDisplayImePolicy。 */
+    private const val WMS_TRANSACTION_GET_DISPLAY_IME_POLICY = 107
+
+    /** android.view.WindowManager.DISPLAY_IME_POLICY_FALLBACK：IME 回落到物理主屏显示。 */
+    private const val DISPLAY_IME_POLICY_FALLBACK = 1
+
+    /** android.view.WindowManager.DISPLAY_IME_POLICY_HIDE：不在该 display 上显示 IME。 */
+    private const val DISPLAY_IME_POLICY_HIDE = 2
+
+    /**
+     * 把虚拟屏的 IME 策略改成「隐藏」。
+     *
+     * 该机型的 VirtualDisplayConfig.Builder 没有 setDisplayImePolicy，只能在 display 注册进
+     * WindowManagerService 之后调用 WMS#setDisplayImePolicy(HIDE)。策略生效后
+     * InputMethodManagerService 的 computeImeDisplayIdForTargetInner 会返回 -1，虚拟屏里的
+     * 输入框不会再让软键盘冒到物理主屏。display 注册有延迟，失败时短暂重试。
+     */
+    private fun hideImeOnVirtualDisplay(displayId: Int, rootAvailable: () -> Boolean) {
+        updateVirtualDisplayImePolicy(
+            displayId = displayId,
+            hide = true,
+            rootAvailable = rootAvailable,
+        )
+    }
+
+    /**
+     * 下发虚拟屏的 IME 策略。
+     *
+     * HIDE：Agent 自动运行期间使用，虚拟屏里的输入框不会再把软键盘冒到物理主屏；
+     * FALLBACK：用户点「接管」后使用，软键盘可以正常弹出（挂在物理主屏）。
+     *
+     * 该机型的 VirtualDisplayConfig.Builder 没有 setDisplayImePolicy，只能在 display 注册进
+     * WindowManagerService 之后调用 WMS#setDisplayImePolicy。display 注册有延迟，失败时短暂重试。
+     * 策略调用串行执行，保证「接管/继续」快速切换时最终状态正确。
+     */
+    private fun updateVirtualDisplayImePolicy(
+        displayId: Int,
+        hide: Boolean,
+        rootAvailable: () -> Boolean,
+    ) {
+        if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) return
+        val policy = if (hide) DISPLAY_IME_POLICY_HIDE else DISPLAY_IME_POLICY_FALLBACK
+        val generation = imePolicyGeneration.incrementAndGet()
+        imePolicyExecutor.execute {
+            // 用户连点「接管 / 继续」时队列里可能压着旧意图：只执行最新那一条。
+            if (generation != imePolicyGeneration.get()) return@execute
+            if (appliedImePolicyDisplayId == displayId && appliedImePolicy == policy) return@execute
+            // 排队期间虚拟屏可能已经换人或释放：只对当前这个 display 生效。
+            if (displayId != activeDisplayId) return@execute
+            if (!rootAvailable()) {
+                AndroidAgentLogger.warn("[vd] 无 Root，跳过虚拟屏 IME 策略 displayId=$displayId policy=$policy")
+                return@execute
+            }
+            val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
+            try {
+                // HIDE 只拦新请求，已经冒出来的软键盘要主动收掉。
+                if (hide) dismissSoftKeyboardIfVisible(exec)
+                val applied = applyDisplayImePolicy(exec, displayId, policy)
+                // 写回成功不代表真的生效：读回一次，日志里留下 WMS 的实际策略，方便对账。
+                val readBack = readDisplayImePolicy(exec, displayId)
+                if (applied && (readBack == null || readBack == policy)) {
+                    appliedImePolicyDisplayId = displayId
+                    appliedImePolicy = policy
+                    AndroidAgentLogger.info(
+                        "[vd] 虚拟屏 IME 策略已下发 displayId=$displayId policy=$policy readBack=$readBack",
+                    )
+                } else {
+                    appliedImePolicy = -1
+                    AndroidAgentLogger.warn(
+                        "[vd] 虚拟屏 IME 策略下发失败 displayId=$displayId policy=$policy " +
+                            "readBack=$readBack",
+                    )
+                }
+            } finally {
+                runCatching { exec.close() }
+            }
+        }
+    }
+
+    private fun applyDisplayImePolicy(
+        exec: BoundedRootCommandExecutor,
+        displayId: Int,
+        policy: Int,
+    ): Boolean {
+        repeat(3) { attempt ->
+            val result = runCatching {
+                exec.execute(
+                    command = "service call window $WMS_TRANSACTION_SET_DISPLAY_IME_POLICY " +
+                        "i32 $displayId i32 $policy",
+                    timeoutMillis = 3_000L,
+                )
+            }.getOrNull()
+            val applied = result != null && result.ok &&
+                result.stdout.contains("Result: Parcel") &&
+                !result.stdout.contains("Exception")
+            if (applied) return true
+            try {
+                Thread.sleep(300L * (attempt + 1))
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        return false
+    }
+
+    /**
+     * 读回 displayId 当前实际生效的 IME 策略；解析失败返回 null。
+     *
+     * 本机 service call 的输出有两种形态：`Result: Parcel(\t00000000 00000000   \'........\')`
+     * （异常码 + 返回值）与 AIDL 的 `0x00000000: 00000000 00000002 \'....\'`（列偏移 + 异常码 + 返回值）。
+     * 只有异常码为 0 时返回值才可信。
+     */
+    private fun readDisplayImePolicy(exec: BoundedRootCommandExecutor, displayId: Int): Int? {
+        val result = runCatching {
+            exec.execute(
+                command = "service call window $WMS_TRANSACTION_GET_DISPLAY_IME_POLICY i32 $displayId",
+                timeoutMillis = 3_000L,
+            )
+        }.getOrNull() ?: return null
+        if (!result.ok) return null
+        val body = result.stdout.substringAfter("Result: Parcel(", "").substringBefore("\'")
+        val words = body.split(Regex("[^0-9a-fA-F]+")).filter { it.isNotEmpty() }
+        // 带列偏移时多一个前导字，异常码与返回值整体后移一位。
+        val offset = if (body.contains(":")) 1 else 0
+        if (words.getOrNull(offset)?.toLongOrNull(16) != 0L) return null
+        return words.getOrNull(offset + 1)?.toLongOrNull(16)?.toInt()
+    }
+
+    /** 接管结束后把还留在物理主屏的软键盘收掉。 */
+    private fun dismissSoftKeyboardIfVisible(exec: BoundedRootCommandExecutor) {
+        val probe = runCatching {
+            exec.execute(
+                command = "dumpsys input_method | grep -m1 'mImeWindowVis='",
+                timeoutMillis = 2_000L,
+            )
+        }.getOrNull() ?: return
+        if (!probe.ok) return
+        val flag = probe.stdout.substringAfter("mImeWindowVis=", "").trim().take(1)
+        if (flag.isEmpty() || flag == "0") return
+        runCatching {
+            exec.execute(
+                command = "input -d ${Display.DEFAULT_DISPLAY} keyevent 111",
+                timeoutMillis = 2_000L,
+            )
+        }
+        AndroidAgentLogger.info("[vd] 收回接管期间弹出的软键盘")
+    }
 
     private fun tryCreateRootBridgedVirtualDisplay(
         appContext: Context,

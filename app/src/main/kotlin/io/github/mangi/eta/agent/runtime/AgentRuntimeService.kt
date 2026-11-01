@@ -50,7 +50,8 @@ import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
 import io.github.mangi.eta.agent.overlay.StageCanvasHeight
-import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
+import io.github.mangi.eta.agent.overlay.AgentOverlayCapsuleLens
+import io.github.mangi.eta.agent.overlay.AgentOverlayCapsulePanel
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
@@ -108,10 +109,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
+    /** 展开态面板窗口：宽度恒为装裱视窗宽度，收起态整体 NOT_TOUCHABLE。 */
     private var capsuleView: ComposeView? = null
+    /** 收起态微缩镜窗口：宽度恒为 46.dp，与面板窗口并存，切换只改透明度。 */
+    private var capsuleLensView: ComposeView? = null
     private var resultCardView: ComposeView? = null
     private var glowParams: WindowManager.LayoutParams? = null
     private var capsuleParams: WindowManager.LayoutParams? = null
+    private var capsuleLensParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
     private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
 
@@ -136,7 +141,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val restoreCapsule = Runnable { setCapsuleYielded(false) }
     private val clearanceHost = object : AgentOverlayClearance.Host {
         override fun capsuleTouchBounds(): Rect? {
-            val view = capsuleView?.takeIf { it.isAttachedToWindow } ?: return null
+            val view = (if (capsuleExpanded.value) capsuleView else capsuleLensView)
+                ?.takeIf { it.isAttachedToWindow } ?: return null
             val location = IntArray(2).also(view::getLocationOnScreen)
             val slop = dpToPx(CAPSULE_CLEARANCE_SLOP_DP)
             return Rect(
@@ -171,9 +177,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             VirtualDisplayController.snapshots.collect { snapshot ->
                 val wasActive = virtualDisplayState.value.active
                 virtualDisplayState.value = snapshot
+                // 比例（换应用、旋转）或全屏回落后窗口该有多宽会变，按当前展开态每次都校准一次。
+                applyCapsuleWindowBounds()
+                // 全屏外置 / 搬回虚拟屏都会让胶囊整体隐身，窗口的触摸标志必须跟着走，
+                // 否则隐身期间那块矩形仍然吃掉屏幕上的点击。
+                applyCapsuleInteraction()
                 if (wasActive != snapshot.active) {
                     if (!snapshot.active) VirtualDisplayController.setStageExpanded(false)
-                    syncCapsuleWindowWidth()
                     displayedRun?.let(::syncActiveRunOverlayVisibility)
                 }
             }
@@ -181,6 +191,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         serviceScope.launch {
             VirtualDisplayController.capsuleVisible.collect { visible ->
                 capsuleVisible.value = visible
+                applyCapsuleInteraction()
             }
         }
     }
@@ -224,12 +235,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleLensView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         resultCardView = null
         capsuleView = null
+        capsuleLensView = null
         glowView = null
         resultCardParams = null
         capsuleParams = null
+        capsuleLensParams = null
         glowParams = null
         windowManager = null
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -1062,6 +1076,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         displayedRun?.completedContext = null
         displayedRun = run
         capsuleExpanded.value = false
+        applyCapsuleInteraction()
     }
 
     private fun publishExecutionState() {
@@ -1096,6 +1111,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun setKeepScreenOn(enabled: Boolean) {
         keepScreenOnState.value = enabled
         capsuleView?.keepScreenOn = enabled
+        capsuleLensView?.keepScreenOn = enabled
     }
     /**
      * 边缘光的活跃期。
@@ -1142,26 +1158,41 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowView = glow
         glowParams = glowLp
 
-        // ── 状态胶囊窗口：状态栏下方居中，收起时一句状态（含微缩镜），点击展开控制与画廊视窗 ─
-        val capsule = createOverlayComposeView {
-            val controlRunId = displayedRun?.runId
-            AgentOverlayCapsule(
+        // ── 微缩镜窗口：收起态唯一可见的部分，宽度恒定 46.dp ─────────────
+        // 窗口矩形内的透明区域同样吃点击，所以收起态的窗口必须和看得见的图形一样大，
+        // 微缩镜外面的触摸才能落到下层应用上。
+        val lens = createOverlayComposeView {
+            AgentOverlayCapsuleLens(
                 state = state.value,
                 expanded = capsuleExpanded.value,
                 yielded = capsuleYielded.value,
                 onToggleExpanded = ::toggleCapsule,
-                onCollapsedSettled = ::onCapsuleCollapsedSettled,
-                onPause = {
-                    VirtualDisplayController.setUserControlling(false)
-                    requestPause(controlRunId)
-                },
-                onResume = {
-                    VirtualDisplayController.setUserControlling(false)
-                    requestResume()
-                },
-                onStop = { requestStop(controlRunId) },
+                virtualDisplay = virtualDisplayState.value,
+                capsuleVisible = capsuleVisible.value,
+            )
+        }
+        val lensLp = capsuleLensLayoutParams()
+        lens.keepScreenOn = keepScreenOn.value
+        runCatching { wm.addView(lens, lensLp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_add_view_failed") {
+                "Agent runtime capsule lens addView failed: type=${throwable.safeLogType()}"
+            }
+            return
+        }
+        capsuleLensView = lens
+        capsuleLensParams = lensLp
+
+        // ── 面板窗口：宽度恒定装裱视窗宽度，收起态整体不可触摸 ─────────────
+        // 两个窗口宽度都固定，开关时不存在任何重排，画面上只剩透明度变化。
+        val capsule = createOverlayComposeView {
+            val controlRunId = displayedRun?.runId
+            AgentOverlayCapsulePanel(
+                state = state.value,
+                expanded = capsuleExpanded.value,
+                yielded = capsuleYielded.value,
+                onToggleExpanded = ::toggleCapsule,
                 onSupplementModeChange = ::setCapsuleInputMode,
-                onSupplement = { requestSupplement(controlRunId, it) },
+                onSupplement = { text: String -> requestSupplement(controlRunId, text) },
                 virtualDisplay = virtualDisplayState.value,
                 capsuleVisible = capsuleVisible.value,
                 onTakeOverVirtualDisplay = {
@@ -1173,24 +1204,25 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     requestResume()
                 },
                 onFullscreenVirtualDisplay = ::requestFullscreenVirtualDisplay,
-                onTapVirtualCanvas = { nx, ny, longPress ->
+                onTapVirtualCanvas = { nx: Float, ny: Float, longPress: Boolean ->
                     VirtualDisplayController.dispatchUserTapOnCanvas(nx, ny, longPress)
                 },
-                onSwipeVirtualCanvas = { sx, sy, ex, ey, durationMs ->
+                onSwipeVirtualCanvas = { sx: Float, sy: Float, ex: Float, ey: Float, durationMs: Int ->
                     VirtualDisplayController.dispatchUserSwipeOnCanvas(sx, sy, ex, ey, durationMs)
                 },
             )
         }
-        val capsuleLp = capsuleLayoutParams()
+        val capsuleLp = capsulePanelLayoutParams()
         capsule.keepScreenOn = keepScreenOn.value
         runCatching { wm.addView(capsule, capsuleLp) }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_capsule_add_view_failed") {
-                "Agent runtime capsule addView failed: type=${throwable.safeLogType()}"
+                "Agent runtime capsule panel addView failed: type=${throwable.safeLogType()}"
             }
             return
         }
         capsuleView = capsule
         capsuleParams = capsuleLp
+        applyCapsuleInteraction()
     }
 
     /**
@@ -1200,46 +1232,78 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun setCapsuleYielded(yielded: Boolean) {
         if (!yielded) mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = yielded
+        applyCapsuleInteraction()
+    }
+
+    /**
+     * 两个胶囊窗口的触摸／焦点标志位统一在这里刷新。
+     *
+     * - 收起态只有微缩镜窗口可触，面板窗口整体 FLAG_NOT_TOUCHABLE，矩形里的透明区域不再截走下层手势；
+     * - 展开态反过来，微缩镜窗口让位给面板。
+     * 除标志位外不动任何几何，所以开关时画面里不会有位移。
+     */
+    private fun applyCapsuleInteraction() {
+        val virtualDisplay = virtualDisplayState.value
+        // 胶囊只在「虚拟屏正常驻留」时出现：全屏破壁、搬回过程、虚拟屏释放、用户手动隐藏时内容都不画，
+        // 此时窗口必须整体让出触摸，否则那块透明矩形会把下面的点击吃掉。
+        val stageUsable = virtualDisplay.active &&
+            !virtualDisplay.materializingToMain &&
+            !virtualDisplay.externalizedToMain &&
+            capsuleVisible.value
+        val expanded = capsuleExpanded.value
+        val blocked = capsuleYielded.value
+        updateCapsuleFlags(
+            view = capsuleLensView,
+            params = capsuleLensParams,
+            touchable = stageUsable && !blocked && !expanded,
+            focusable = false,
+        )
+        updateCapsuleFlags(
+            view = capsuleView,
+            params = capsuleParams,
+            touchable = stageUsable && !blocked && expanded,
+            focusable = stageUsable && capsuleSupplementFocusable.value,
+        )
+    }
+
+    private fun updateCapsuleFlags(
+        view: ComposeView?,
+        params: WindowManager.LayoutParams?,
+        touchable: Boolean,
+        focusable: Boolean,
+    ) {
         val wm = windowManager ?: return
-        val capsule = capsuleView ?: return
-        val lp = capsuleParams ?: return
-        val nextFlags = if (yielded) {
-            lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        } else {
-            lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        }
-        if (lp.flags == nextFlags) return
-        lp.flags = nextFlags
-        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_capsule_clearance_failed") {
-                "Agent runtime capsule clearance update failed: type=${throwable.safeLogType()}"
+        if (view == null || params == null) return
+        val notTouchable = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        val notFocusable = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        val withTouch = if (touchable) params.flags and notTouchable.inv() else params.flags or notTouchable
+        val next = if (focusable) withTouch and notFocusable.inv() else withTouch or notFocusable
+        if (params.flags == next) return
+        params.flags = next
+        runCatching { wm.updateViewLayout(view, params) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_interaction_failed") {
+                "Agent runtime capsule interaction update failed: type=${throwable.safeLogType()}"
             }
         }
     }
 
+    /**
+     * 开关胶囊：两个窗口的尺寸与位置都不动，只切透明度（Compose 内）与触摸标志位。
+     * 早期单窗口版本要按展开态改窗口宽度，Compose 会在新宽度下重新测量内容，
+     * 实机上看起来就是整体左右移动 —— 拆成两个定宽窗口后这个现象不存在。
+     */
     private fun toggleCapsule() {
         val expand = !capsuleExpanded.value
         VirtualDisplayController.setStageExpanded(expand && virtualDisplayState.value.active)
-        // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
-        if (expand) updateCapsuleWindowBounds(expanding = true)
         capsuleExpanded.value = expand
+        applyCapsuleInteraction()
     }
-
-    private fun onCapsuleCollapsedSettled() {
-        if (!capsuleExpanded.value) {
-            VirtualDisplayController.setStageExpanded(false)
-            updateCapsuleWindowBounds(expanding = false)
-        }
-    }
-
-    /**
-     * 胶囊窗口用 WRAP_CONTENT 跟随内容，不再需要按档位改宽高。
-     * 保留入口只为兼容既有调用点（增删展开态、切换补充输入法焦点）。
-     */
-    private fun updateCapsuleWindowBounds(@Suppress("UNUSED_PARAMETER") expanding: Boolean = capsuleExpanded.value) = Unit
 
     private fun requestFullscreenVirtualDisplay() {
         capsuleExpanded.value = false
+        // 收起后必须立刻把窗口标志刷新一遍：展开态时微缩镜窗口是 FLAG_NOT_TOUCHABLE，
+        // 只改 Compose 状态不刷新窗口，用户从全屏回来后点胶囊会毫无反应。
+        applyCapsuleInteraction()
         VirtualDisplayController.setStageExpanded(false)
         thread(name = "eta-vd-fullscreen-handoff", isDaemon = true) {
             VirtualDisplayController.handoffToMainDisplay(this@AgentRuntimeService)
@@ -1371,15 +1435,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
 
     /**
-     * 胶囊窗口：横向固定为装裱视窗宽度、左上角定位，高度 WRAP_CONTENT。
-     *
-     * 横向尺寸与位置在展开/收起之间**完全不变**（顶边也固定），所以切换时画面上只有透明度变化，
-     * 不会出现「从右往左滑进来」。宽度取「画布宽 + 两侧衬底与内边距」，
-     * 让三个按钮正好落在画布宽度内，不再留下大片空白窗口。
+     * 微缩镜窗口：左上角定位、宽度恒为 46.dp（微缩镜 26.dp + 两侧 10.dp 阴影留白）。
+     * 窗口宽度决定可触摸范围，必须和看得见的图形一样大，否则会截走下层的点击。
      */
-    private fun capsuleLayoutParams(): WindowManager.LayoutParams {
-        val width = capsuleStageWidthPx()
-        return WindowManager.LayoutParams(
+    private fun capsuleLensLayoutParams(): WindowManager.LayoutParams =
+        capsuleBaseLayoutParams(capsuleLensWindowWidthPx())
+
+    /** 面板窗口：宽度恒为装裱视窗宽度，收起态由 FLAG_NOT_TOUCHABLE 整体让出触摸。 */
+    private fun capsulePanelLayoutParams(): WindowManager.LayoutParams =
+        capsuleBaseLayoutParams(capsuleStageWidthPx())
+
+    /** 两个胶囊窗口共用：宽度固定、左上角定位 + 手动横向居中，位置就不会随开关变化。 */
+    private fun capsuleBaseLayoutParams(width: Int): WindowManager.LayoutParams =
+        WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
@@ -1389,14 +1457,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            // 左上角定位 + 手动横向居中：窗口左边缘不会因为宽度变化而被系统重新摆放。
             gravity = Gravity.TOP or Gravity.START
             x = ((screenWidthPx() - width) / 2).coerceAtLeast(0)
             y = statusBarHeightPx()
             windowAnimations = 0
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
-    }
 
     private fun screenWidthPx(): Int =
         (overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
@@ -1410,8 +1476,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         return dpToPx(widthDp.toInt().coerceIn(140, 460))
     }
 
-    /** 虚拟屏比例变化（换应用、旋转）时同步窗口宽度，保证按钮永远落在画布宽度内。 */
-    private fun syncCapsuleWindowWidth() {
+    /** 收起态窗口宽：微缩镜外框 26.dp + 两侧各 10.dp 阴影留白，与看得见的图形一致。 */
+    private fun capsuleLensWindowWidthPx(): Int =
+        dpToPx(CAPSULE_LENS_WINDOW_WIDTH_DP + CAPSULE_LENS_SHADOW_MARGIN_DP * 2)
+
+    /**
+     * 按当前展开态校准窗口宽度与横向居中位置。
+     *
+     * 窗口矩形的透明区域也算窗口，收起态必须是「微缩镜大小」才能把外面的点击让给下层应用；
+     * 展开态则要装裱宽度，让三个按钮落在画布宽度内。两种宽度都居中，
+     * 所以切换只改窗口尺寸，屏幕上的图形位置不变。
+     */
+    private fun applyCapsuleWindowBounds() {
         val wm = windowManager ?: return
         val capsule = capsuleView ?: return
         val lp = capsuleParams ?: return
@@ -1516,22 +1592,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun setCapsuleInputMode(focusable: Boolean) {
         capsuleSupplementFocusable.value = focusable
-        updateCapsuleWindowBounds()
-        val wm = windowManager ?: return
-        val capsule = capsuleView ?: return
-        val lp = capsuleParams ?: return
-        val nextFlags = if (focusable) {
-            lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        } else {
-            lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        }
-        if (lp.flags == nextFlags) return
-        lp.flags = nextFlags
-        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_capsule_focus_update_failed") {
-                "Agent runtime capsule focus update failed: type=${throwable.safeLogType()}"
-            }
-        }
+        applyCapsuleInteraction()
     }
 
     private fun resultCardWindowHeightPx(): Int =
@@ -1567,11 +1628,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
         capsuleView?.keepScreenOn = false
+        capsuleLensView?.keepScreenOn = false
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleLensView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView = null
+        capsuleLensView = null
         glowView = null
         capsuleParams = null
+        capsuleLensParams = null
         glowParams = null
     }
 
@@ -1591,15 +1656,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
         capsuleView?.keepScreenOn = false
+        capsuleLensView?.keepScreenOn = false
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleLensView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         resultCardView = null
         capsuleView = null
+        capsuleLensView = null
         glowView = null
         resultCardParams = null
         capsuleParams = null
+        capsuleLensParams = null
         glowParams = null
         windowManager = null
     }
@@ -1675,6 +1744,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_STAGE_HEIGHT_DP = 420
         /** 装裱视窗两侧的额外宽度：衬底 10.dp × 2 + 面板内边距 12.dp × 2。 */
         private const val CAPSULE_STAGE_SIDE_EXTRA_DP = 44
+        /** 收起态微缩镜外框宽（26.dp）与两侧阴影留白：窗口只包住看得见的这一小块。 */
+        private const val CAPSULE_LENS_WINDOW_WIDTH_DP = 26
+        private const val CAPSULE_LENS_SHADOW_MARGIN_DP = 10
         /** 拿不到虚拟屏比例时的兜底画布比例（9:19.5）。 */
         private const val DEFAULT_CANVAS_ASPECT = 0.462f
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260

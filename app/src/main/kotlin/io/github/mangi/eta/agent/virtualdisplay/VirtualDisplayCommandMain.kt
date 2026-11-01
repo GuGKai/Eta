@@ -228,7 +228,7 @@ internal object VirtualDisplayCommandMain {
         val thread = activityThreadClass.getMethod("systemMain").invoke(null)
         val systemContext = activityThreadClass.getMethod("getSystemContext").invoke(thread) as android.content.Context
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val config = android.hardware.display.VirtualDisplayConfig.Builder(
+            val builder = android.hardware.display.VirtualDisplayConfig.Builder(
                 CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
                 width,
                 height,
@@ -236,7 +236,8 @@ internal object VirtualDisplayCommandMain {
             )
                 .setSurface(surface)
                 .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
-                .build()
+            val config = builder.build()
+            android.util.Log.i("EtaVdBridge", "createVirtualDisplay size=${'$'}{width}x${'$'}{height}")
             val dmgClass = Class.forName("android.hardware.display.DisplayManagerGlobal")
             val dmg = dmgClass.getMethod("getInstance").invoke(null)
             val createMethod = dmgClass.methods.firstOrNull {

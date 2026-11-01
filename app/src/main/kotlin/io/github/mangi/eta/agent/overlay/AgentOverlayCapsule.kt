@@ -40,28 +40,92 @@ import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplaySnapshot
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 状态栏下方的执行胶囊，只服务后台虚拟屏：
+ * 执行胶囊拆成两个互不重叠的系统窗口：
  *
- * - 收起态：一枚虚拟屏微缩镜，外套一圈同圆角的细描边；点一下进入展开态。
- * - 展开态：画廊装裱视窗 + 「接管 / 全屏 / 收起」三枚按钮。
+ * - [AgentOverlayCapsuleLens]：收起态的微缩镜，独立窗口，宽度恒为 46.dp。
+ * - [AgentOverlayCapsulePanel]：展开态的画廊面板，独立窗口，宽度恒为装裱视窗宽度。
  *
- * 布局约束（实机反馈过的问题都源于此）：
- * 1. 窗口横向固定为装裱视窗宽度、左上角定位：横向永不改变，顶边固定，
- *    两态切换时画面上不存在任何位移，只有透明度变化。
- * 2. 展开面板与微缩镜放在同一个 Box 里叠放（不是 Column 相加），
- *    交叉淡入淡出时高度取两者较大值，不会被窗口裁掉或挤动。
- * 3. 全部动画只有透明度，没有位移、缩放、宽高动画。
+ * 为什么必须拆两个窗口：
+ * 窗口矩形内的透明区域同样会吃掉点击，所以收起态窗口宽必须小到只剩微缩镜，
+ * 展开态又必须宽到装得下面板 —— 单窗口只能来回改宽度，而宽度一变，
+ * Compose 会在新约束下重新测量内容，画面看起来就像「左右移动」。
+ * 拆成两个宽度都固定的窗口后，每次开关只切换透明度与触摸标志位，几何完全不动。
  */
 @Composable
-internal fun AgentOverlayCapsule(
+internal fun AgentOverlayCapsuleLens(
     state: AgentOverlayState,
     expanded: Boolean,
     yielded: Boolean,
     onToggleExpanded: () -> Unit,
-    onCollapsedSettled: () -> Unit,
-    onPause: () -> Unit = {},
-    onResume: () -> Unit = {},
-    onStop: () -> Unit = {},
+    virtualDisplay: VirtualDisplaySnapshot,
+    capsuleVisible: Boolean,
+) {
+    var revealed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { revealed = true }
+
+    // 为 Agent 手势让路：只改绘制层，不触发重排。
+    val clearance by animateFloatAsState(
+        targetValue = if (yielded) 1f else 0f,
+        animationSpec = if (yielded) {
+            tween(durationMillis = 180, easing = FastOutLinearInEasing)
+        } else {
+            spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)
+        },
+        label = "capsule_lens_clearance",
+    )
+    val accent by animateColorAsState(overlayPhaseAccent(state.phase), tween(240), label = "capsule_lens_accent")
+    val expandDescription = stringResource(R.string.overlay_capsule_toggle, state.status.localizedText())
+    val lensShape = RoundedCornerShape(CapsuleLensRingCorner)
+
+    AnimatedVisibility(
+        visible = revealed && capsuleVisible && virtualDisplay.active &&
+            !virtualDisplay.materializingToMain && !virtualDisplay.externalizedToMain && !expanded,
+        enter = fadeIn(tween(CapsuleFadeMs)),
+        exit = fadeOut(tween(CapsuleFadeMs)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(CapsuleLensOuterWidth)
+                    .graphicsLayer { applyClearance(clearance) }
+                    .shadow(6.dp, lensShape, ambientColor = accent, spotColor = accent)
+                    .clip(lensShape)
+                    .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f))
+                    .border(
+                        width = 0.85.dp,
+                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                        shape = lensShape,
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onToggleExpanded,
+                    )
+                    .semantics { contentDescription = expandDescription }
+                    .padding(CapsuleLensRingPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                VirtualDisplayMicroLens(
+                    snapshot = virtualDisplay,
+                    accent = accent,
+                )
+            }
+        }
+    }
+}
+
+/** 展开态画布 + 「接管 / 全屏 / 收起」三枚按钮；窗口宽度恒定，开关只靠透明度。 */
+@Composable
+internal fun AgentOverlayCapsulePanel(
+    state: AgentOverlayState,
+    expanded: Boolean,
+    yielded: Boolean,
+    onToggleExpanded: () -> Unit,
     onSupplementModeChange: (Boolean) -> Unit = {},
     onSupplement: (String) -> Unit = {},
     virtualDisplay: VirtualDisplaySnapshot = VirtualDisplaySnapshot.Inactive,
@@ -72,10 +136,8 @@ internal fun AgentOverlayCapsule(
     onTapVirtualCanvas: (Float, Float, Boolean) -> Unit = { _, _, _ -> },
     onSwipeVirtualCanvas: (Float, Float, Float, Float, Int) -> Unit = { _, _, _, _, _ -> },
 ) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-
-    // 为 Agent 手势让路：离开时快速上移收小淡出，回来时用弹簧落回，只改绘制层不触发重排。
+    var revealed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { revealed = true }
     val clearance by animateFloatAsState(
         targetValue = if (yielded) 1f else 0f,
         animationSpec = if (yielded) {
@@ -83,84 +145,38 @@ internal fun AgentOverlayCapsule(
         } else {
             spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)
         },
-        label = "capsule_clearance",
+        label = "capsule_panel_clearance",
     )
-    val accent by animateColorAsState(overlayPhaseAccent(state.phase), tween(240), label = "capsule_accent")
-    val expandDescription = stringResource(R.string.overlay_capsule_toggle, state.status.localizedText())
-    val lensShape = RoundedCornerShape(CapsuleLensRingCorner)
+    val accent by animateColorAsState(overlayPhaseAccent(state.phase), tween(240), label = "capsule_panel_accent")
     val stageShape = RoundedCornerShape(StageOuterCorner)
 
     AnimatedVisibility(
-        visible = visible && capsuleVisible && virtualDisplay.active &&
-            !virtualDisplay.materializingToMain && !virtualDisplay.externalizedToMain,
+        visible = revealed && capsuleVisible && virtualDisplay.active &&
+            !virtualDisplay.materializingToMain && !virtualDisplay.externalizedToMain && expanded,
         enter = fadeIn(tween(CapsuleFadeMs)),
         exit = fadeOut(tween(CapsuleFadeMs)),
     ) {
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            // ── 展开面板：点开时从透明变实，收起时淡出 ──────────────────────
-            AnimatedVisibility(
-                visible = expanded,
-                enter = fadeIn(tween(CapsuleFadeMs)),
-                exit = fadeOut(tween(CapsuleFadeMs)),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp, bottom = 6.dp)
-                        .graphicsLayer { applyClearance(clearance) }
-                        .shadow(10.dp, stageShape, ambientColor = accent, spotColor = accent)
-                        .clip(stageShape)
-                        .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f))
-                        .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                ) {
-                    VirtualDisplayStageSection(
-                        snapshot = virtualDisplay,
-                        accent = accent,
-                        isPaused = state.phase == AgentOverlayPhase.PAUSED,
-                        onTakeOver = onTakeOverVirtualDisplay,
-                        onResumeAuto = onResumeVirtualDisplay,
-                        onFullscreen = onFullscreenVirtualDisplay,
-                        onCollapse = onToggleExpanded,
-                        onTapCanvas = onTapVirtualCanvas,
-                        onSwipeCanvas = onSwipeVirtualCanvas,
-                    )
-                }
-            }
-
-            // ── 微缩镜：点开时先变透明，收起时重新淡入 ──────────────────────
-            AnimatedVisibility(
-                visible = !expanded,
-                enter = fadeIn(tween(CapsuleFadeMs)),
-                exit = fadeOut(tween(CapsuleFadeMs)),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .padding(vertical = 6.dp)
-                        .width(CapsuleLensOuterWidth)
-                        .graphicsLayer { applyClearance(clearance) }
-                        .shadow(6.dp, lensShape, ambientColor = accent, spotColor = accent)
-                        .clip(lensShape)
-                        .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f))
-                        .border(
-                            width = 0.85.dp,
-                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.14f),
-                            shape = lensShape,
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onToggleExpanded,
-                        )
-                        .semantics { contentDescription = expandDescription }
-                        .padding(CapsuleLensRingPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    VirtualDisplayMicroLens(
-                        snapshot = virtualDisplay,
-                        accent = accent,
-                    )
-                }
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp, bottom = 6.dp)
+                .graphicsLayer { applyClearance(clearance) }
+                .shadow(10.dp, stageShape, ambientColor = accent, spotColor = accent)
+                .clip(stageShape)
+                .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f))
+                .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+        ) {
+            VirtualDisplayStageSection(
+                snapshot = virtualDisplay,
+                accent = accent,
+                isPaused = state.phase == AgentOverlayPhase.PAUSED,
+                onTakeOver = onTakeOverVirtualDisplay,
+                onResumeAuto = onResumeVirtualDisplay,
+                onFullscreen = onFullscreenVirtualDisplay,
+                onCollapse = onToggleExpanded,
+                onTapCanvas = onTapVirtualCanvas,
+                onSwipeCanvas = onSwipeVirtualCanvas,
+            )
         }
     }
 }

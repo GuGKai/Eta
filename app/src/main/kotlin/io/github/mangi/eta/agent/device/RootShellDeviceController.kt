@@ -551,6 +551,11 @@ internal class RootShellDeviceController(
                             JSONObject(it).put("button", normalized).toString()
                         }
                     }
+                    // 虚拟屏已关闭输入法，部分应用不接受 ACTION_IME_ENTER：退回定向按键注入。
+                    if (isVirtual && rootAvailable() && result.code != "ACTION_OUTCOME_UNKNOWN") {
+                        return inputCommand("${inputCommandPrefix(displayId)} keyevent 66", "press_key")
+                            .let { JSONObject(it).put("button", normalized).toString() }
+                    }
                     return nodeActionJson("press_key", result).let {
                         JSONObject(it).put("button", normalized).toString()
                     }

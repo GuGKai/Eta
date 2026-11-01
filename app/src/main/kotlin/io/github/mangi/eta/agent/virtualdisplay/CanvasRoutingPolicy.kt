@@ -107,4 +107,5 @@ internal object CanvasRoutingPolicy {
 
     fun isVirtualDisplay(displayId: Int): Boolean =
         displayId != Display.DEFAULT_DISPLAY && displayId > 0
+
 }
