@@ -260,7 +260,9 @@ private fun MarkdownText(
         Modifier.onGloballyPositioned { coordinates ->
             val y = coordinates.positionInWindow().y
             val current = textWindowTop
-            if (current == null || abs(current - y) > 0.5f) {
+            // 死区取 1px：滚动和放置都是整像素的，0.5px 阈值会让同一次落位反复上报、
+            // 反复触发父级重组（停靠收口时表现为高频抽动）。
+            if (current == null || abs(current - y) > 1f) {
                 textWindowTop = y
                 emitFirstLineTop()
             }
@@ -272,7 +274,7 @@ private fun MarkdownText(
         if (layout.lineCount > 0 && layout.layoutInput.text.isNotEmpty()) {
             val top = layout.getBoundingBox(0).top
             val current = firstLineLocalTop
-            if (current == null || abs(current - top) > 0.5f) {
+            if (current == null || abs(current - top) > 1f) {
                 firstLineLocalTop = top
                 emitFirstLineTop()
             }

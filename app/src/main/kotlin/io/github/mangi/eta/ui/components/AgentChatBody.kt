@@ -559,6 +559,8 @@ internal fun AgentConversationMessages(
     val density = LocalDensity.current
     // 顶栏占据的高度（px）：正文停靠后首行要落在它下面。
     val topInsetPx = with(density) { topInset.roundToPx() }
+    // 列表顶部内边距（顶栏之外的留白，px）：历史会话直接跳落点时要用它抵掉这段留白。
+    val chatTopPaddingPx = with(density) { ChatTopContentPadding.roundToPx() }
     // 首行与顶栏底边之间只留这么点缝：必须远小于正文行距，看起来才是「贴着顶栏」。
     val dockGapPx = with(density) { DockGap.roundToPx() }
     // 守卫的提前量（px）：首行进到这个范围就冻结跟底，再交给停靠闭环慢慢收到落点。
@@ -621,6 +623,31 @@ internal fun AgentConversationMessages(
     val streamingAnswerId = tailMessage
         ?.takeIf { message -> message.content.isNotBlank() }
         ?.id
+    // 历史会话的首帧落点：在 LazyColumn 第一次测量之前就把视口请求到正文条目上。
+    // 之前只在 LaunchedEffect 里跳：首帧先按 rememberLazyListState 的初值画在列表底部，
+    // 随后再整体上移一大截——那就是用户看到的「突然向上抽动」。
+    // requestScrollToItem 会被下一次布局采用，放在布局之前，首帧画出来就已经在落点上。
+    val historyDockItemIndex = remember(
+        isStreaming,
+        streamingAnswerId,
+        earlierMessagesItemCount,
+        timelineEntries,
+    ) {
+        when {
+            isStreaming -> null
+            streamingAnswerId == null -> null
+            timelineEntries.lastOrNull()?.key != streamingAnswerId -> null
+            else -> timelineEntries.lastIndex + earlierMessagesItemCount
+        }
+    }
+    val historyDockRequested = remember { intArrayOf(-1) }
+    SideEffect {
+        val index = historyDockItemIndex
+        if (index != null && historyDockRequested[0] != index) {
+            historyDockRequested[0] = index
+            scrollState.requestScrollToItem(index, scrollOffset = chatTopPaddingPx)
+        }
+    }
 
     LaunchedEffect(isStreaming) {
         if (isStreaming) {
@@ -633,7 +660,19 @@ internal fun AgentConversationMessages(
         }
     }
 
-    LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging) {
+    LaunchedEffect(
+        isStreaming,
+        isTailRendering,
+        keepBottomAnchored,
+        isUserDragging,
+        finalAnswerAnchored,
+    ) {
+        if (finalAnswerAnchored) {
+            // 停靠闭环独占滚动：跟底收尾必须让路。否则两边交替写滚动，收口后又抽两下。
+            // 也不能让它挂着 isBottomSettling 等「滚回底部」——停靠在顶栏时永远等不到。
+            isBottomSettling = false
+            return@LaunchedEffect
+        }
         if (!keepBottomAnchored || isUserDragging) {
             isBottomSettling = false
         } else if (isStreaming || isTailRendering) {
@@ -676,7 +715,6 @@ internal fun AgentConversationMessages(
         // 落点：首行字顶的窗口 y 应该正好落在顶栏底边。
         val target = topInsetPx + dockGapPx
         var previousFrameNanos = 0L
-        var stableFrames = 0
         // 只统计真正推动滚动的帧：「等正文继续长高」的帧单独计，
         // 否则等待本身就把帧预算烧光，长正文反而等不到收口。
         var frames = 0
@@ -692,13 +730,20 @@ internal fun AgentConversationMessages(
             }
             // 首块不是文本块（代码/表格/引用）时拿不到首行字顶，退化为「条目顶边贴顶栏」。
             val delta = (answerFirstLineWindowY ?: item.offset.toFloat()) - target
-            if (abs(delta) <= 1f) {
-                stableFrames++
-                if (stableFrames >= 3) return true
-                withFrameNanos { }
-                continue
+            if (abs(delta) <= DockSnapPx) {
+                // 到线就一次对齐收口：不再逐帧 ±1px 微调，也不再要求「连续 3 帧稳定」——
+                // 整像素量化让残差在 0/1px 之间反复，前一种写法表现为高频上下抽动，
+                // 后一种条件几乎永远不成立，只会把循环空转到帧预算上限。
+                if (abs(delta) >= 0.5f) {
+                    try {
+                        scrollState.scroll { scrollBy(delta) }
+                    } catch (cancelled: CancellationException) {
+                        if (!currentCoroutineContext().isActive) throw cancelled
+                        return true
+                    }
+                }
+                return true
             }
-            stableFrames = 0
             // 还要往下沉却已经到底：没有可滚空间，等正文继续长高再收口，不空转报错。
             if (delta > 0f && !scrollState.canScrollForward) {
                 waitedFrames++
@@ -725,6 +770,55 @@ internal fun AgentConversationMessages(
             }
         }
         return false
+    }
+
+    // 历史会话打开时的落点：直接把视口放到「首行贴顶栏」，不播位移曲线。
+    // 起步交给结构对齐（条目顶贴顶栏，一次到位），再按首行实测补掉条目内部的上边距。
+    suspend fun snapAnswerToTop(key: String, itemIndex: Int): Boolean {
+        val target = topInsetPx + dockGapPx
+        // 列表顶部留白（顶栏高度 + ChatTopContentPadding）正好被吃掉时，条目顶就落在顶栏底边上。
+        val structuralOffset = (chatTopPaddingPx - dockGapPx).coerceAtLeast(0)
+        // 必须用 scrollToItem：requestScrollToItem 只是登记请求，等下一次测量才采用，
+        // 中间那几帧列表还停在原处，随后再被拉正，看上去就是「往上抽一下」。
+        scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
+        // 等这一跳被布局采用、首行重新测量（测量回调比帧回调晚一帧，多等一帧更保险）。
+        repeat(2) { withFrameNanos { } }
+        var rounds = 0
+        while (rounds < 10 && currentCoroutineContext().isActive) {
+            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
+            val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { info -> info.key == key }
+            if (item == null) {
+                scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
+                rounds++
+                withFrameNanos { }
+                continue
+            }
+            // 首行字顶必须和条目实测顶边对得上，这一帧的测量才算可信。
+            val firstLineY = answerFirstLineWindowY
+                ?.takeIf { answerFirstLineOwnerKey == key }
+                ?.takeIf { y -> y - item.offset.toFloat() in -4f..FirstLineTopPlausibleSlackPx }
+            // 关键：拿不到可信的首行测量时，绝不能拿「条目顶边」当成已到位就收工。
+            // 条目顶边本来就贴着顶栏，那样会在首行真正测出来之前结束，落点比目标低一截——
+            // 低出来的正是条目内部的上边距，用户看到的就是「停靠位置往下掉了」。
+            if (firstLineY == null) {
+                rounds++
+                withFrameNanos { }
+                continue
+            }
+            val delta = firstLineY - target
+            if (abs(delta) <= 1f) return true
+            rounds++
+            try {
+                // 一次挪到底：分步挪会在屏幕上留下看得见的一段上移。
+                scrollState.scroll { scrollBy(delta) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return true
+            }
+            withFrameNanos { }
+        }
+        // 到头来还是没拿到可信首行：停在「条目顶贴顶栏」这个保底位置，不要再挪。
+        return true
     }
 
     // 停靠守卫：跟着跟底引擎逐帧盯正文首行的窗口 y，一旦首行逼近顶栏就立刻返回 true，
@@ -758,13 +852,25 @@ internal fun AgentConversationMessages(
     LaunchedEffect(streamingAnswerId, timelineEntries.lastOrNull()?.key) {
         val answerId = streamingAnswerId ?: return@LaunchedEffect
         if (finalAnswerHandledId == answerId) return@LaunchedEffect
-        if (wasUserDragging) return@LaunchedEffect
+        // 历史会话没有动画可抢：用户此刻真在拖动的话，下面的 snap 自己会退出。
+        if (isStreaming && wasUserDragging) return@LaunchedEffect
         val entries = latestTimelineEntries
         val answerIndex = entries.indexOfLast { entry -> entry.key == answerId }
         if (answerIndex < 0) return@LaunchedEffect
         // 时间线最后一条不是它：下方还有工具链，交给默认跟底，等收尾正文再停。
         if (entries.lastOrNull()?.key != answerId) return@LaunchedEffect
         val itemIndex = answerIndex + earlierMessagesItemCount
+        if (!isStreaming) {
+            // 历史会话：打开就该停在「首行贴顶栏」的位置，不要先停在底部、再当面上移一次。
+            // 所以这里跳过守卫和缓出曲线，直接把视口跳到落点（没有可见的上移动画）。
+            finalAnswerAnchored = true
+            if (snapAnswerToTop(key = answerId, itemIndex = itemIndex)) {
+                finalAnswerHandledId = answerId
+            } else {
+                finalAnswerAnchored = false
+            }
+            return@LaunchedEffect
+        }
         // 首行逼近顶栏就立刻冻结跟底（矮正文到不了顶栏，始终走默认跟底）。
         // 一次没停成也不就此罢手：正文还在长，交回跟底、隔几帧再收一次。
         // 只试一次的话，任何一次提前失败都会变成「一路跟到底、完全不停靠」。
@@ -1444,6 +1550,12 @@ private val DockLookahead = 16.dp
 private val ChatTopContentPadding = 14.dp
 // 停靠位移的时间常数（秒）：逐帧指数缓出，前段快、后段收敛，避免观感生硬或像瞬移。
 private const val DockTimeConstantSeconds = 0.085f
+// 停靠收口的一次对齐阈值（px）：残差小于它就一次 scrollBy 到位，不再逐帧微调。
+// 列表滚动是整像素的，残差不到 1px 时「向上 1px / 向下 1px」会逐帧交替，
+// 看上去就是整段正文高频上下抽动。
+private const val DockSnapPx = 3f
+// 首行字顶相对条目顶边的合理上限（px）：超过说明这一帧的测量还是上一屏的旧值，不能用。
+private const val FirstLineTopPlausibleSlackPx = 200f
 
 
 internal fun resolveKeepBottomAnchored(
