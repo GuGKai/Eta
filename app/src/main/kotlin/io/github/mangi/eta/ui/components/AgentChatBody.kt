@@ -614,6 +614,9 @@ internal fun AgentConversationMessages(
     // 再把视口收到「正文首行贴着顶栏下方」。中途冒出工具步骤说明是过渡文本，只解冻、不位移。
     var finalAnswerAnchored by remember { mutableStateOf(false) }
     var finalAnswerHandledId by remember { mutableStateOf<String?>(null) }
+    // 本轮由「流式停靠」真正落到位的回答 id：首行已经在顶栏下沿，收尾时绝不能再拿
+    // 「历史会话首帧落点」把视口按条目顶边重设一次，否则正文会整体往下掉一段。
+    var streamDockedAnswerId by remember { mutableStateOf<String?>(null) }
     var wasUserDragging by remember { mutableStateOf(false) }
     // 正文首行字顶的窗口 y（px）：停靠闭环直接拿它和顶栏底边比，不换算条目顶边。
     var answerFirstLineWindowY by remember { mutableStateOf<Float?>(null) }
@@ -630,12 +633,17 @@ internal fun AgentConversationMessages(
     val historyDockItemIndex = remember(
         isStreaming,
         streamingAnswerId,
+        streamDockedAnswerId,
         earlierMessagesItemCount,
         timelineEntries,
     ) {
         when {
             isStreaming -> null
             streamingAnswerId == null -> null
+            // 这一轮流式期间已经停靠到位：首行就贴着顶栏。收尾时若再按「条目顶贴顶栏」
+            // 请求一次，正文会整体下移一个条目内边距（8dp + 首行行距留白），并且因为
+            // 该回答已被标记处理过，没有任何逻辑会把它拉回落点——于是位置就永久掉下去。
+            streamDockedAnswerId == streamingAnswerId -> null
             timelineEntries.lastOrNull()?.key != streamingAnswerId -> null
             else -> timelineEntries.lastIndex + earlierMessagesItemCount
         }
@@ -654,6 +662,7 @@ internal fun AgentConversationMessages(
             // 新一轮开始：清掉上一轮的停靠，恢复跟底等待这一轮的正文。
             finalAnswerAnchored = false
             finalAnswerHandledId = null
+            streamDockedAnswerId = null
             wasUserDragging = false
             answerFirstLineWindowY = null
             answerFirstLineOwnerKey = null
@@ -902,6 +911,7 @@ internal fun AgentConversationMessages(
             if (dockAnswerToTop(key = answerId, itemIndex = itemIndex)) {
                 // 只有真正停住了才标记已处理：矮正文、被夹住时要允许正文变长后重来。
                 finalAnswerHandledId = answerId
+                streamDockedAnswerId = answerId
                 return@LaunchedEffect
             }
             finalAnswerAnchored = false
