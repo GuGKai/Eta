@@ -719,11 +719,16 @@ internal fun AgentConversationMessages(
         // 否则等待本身就把帧预算烧光，长正文反而等不到收口。
         var frames = 0
         var waitedFrames = 0
-        while (frames < 900 && waitedFrames < 900) {
+        // 等待「正文继续长高把落点带下来」的帧预算只有这么点：跟底被冻结之后列表保持
+        // 首个可见条目的锚点，正文变长并不会让首行自己逼近顶栏，长时间等下去只会把画面
+        // 冻在原地（以前是 900 帧 ≈ 15 秒），等不到就交回跟底，由外层隔几帧再试一次。
+        while (frames < 900 && waitedFrames < WaitForGrowthFrameBudget) {
             // 用户正在手动滑动，或下方又冒出工具链（这段只是过渡文本）：立刻放弃停靠，交回默认跟底。
             if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
             val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it2 -> it2.key == key }
             if (item == null) {
+                // 计帧：条目取不到时不能无限循环，否则每帧一次 scrollToItem 就是可见的抖动。
+                frames++
                 scrollState.scrollToItem(itemIndex)
                 withFrameNanos { }
                 continue
@@ -750,6 +755,11 @@ internal fun AgentConversationMessages(
                 withFrameNanos { }
                 continue
             }
+            // 方向余量守卫：往目标方向已经没有可滚空间时，这一帧绝不发起 scroll。
+            // 内容长度刚好卡在一屏时落点在物理上就到不了，照旧每帧发一次 scrollBy 会被
+            // 夹成 0 位移，而边界上的回弹动画每帧被重启一次，屏幕上就是正文上下高频抽动。
+            // 上方也已到顶（首行越过落点）说明停靠不可达，交回跟底，别把循环空转到帧预算。
+            if (delta < 0f && !scrollState.canScrollBackward) return false
             val frameNanos = withFrameNanos { it }
             val elapsedSeconds = if (previousFrameNanos == 0L) {
                 1f / 60f
@@ -807,6 +817,18 @@ internal fun AgentConversationMessages(
             }
             val delta = firstLineY - target
             if (abs(delta) <= 1f) return true
+            // 方向余量守卫：落点在物理上到不了时（正文长度刚好卡一屏或更短），
+            // 连续 10 轮 scrollBy 都会被夹成 0 位移，每帧重启一次边界回弹动画——
+            // 屏幕上同样是正文上下高频抽动。这里一次收手：回到底部，交回默认跟底。
+            val hasRoom = if (delta > 0f) {
+                scrollState.canScrollForward
+            } else {
+                scrollState.canScrollBackward
+            }
+            if (!hasRoom) {
+                if (delta > 0f) scrollState.scrollToItem(bottomItemIndex)
+                return false
+            }
             rounds++
             try {
                 // 一次挪到底：分步挪会在屏幕上留下看得见的一段上移。
@@ -863,12 +885,10 @@ internal fun AgentConversationMessages(
         if (!isStreaming) {
             // 历史会话：打开就该停在「首行贴顶栏」的位置，不要先停在底部、再当面上移一次。
             // 所以这里跳过守卫和缓出曲线，直接把视口跳到落点（没有可见的上移动画）。
-            finalAnswerAnchored = true
-            if (snapAnswerToTop(key = answerId, itemIndex = itemIndex)) {
-                finalAnswerHandledId = answerId
-            } else {
-                finalAnswerAnchored = false
-            }
+            // 两种情况都算处理完：true = 停靠到位并冻结跟底；false = 落点不可达/被用户打断，
+            // 视口留在跟底位置。标记成已处理，避免同一个回答反复重跳、来回抽动。
+            finalAnswerAnchored = snapAnswerToTop(key = answerId, itemIndex = itemIndex)
+            finalAnswerHandledId = answerId
             return@LaunchedEffect
         }
         // 首行逼近顶栏就立刻冻结跟底（矮正文到不了顶栏，始终走默认跟底）。
@@ -1556,6 +1576,8 @@ private const val DockTimeConstantSeconds = 0.085f
 private const val DockSnapPx = 3f
 // 首行字顶相对条目顶边的合理上限（px）：超过说明这一帧的测量还是上一屏的旧值，不能用。
 private const val FirstLineTopPlausibleSlackPx = 200f
+// 「等正文继续长高」的帧预算：约 0.4 秒。首行在跟底冻结后不会再动，长等无意义。
+private const val WaitForGrowthFrameBudget = 24
 
 
 internal fun resolveKeepBottomAnchored(
