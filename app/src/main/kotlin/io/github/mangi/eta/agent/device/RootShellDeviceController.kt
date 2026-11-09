@@ -268,7 +268,7 @@ internal class RootShellDeviceController(
         AgentAccessibilityService.current()?.let { service ->
             val result = service.gestureTap(x.toFloat(), y.toFloat(), displayId = displayId)
             if (result.ok) {
-                waitForUiSettle("tap")
+                waitForUiSettle("tap", displayId)
                 return nodeActionJson("tap", result)
             }
             if (!GestureFallbackPolicy.mayFallbackToRoot(result.code)) {
@@ -276,7 +276,7 @@ internal class RootShellDeviceController(
             }
             if (!rootAvailable()) return nodeActionJson("tap", result)
         }
-        return inputCommand("${inputCommandPrefix(displayId)} tap $x $y", "tap")
+        return inputCommand("${inputCommandPrefix(displayId)} tap $x $y", "tap", displayId)
     }
 
     fun longPress(x: Int, y: Int, durationMs: Int, displayId: Int = Display.DEFAULT_DISPLAY): String {
@@ -286,7 +286,7 @@ internal class RootShellDeviceController(
         AgentAccessibilityService.current()?.let { service ->
             val result = service.gestureTap(x.toFloat(), y.toFloat(), duration.toLong(), displayId = displayId)
             if (result.ok) {
-                waitForUiSettle("long_press")
+                waitForUiSettle("long_press", displayId)
                 return nodeActionJson("long_press", result.copy(method = "GESTURE_LONG_PRESS"))
             }
             if (!GestureFallbackPolicy.mayFallbackToRoot(result.code)) {
@@ -294,7 +294,7 @@ internal class RootShellDeviceController(
             }
             if (!rootAvailable()) return nodeActionJson("long_press", result)
         }
-        return inputCommand("${inputCommandPrefix(displayId)} swipe $x $y $x $y $duration", "long_press")
+        return inputCommand("${inputCommandPrefix(displayId)} swipe $x $y $x $y $duration", "long_press", displayId)
     }
 
     fun swipe(
@@ -319,7 +319,7 @@ internal class RootShellDeviceController(
                 displayId = displayId,
             )
             if (result.ok) {
-                waitForUiSettle("swipe")
+                waitForUiSettle("swipe", displayId)
                 return nodeActionJson("swipe", result)
             }
             if (!GestureFallbackPolicy.mayFallbackToRoot(result.code)) {
@@ -327,7 +327,7 @@ internal class RootShellDeviceController(
             }
             if (!rootAvailable()) return nodeActionJson("swipe", result)
         }
-        return inputCommand("${inputCommandPrefix(displayId)} swipe $x1 $y1 $x2 $y2 $duration", "swipe")
+        return inputCommand("${inputCommandPrefix(displayId)} swipe $x1 $y1 $x2 $y2 $duration", "swipe", displayId)
     }
 
     fun scroll(
@@ -375,7 +375,7 @@ internal class RootShellDeviceController(
         AgentAccessibilityService.current()?.let { service ->
             val result = service.inputTextFocused(text, displayId = displayId)
             if (result.ok) {
-                waitForUiSettle("input_text")
+                waitForUiSettle("input_text", displayId)
                 return nodeActionJson("input_text", result)
             }
             return nodeActionJson("input_text", result)
@@ -399,7 +399,7 @@ internal class RootShellDeviceController(
             val snapshot = observation?.accessibilitySnapshot
             val result = service.setTextNode(snapshot, index, text, displayId = displayId)
             if (result.ok) {
-                waitForUiSettle("replace_text")
+                waitForUiSettle("replace_text", displayId)
                 return nodeActionJson("replace_text", result)
             }
             return nodeActionJson("replace_text", result)
@@ -424,7 +424,7 @@ internal class RootShellDeviceController(
                 ?: return errorJson("ACCESSIBILITY_UNAVAILABLE", "无障碍服务已断开，请重新观察屏幕")
             val result = service.clickNode(snapshot, index)
             if (result.ok) {
-                waitForUiSettle("tap")
+                waitForUiSettle("tap", snapshot.displayId)
                 return nodeActionJson("tap_element", result)
             }
             return nodeActionJson("tap_element", result)
@@ -447,7 +447,7 @@ internal class RootShellDeviceController(
                 ?: return errorJson("ACCESSIBILITY_UNAVAILABLE", "无障碍服务已断开，请重新观察屏幕")
             val result = service.longClickNode(snapshot, index, durationMs.toLong())
             if (result.ok) {
-                waitForUiSettle("long_press")
+                waitForUiSettle("long_press", snapshot.displayId)
                 return nodeActionJson("long_press_element", result)
             }
             return nodeActionJson("long_press_element", result)
@@ -530,7 +530,7 @@ internal class RootShellDeviceController(
                     if (!isVirtual || !rootAvailable()) {
                         val actionResult = service.globalActionResult(normalized)
                         if (actionResult.ok) {
-                            waitForUiSettle("press_key")
+                            waitForUiSettle("press_key", displayId)
                             return okJson("press_key", "accessibility").let {
                                 JSONObject(it).put("button", normalized).toString()
                             }
@@ -546,14 +546,14 @@ internal class RootShellDeviceController(
                 "ENTER" -> {
                     val result = service.imeEnter(displayId = displayId)
                     if (result.ok) {
-                        waitForUiSettle("press_key")
+                        waitForUiSettle("press_key", displayId)
                         return nodeActionJson("press_key", result).let {
                             JSONObject(it).put("button", normalized).toString()
                         }
                     }
                     // 虚拟屏已关闭输入法，部分应用不接受 ACTION_IME_ENTER：退回定向按键注入。
                     if (isVirtual && rootAvailable() && result.code != "ACTION_OUTCOME_UNKNOWN") {
-                        return inputCommand("${inputCommandPrefix(displayId)} keyevent 66", "press_key")
+                        return inputCommand("${inputCommandPrefix(displayId)} keyevent 66", "press_key", displayId)
                             .let { JSONObject(it).put("button", normalized).toString() }
                     }
                     return nodeActionJson("press_key", result).let {
@@ -572,14 +572,16 @@ internal class RootShellDeviceController(
             "NOTIFICATIONS" -> return inputCommand(
                 "cmd statusbar expand-notifications",
                 "press_key",
+                displayId,
             ).let { JSONObject(it).put("button", normalized).toString() }
             "QUICK_SETTINGS" -> return inputCommand(
                 "cmd statusbar expand-settings",
                 "press_key",
+                displayId,
             ).let { JSONObject(it).put("button", normalized).toString() }
             else -> return errorJson("INVALID_ARGUMENT", "button 仅支持 BACK/HOME/ENTER/RECENTS/PASTE/NOTIFICATIONS/QUICK_SETTINGS")
         }
-        return inputCommand("${inputCommandPrefix(displayId)} keyevent $keyCode", "press_key")
+        return inputCommand("${inputCommandPrefix(displayId)} keyevent $keyCode", "press_key", displayId)
     }
 
     fun waitMs(durationMs: Int): String {
@@ -752,7 +754,7 @@ internal class RootShellDeviceController(
         AgentAccessibilityService.current()?.let { service ->
             val result = service.pasteText(text, displayId = displayId)
             if (result.ok) {
-                waitForUiSettle("input_text")
+                waitForUiSettle("input_text", displayId)
                 return nodeActionJson("paste_text", result)
             }
             return nodeActionJson("paste_text", result)
@@ -1213,13 +1215,17 @@ internal class RootShellDeviceController(
                 "${node.desc}|${node.bounds.toShortString()}"
         }
 
-    private fun inputCommand(command: String, tool: String): String {
+    private fun inputCommand(
+        command: String,
+        tool: String,
+        displayId: Int = Display.DEFAULT_DISPLAY,
+    ): String {
         if (!rootAvailable()) return rootRequired()
         val result = runSuText(command, timeoutSeconds = 8)
         if (result.output == "ROOT_REQUIRED" && result.exitCode == -1) return rootRequired()
         return when (ShellActionOutcomePolicy.classify(result.exitCode)) {
             ShellActionOutcomePolicy.Outcome.SUCCEEDED -> {
-                waitForUiSettle(tool)
+                waitForUiSettle(tool, displayId)
                 JSONObject()
                     .put("ok", true)
                     .put("tool", tool)
@@ -1234,14 +1240,42 @@ internal class RootShellDeviceController(
         }
     }
 
-    private fun waitForUiSettle(tool: String) {
-        val delayMs = when (tool) {
-            "tap", "long_press", "press_key" -> 350L
-            "swipe" -> 650L
-            "input_text" -> 500L
-            else -> 250L
+    /**
+     * 动作之后等待界面真正稳定。
+     *
+     * 无障碍路径下交给服务端判断：内容事件确实发生过、并且已经安静下来才返回，
+     * 不再对所有界面一律睡固定时长；不产生内容事件的界面提前放弃，持续动画的
+     * 页面由硬上限兜底。没有无障碍基准（例如纯 Root 动作）时才回退固定等待。
+     */
+    private fun waitForUiSettle(tool: String, displayId: Int = Display.DEFAULT_DISPLAY) {
+        val service = AgentAccessibilityService.current()
+        if (service != null) {
+            val (quietMs, idleGiveUpMs, maxMs) = settleBudget(tool)
+            val outcome = service.awaitActionSettled(
+                displayId = displayId,
+                quietMs = quietMs,
+                idleGiveUpMs = idleGiveUpMs,
+                maxMs = maxMs,
+            )
+            if (outcome != "no_baseline") return
         }
-        Thread.sleep(delayMs)
+        Thread.sleep(fallbackSettleDelayMs(tool))
+    }
+
+    /** 无障碍路径的等待预算：安静窗口 / 无事件提前放弃 / 硬上限。 */
+    private fun settleBudget(tool: String): Triple<Long, Long, Long> = when (tool) {
+        "tap", "long_press" -> Triple(400L, 500L, 1_200L)
+        "swipe" -> Triple(400L, 600L, 1_500L)
+        "input_text", "replace_text", "press_key" -> Triple(350L, 500L, 1_000L)
+        else -> Triple(350L, 500L, 900L)
+    }
+
+    /** 没有无障碍基准时的固定等待时长，保持原有手感。 */
+    private fun fallbackSettleDelayMs(tool: String): Long = when (tool) {
+        "tap", "long_press", "press_key" -> 350L
+        "swipe" -> 650L
+        "input_text" -> 500L
+        else -> 250L
     }
 
     private fun inputCommandPrefix(displayId: Int): String =
