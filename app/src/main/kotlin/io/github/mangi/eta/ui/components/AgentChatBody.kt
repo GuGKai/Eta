@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.components
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -565,6 +566,8 @@ internal fun AgentConversationMessages(
     val dockGapPx = with(density) { DockGap.roundToPx() }
     // 守卫的提前量（px）：首行进到这个范围就冻结跟底，再交给停靠闭环慢慢收到落点。
     val dockLookaheadPx = with(density) { DockLookahead.roundToPx() }
+    // 看门狗的偏离容差：必须远大于像素舍入与行高留白的正常波动，否则就成了逐帧微调。
+    val dockWatchdogTolerancePx = with(density) { DockWatchdogTolerance.roundToPx() }
     val coroutineScope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val imeInsets = WindowInsets.ime
@@ -614,15 +617,23 @@ internal fun AgentConversationMessages(
     // 再把视口收到「正文首行贴着顶栏下方」。中途冒出工具步骤说明是过渡文本，只解冻、不位移。
     var finalAnswerAnchored by remember { mutableStateOf(false) }
     var finalAnswerHandledId by remember { mutableStateOf<String?>(null) }
+    // 抖动熔断：本轮所有自动滚动写手全停，等用户手动一划或下一轮开始再恢复。
+    var autoScrollFrozen by remember { mutableStateOf(false) }
     // 本轮由「流式停靠」真正落到位的回答 id：首行已经在顶栏下沿，收尾时绝不能再拿
     // 「历史会话首帧落点」把视口按条目顶边重设一次，否则正文会整体往下掉一段。
     var streamDockedAnswerId by remember { mutableStateOf<String?>(null) }
+    // 本轮是否正在/刚刚流式过：收尾那一刻要把最后一条回答标成「已处理」，
+    // 否则收尾会按「历史会话首帧落点」再硬跳一次（生成完突然瞬移）。
+    var hasStreamed by remember { mutableStateOf(false) }
+    // 停靠之后用户碰过屏幕：看门狗本轮彻底放手，不许再把视口拽回顶栏。
+    var dockUserInterrupted by remember { mutableStateOf(false) }
     var wasUserDragging by remember { mutableStateOf(false) }
     // 正文首行字顶的窗口 y（px）：停靠闭环直接拿它和顶栏底边比，不换算条目顶边。
     var answerFirstLineWindowY by remember { mutableStateOf<Float?>(null) }
     // 上面这个测量值属于哪一条：换轮之后旧值必须作废，否则会拿上一轮的首行位置误判。
     var answerFirstLineOwnerKey by remember { mutableStateOf<String?>(null) }
     val latestTimelineEntries by rememberUpdatedState(timelineEntries)
+    val latestIsStreaming by rememberUpdatedState(isStreaming)
     val streamingAnswerId = tailMessage
         ?.takeIf { message -> message.content.isNotBlank() }
         ?.id
@@ -634,15 +645,22 @@ internal fun AgentConversationMessages(
         isStreaming,
         streamingAnswerId,
         streamDockedAnswerId,
+        finalAnswerAnchored,
+        finalAnswerHandledId,
         earlierMessagesItemCount,
         timelineEntries,
     ) {
         when {
             isStreaming -> null
+            // 这条回答本轮已经处理过（停靠到位，或收尾时判定为跟底）：视口已在落点上，
+            // 这里再按条目顶边请求一次就是无动画硬跳。更关键的是，用户向下翻看时
+            // 重组会再走到这里——那正是「翻下去又被拽回停靠位」的来源。
+            finalAnswerHandledId == streamingAnswerId -> null
             streamingAnswerId == null -> null
             // 这一轮流式期间已经停靠到位：首行就贴着顶栏。收尾时若再按「条目顶贴顶栏」
             // 请求一次，正文会整体下移一个条目内边距（8dp + 首行行距留白），并且因为
             // 该回答已被标记处理过，没有任何逻辑会把它拉回落点——于是位置就永久掉下去。
+            finalAnswerAnchored -> null
             streamDockedAnswerId == streamingAnswerId -> null
             timelineEntries.lastOrNull()?.key != streamingAnswerId -> null
             else -> timelineEntries.lastIndex + earlierMessagesItemCount
@@ -663,9 +681,19 @@ internal fun AgentConversationMessages(
             finalAnswerAnchored = false
             finalAnswerHandledId = null
             streamDockedAnswerId = null
+            hasStreamed = true
+            dockUserInterrupted = false
             wasUserDragging = false
+            autoScrollFrozen = false
             answerFirstLineWindowY = null
             answerFirstLineOwnerKey = null
+        } else if (hasStreamed) {
+            // 流式收尾：把这一轮的回答标成「已处理」。视口已经由跟底或停靠带到位置，
+            // 收尾不许再请求历史落点。首次组合（isStreaming 初值 false）不在这里标记，
+            // 否则打开历史会话时会被当成已处理，直接失去停靠。
+            hasStreamed = false
+            val id = streamingAnswerId
+            if (id != null && finalAnswerHandledId == null) finalAnswerHandledId = id
         }
     }
 
@@ -728,6 +756,10 @@ internal fun AgentConversationMessages(
         // 否则等待本身就把帧预算烧光，长正文反而等不到收口。
         var frames = 0
         var waitedFrames = 0
+        // 进展守卫：残差连续若干帧没有变小，说明有别的写手在往反方向拉视口，
+        // 或者这个落点根本到不了。继续逐帧 scrollBy 就是屏幕上整段正文高频上下抽动。
+        var bestAbsDelta = Float.MAX_VALUE
+        var stalledFrames = 0
         // 等待「正文继续长高把落点带下来」的帧预算只有这么点：跟底被冻结之后列表保持
         // 首个可见条目的锚点，正文变长并不会让首行自己逼近顶栏，长时间等下去只会把画面
         // 冻在原地（以前是 900 帧 ≈ 15 秒），等不到就交回跟底，由外层隔几帧再试一次。
@@ -769,6 +801,15 @@ internal fun AgentConversationMessages(
             // 夹成 0 位移，而边界上的回弹动画每帧被重启一次，屏幕上就是正文上下高频抽动。
             // 上方也已到顶（首行越过落点）说明停靠不可达，交回跟底，别把循环空转到帧预算。
             if (delta < 0f && !scrollState.canScrollBackward) return false
+            // 残差在变小才算推进；连续若干帧毫无进展就收手，别把循环空转到帧预算上限。
+            if (abs(delta) < bestAbsDelta - 0.5f) {
+                bestAbsDelta = abs(delta)
+                stalledFrames = 0
+            } else if (++stalledFrames >= DockStallFrameLimit) {
+                Log.w(ScrollJitterTag, "dock stalled: delta=" + delta + " frames=" + frames)
+                finalAnswerHandledId = key
+                return false
+            }
             val frameNanos = withFrameNanos { it }
             val elapsedSeconds = if (previousFrameNanos == 0L) {
                 1f / 60f
@@ -912,6 +953,7 @@ internal fun AgentConversationMessages(
                 // 只有真正停住了才标记已处理：矮正文、被夹住时要允许正文变长后重来。
                 finalAnswerHandledId = answerId
                 streamDockedAnswerId = answerId
+                dockUserInterrupted = false
                 return@LaunchedEffect
             }
             finalAnswerAnchored = false
@@ -921,16 +963,53 @@ internal fun AgentConversationMessages(
 
     // 停靠之后下方又冒出工具链（时间线末尾不再是这段正文）：立刻解冻，恢复流式默认滚动。
     LaunchedEffect(timelineEntries.lastOrNull()?.key) {
+        if (autoScrollFrozen) return@LaunchedEffect
         if (!finalAnswerAnchored) return@LaunchedEffect
         val handled = finalAnswerHandledId ?: return@LaunchedEffect
         if (timelineEntries.lastOrNull()?.key == handled) return@LaunchedEffect
+        // 单向让路：交还滚动权给跟底，但保持「已处理」，同一条正文不再回头重钉。
         finalAnswerAnchored = false
-        finalAnswerHandledId = null
+    }
+
+    // 停靠看门狗：流式结束后不再逐帧闭环，只隔一段时间量一次首行位置。
+    // 偏离超过容差才纠正一次，纠满上限或用户一碰屏幕就彻底放手，避免退化成新的抖动源。
+    LaunchedEffect(isStreaming, finalAnswerAnchored, finalAnswerHandledId, autoScrollFrozen) {
+        if (isStreaming || !finalAnswerAnchored || autoScrollFrozen) return@LaunchedEffect
+        val key = finalAnswerHandledId ?: return@LaunchedEffect
+        val target = topInsetPx + dockGapPx
+        var corrections = 0
+        while (currentCoroutineContext().isActive && corrections < DockWatchdogLimit) {
+            delay(DockWatchdogIntervalMs)
+            // 用户只要碰过屏幕（或此刻正在滚），看门狗本轮就彻底放手：
+            // 否则手指刚抬起、下次检查正好落在两次滚动之间，就会把用户翻走的位置拽回顶栏。
+            if (dockUserInterrupted || isUserDragging || scrollState.isScrollInProgress) {
+                return@LaunchedEffect
+            }
+            if (autoScrollFrozen || !finalAnswerAnchored) return@LaunchedEffect
+            if (latestTimelineEntries.lastOrNull()?.key != key) return@LaunchedEffect
+            val firstLineY = answerFirstLineWindowY?.takeIf { answerFirstLineOwnerKey == key }
+                ?: continue
+            val delta = firstLineY - target
+            if (abs(delta) <= dockWatchdogTolerancePx) continue
+            val hasRoom = if (delta > 0f) scrollState.canScrollForward else scrollState.canScrollBackward
+            if (!hasRoom) return@LaunchedEffect
+            try {
+                scrollState.scroll { scrollBy(delta) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return@LaunchedEffect
+            }
+            corrections++
+            Log.d(ScrollJitterTag, "dock watchdog corrected: delta=" + delta + " count=" + corrections)
+        }
     }
 
     LaunchedEffect(isUserDragging, isAtBottom) {
         if (isUserDragging) {
             wasUserDragging = true
+            dockUserInterrupted = true
+            // 用户一动手就解除抖动熔断：视口交还给人，自动滚动不再抢。
+            autoScrollFrozen = false
         } else if (wasUserDragging && isAtBottom) {
             // 用户主动滑回底部：放弃本轮停靠，恢复跟底。
             wasUserDragging = false
@@ -976,6 +1055,67 @@ internal fun AgentConversationMessages(
         keyboardLiftSettling = false
     }
 
+    // 抖动熔断：无人操作时视口被来回拉锯（两个写手互相抵消、或落点在物理上到不了），
+    // 屏幕上就是整段正文高频上下抽动。这里逐帧盯首个可见条目的偏移，方向反复翻转就停掉
+    // 本轮所有自动滚动——用户手动一划或下一轮开始再恢复。
+    //
+    // 两条硬约束（0318 的教训）：
+    // 1. 流式期间一律不判：跟底与停靠已经用 finalAnswerAnchored 互斥，同时写滚动的情况没了；
+    //    一旦把正常的流式跟底误判成拉锯，整轮画面会停在原地不动，直到收尾才猛地跳一下。
+    // 2. 位置只在「同一个首个可见条目」内部比较：首个可见条目换成上一条时索引会跳一整条，
+    //    以前用 index*1e6+offset 拼成一个数比较，索引变化就被当成一次巨大反向位移，
+    //    五次就凑满翻转计数——这是误判的直接来源。
+    // 熔断时也不再写 finalAnswerHandledId：那会把这一轮回答永久标成「已处理」，
+    // 后续再没有任何逻辑会去停靠它。
+    LaunchedEffect(scrollState) {
+        var lastIndex = -1
+        var lastOffset = Int.MIN_VALUE
+        var lastDirection = 0
+        var flips = 0
+        var framesSinceFlip = 0
+        while (currentCoroutineContext().isActive) {
+            withFrameNanos { }
+            if (isUserDragging || latestIsStreaming) {
+                lastIndex = -1
+                lastOffset = Int.MIN_VALUE
+                lastDirection = 0
+                flips = 0
+                framesSinceFlip = 0
+                continue
+            }
+            val first = scrollState.layoutInfo.visibleItemsInfo.firstOrNull() ?: continue
+            if (first.index != lastIndex) {
+                // 换了一条：位置基准重置，不参与方向翻转统计。
+                lastIndex = first.index
+                lastOffset = first.offset
+                lastDirection = 0
+                flips = 0
+                framesSinceFlip = 0
+                continue
+            }
+            val previous = lastOffset
+            lastOffset = first.offset
+            if (previous == Int.MIN_VALUE) continue
+            val delta = first.offset - previous
+            framesSinceFlip++
+            if (framesSinceFlip > ScrollJitterFlipWindowFrames) flips = 0
+            if (delta == 0) continue
+            val direction = if (delta > 0) 1 else -1
+            if (lastDirection != 0 && direction != lastDirection) {
+                flips++
+                framesSinceFlip = 0
+            }
+            lastDirection = direction
+            if (flips < ScrollJitterFlipLimit || autoScrollFrozen) continue
+            flips = 0
+            autoScrollFrozen = true
+            finalAnswerAnchored = false
+            isBottomSettling = false
+            keyboardLiftSettling = false
+            Log.w(ScrollJitterTag, "jitter guard tripped: index=" + first.index + " offset=" + first.offset)
+        }
+    }
+
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
             isStreaming = isStreaming,
@@ -983,7 +1123,7 @@ internal fun AgentConversationMessages(
             isUserDragging = isUserDragging,
             isBottomSettling = isBottomSettling,
             keyboardLiftSettling = keyboardLiftSettling,
-        ) && (!finalAnswerAnchored || keyboardLiftSettling)
+        ) && (!finalAnswerAnchored || keyboardLiftSettling) && !autoScrollFrozen
     )
     // 键盘抬升期间切到更快的位移曲线（KEYBOARD_LIFT_*）：和键盘弹起同步，而不是慢慢追。
     val keyboardLiftActive by rememberUpdatedState(keyboardLiftSettling && !isStreaming)
@@ -997,12 +1137,14 @@ internal fun AgentConversationMessages(
         keepBottomAnchored,
         isUserDragging,
         isStreaming,
+        finalAnswerAnchored,
     ) {
+        // 停靠持有期间一律不登记跳底：任何滚动都要给它让路（手动除外）。
         if (shouldRequestInitialBottom(
                 isStreaming = isStreaming,
                 keepBottomAnchored = keepBottomAnchored,
                 isUserDragging = isUserDragging,
-            )
+            ) && !finalAnswerAnchored
         ) {
             scrollState.requestScrollToItem(bottomItemIndex)
         }
@@ -1589,6 +1731,19 @@ private const val FirstLineTopPlausibleSlackPx = 200f
 // 「等正文继续长高」的帧预算：约 0.4 秒。首行在跟底冻结后不会再动，长等无意义。
 private const val WaitForGrowthFrameBudget = 24
 
+
+// 停靠看门狗：间隔、偏离容差与纠正次数上限。
+private const val DockWatchdogIntervalMs = 500L
+private val DockWatchdogTolerance = 8.dp
+private const val DockWatchdogLimit = 3
+
+// 抖动熔断：无人操作时视口方向翻转这么多次，就认定是自动滚动在拉锯。
+private const val ScrollJitterFlipLimit = 5
+// 两次翻转之间隔了这么多帧就把计数清零，正常的一次性跳转/缓慢浏览不会被误判。
+private const val ScrollJitterFlipWindowFrames = 30
+private const val ScrollJitterTag = "EtaChatScroll"
+// 停靠闭环的进展守卫：连续这么多帧残差没变小就收手（约 0.35 秒）。
+private const val DockStallFrameLimit = 20
 
 internal fun resolveKeepBottomAnchored(
     current: Boolean,
