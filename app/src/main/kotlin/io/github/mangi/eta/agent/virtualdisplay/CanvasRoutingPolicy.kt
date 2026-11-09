@@ -28,7 +28,18 @@ internal object CanvasRoutingPolicy {
     const val FLAG_ALWAYS_UNLOCKED = 1 shl 12
     const val FLAG_TOUCH_FEEDBACK_DISABLED = 1 shl 13
     const val FLAG_OWN_FOCUS = 1 shl 14
-    const val FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 15
+
+    /** AOSP：VIRTUAL_DISPLAY_FLAG_DEVICE_DISPLAY_GROUP，把虚拟屏并入设备默认显示组。 */
+    const val FLAG_DEVICE_DISPLAY_GROUP = 1 shl 15
+
+    /**
+     * AOSP：VIRTUAL_DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 16。
+     *
+     * 曾经误写成 1 shl 15（那是 DEVICE_DISPLAY_GROUP），导致"不抢主屏顶层焦点"的意图
+     * 从未生效：虚拟屏一启动应用就会成为最上层焦点屏，主屏焦点窗口被清空。
+     * 该标志需要同时具备 TRUSTED + OWN_FOCUS，Android 14 以下会被系统忽略。
+     */
+    const val FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 16
 
     /** 受信任后台交互画布所需的完整标志组合：支持触摸、独立焦点、不抢夺主屏顶部焦点、销毁时回收窗口。 */
     const val TRUSTED_INTERACTIVE_FLAGS: Int =

@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -426,8 +427,12 @@ private fun VirtualTouchEffectOverlay(
 /**
  * 破壁移交全屏放大过渡层（Seamless Materialize Overlay）。
  *
- * 当虚拟屏画面移交物理主屏时，画面从居中画廊视窗比例以弹簧曲线平滑放大贴合至物理全屏，
- * 圆角同步过渡到手机真实屏幕圆角，消除切屏闪烁与割裂感。
+ * 不变量只有一条：**屏幕上任何一帧都有画面盖着**。所以
+ * - 起手几何取画板在屏幕上的真实矩形（VirtualDisplaySnapshot.materializeFrom），
+ *   而不是写死一个比例 —— 画板消失与位图出现是同一帧，两帧完全重合才不会「跳一下」；
+ * - 放大全程 alpha 保持不透明，任务迁移在整屏被盖住之后才发生，虚拟屏变空的空画面被挡住；
+ * - 淡出改由宿主（VirtualDisplayController.handoffToMainDisplay）在探明主屏画出首帧后才触发，
+ *   这里只做一段渐变收尾，露出来时底下已经是活的窗口。
  */
 @Composable
 internal fun VirtualDisplayMaterializeOverlay(
@@ -441,25 +446,43 @@ internal fun VirtualDisplayMaterializeOverlay(
     val expandProgress by animateFloatAsState(
         targetValue = if (started) 1f else 0f,
         animationSpec = spring(
-            dampingRatio = 0.88f,
+            dampingRatio = 0.9f,
             stiffness = Spring.StiffnessMediumLow,
         ),
         label = "vd_materialize_expand",
     )
+    val reveal by animateFloatAsState(
+        targetValue = if (snapshot.materializeFading) 0f else 1f,
+        animationSpec = tween(
+            durationMillis = MaterializeFadeOutMs,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "vd_materialize_reveal",
+    )
+
     val density = LocalDensity.current
     val screenCornerDp = with(density) { corners.radius.toDp() }
-    val currentCorner = lerp(StageCanvasCorner, screenCornerDp, expandProgress)
-    val scale = lerp(0.68f, 1f, expandProgress)
-    val fadeAlpha = if (expandProgress < 0.82f) {
-        1f
-    } else {
-        (1f - (expandProgress - 0.82f) / 0.18f).coerceIn(0f, 1f)
-    }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        val screenWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val screenHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+        val from = snapshot.materializeFrom
+        val fromWidthPx = from?.width?.takeIf { it > 1f } ?: (screenWidthPx * FallbackMaterializeScale)
+        val fromHeightPx = from?.height?.takeIf { it > 1f } ?: (screenHeightPx * FallbackMaterializeScale)
+        val startScaleX = (fromWidthPx / screenWidthPx).coerceIn(0.05f, 1f)
+        val startScaleY = (fromHeightPx / screenHeightPx).coerceIn(0.05f, 1f)
+        // 位图原始位置就是整屏（中心对齐屏幕中心），平移量从「画板中心 − 屏幕中心」收敛到 0。
+        val translateX = ((from?.centerX ?: (screenWidthPx / 2f)) - screenWidthPx / 2f) * (1f - expandProgress)
+        val translateY = ((from?.centerY ?: (screenHeightPx / 2f)) - screenHeightPx / 2f) * (1f - expandProgress)
+        val scaleX = lerp(startScaleX, 1f, expandProgress)
+        val scaleY = lerp(startScaleY, 1f, expandProgress)
+        // 裁剪在内层一起被缩放：起手先按缩放比放大，落到屏幕上正好是画布原本的 18.dp 圆角。
+        val startCornerInnerDp = StageCanvasCorner / ((startScaleX + startScaleY) / 2f)
+        val cornerDp = lerp(startCornerInnerDp, screenCornerDp, expandProgress)
+
         Image(
             bitmap = frame,
             contentDescription = null,
@@ -467,14 +490,22 @@ internal fun VirtualDisplayMaterializeOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    alpha = fadeAlpha
+                    this.scaleX = scaleX
+                    this.scaleY = scaleY
+                    translationX = translateX
+                    translationY = translateY
+                    alpha = reveal
                 }
-                .clip(RoundedCornerShape(currentCorner)),
+                .clip(RoundedCornerShape(cornerDp)),
         )
     }
 }
+
+/** 没有画板几何时的兜底起手比例（正常情况下不会走到）。 */
+private const val FallbackMaterializeScale = 0.68f
+
+/** 与 VirtualDisplayController.MaterializeFadeOutMs 保持一致。 */
+private const val MaterializeFadeOutMs = 220
 
 private val StageMattePadding = 10.dp
 /** 三枚胶囊按钮之间的间距。 */

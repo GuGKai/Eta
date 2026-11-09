@@ -23,6 +23,7 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceToolContract
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.overlay.StageCanvasHeight
 import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
@@ -159,6 +160,10 @@ internal object VirtualDisplayController {
         }
         val appContext = context.applicationContext
         activeContext = appContext
+        // 建屏前先屏蔽系统的 size-compat（letterbox）判定：
+        // 打开“强制可调整大小”后，任务迁到主屏会按目标 display 的 app bounds 直接重排，
+        // 而不是被缩放塞进 letterbox 并弹出“全屏显示”兼容提示。
+        SizeCompatBypass.ensure(appContext, rootAvailable)
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
         synchronized(lock) {
             if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
@@ -351,7 +356,13 @@ internal object VirtualDisplayController {
 
     /**
      * 将虚拟屏中正在运行的应用无缝破壁移交到物理主屏（DEFAULT_DISPLAY）。
-     * 先触发 UI 层的 260ms 全屏放大贴合过渡，同时在底层原位迁移 RootTask。
+     *
+     * 顺序按「任何一帧都有画面盖住屏幕」排列，闪烁就出在顺序上：
+     * 1. 过渡层先用画板最后一帧、按画板原位尺寸起手，放大到物理全屏（画板消失与位图出现是同一帧，
+     *    位图全程不透明，屏幕不留空白）；
+     * 2. 整屏被同一帧盖住之后才迁移 RootTask —— 迁移瞬间虚拟屏会变空，空画面被位图挡住；
+     * 3. 等主屏应用画出首帧再淡出位图，露出来的已经是活的窗口。
+     * 过渡期间帧采集冻结，否则虚拟屏空帧会把位图替换成黑屏，那就是用户看到的「闪一下」。
      */
     fun handoffToMainDisplay(
         context: Context,
@@ -365,15 +376,24 @@ internal object VirtualDisplayController {
             mutableSnapshots.value = current.copy(
                 userControlling = false,
                 materializingToMain = true,
+                materializeFading = false,
+                materializeFrom = resolveStageBoundsPx(context, current),
                 externalizedToMain = false,
             )
-            highFrequencyPreview = true
+            // 过渡用冻结帧，不需要高频预览刷新。
+            highFrequencyPreview = false
             current
         }
 
         val appContext = context.applicationContext
+        // 迁移前确保兼容检测已关闭，否则搬过去会立刻被按 letterbox 缩放。
+        SizeCompatBypass.ensure(appContext, rootAvailable)
         restoreMutedPackages(appContext, rootAvailable)
 
+        // 1) 先把位图放大到物理全屏，屏幕全程被画面覆盖。
+        sleepQuietly(MaterializeExpandMs)
+
+        // 2) 盖满之后才搬任务：虚拟屏变空的那一帧发生在这张不透明位图底下。
         val moved = moveVirtualTaskToDisplay(
             context = appContext,
             sourceDisplayId = snapshot.displayId,
@@ -382,18 +402,30 @@ internal object VirtualDisplayController {
             rootAvailable = rootAvailable,
         )
 
-        // 留出 260ms 让 VirtualDisplayMaterializeOverlay 完成从画板到物理全屏的弹簧贴合动画
-        try {
-            Thread.sleep(260L)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
-
         if (!moved) {
-            // 搬运失败：沿用原行为释放虚拟屏，避免留下看不见的空画布。
+            // 搬运失败：撤掉过渡层并释放虚拟屏，避免留下看不见的空画布。
+            synchronized(lock) {
+                val current = mutableSnapshots.value
+                if (current.active) {
+                    mutableSnapshots.value = current.copy(
+                        materializingToMain = false,
+                        materializeFading = false,
+                        materializeFrom = null,
+                    )
+                }
+            }
             release(appContext, rootAvailable)
             return false
         }
+
+        // 3) 给主屏窗口留出首帧时间，再让位图淡出：淡出是渐变，底下的真实画面接得上。
+        sleepQuietly(MaterializeMainFrameWaitMs)
+        synchronized(lock) {
+            val current = mutableSnapshots.value
+            if (!current.active) return moved
+            mutableSnapshots.value = current.copy(materializeFading = true)
+        }
+        sleepQuietly(MaterializeFadeOutMs + MaterializeFadeTailMs)
 
         // C 方案：全屏后不销毁虚拟屏，只把任务挪到物理主屏；
         // 用户离开该应用时由主屏窗口事件把同一个 RootTask 搬回，胶囊小窗立即恢复。
@@ -403,12 +435,66 @@ internal object VirtualDisplayController {
             mutableSnapshots.value = current.copy(
                 userControlling = false,
                 materializingToMain = false,
+                materializeFading = false,
+                materializeFrom = null,
                 externalizedToMain = true,
             )
             highFrequencyPreview = false
             restoreFailureCount = 0
         }
         return moved
+    }
+
+    private fun sleepQuietly(millis: Long) {
+        try {
+            Thread.sleep(millis)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    /**
+     * 画板（画廊装裱视窗里的画布）此刻在物理屏幕上的矩形。
+     *
+     * 装裱窗口横向居中、纵向贴着状态栏，画布又是窗口内水平居中的定高画框，
+     * 所以画布中心即屏幕横向中心，顶边 = 状态栏下沿 + 装裱内边距。
+     */
+    private fun resolveStageBoundsPx(
+        context: Context,
+        snapshot: VirtualDisplaySnapshot,
+    ): VirtualStageBounds? {
+        val density = context.resources.displayMetrics.density.takeIf { it > 0.1f } ?: return null
+        val screenWidth = runCatching {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@runCatching 0
+            wm.currentWindowMetrics.bounds.width()
+        }.getOrDefault(0)
+        if (screenWidth <= 0) return null
+        val canvasHeight = StageCanvasHeight.value * density
+        val canvasWidth = canvasHeight * snapshot.aspectRatio
+        if (canvasWidth <= 1f || canvasHeight <= 1f) return null
+        val top = statusBarInsetTopPx(context, density) + StageCanvasTopInsetDp * density
+        return VirtualStageBounds(
+            left = (screenWidth - canvasWidth) / 2f,
+            top = top,
+            width = canvasWidth,
+            height = canvasHeight,
+        )
+    }
+
+    private fun statusBarInsetTopPx(context: Context, density: Float): Float {
+        val fallback = 28f * density
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return fallback
+        return runCatching {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@runCatching fallback
+            wm.currentWindowMetrics.windowInsets
+                .getInsetsIgnoringVisibility(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.displayCutout(),
+                )
+                .top
+                .toFloat()
+                .takeIf { it > 0f } ?: fallback
+        }.getOrDefault(fallback)
     }
 
     /**
@@ -669,6 +755,8 @@ internal object VirtualDisplayController {
         synchronized(lock) {
             releaseLocked(context, rootAvailable)
         }
+        // 虚拟屏彻底销毁后把“强制可调整大小”恢复成接管前的值，避免污染全局。
+        context?.let { SizeCompatBypass.restore(it.applicationContext, rootAvailable) }
     }
 
     private fun releaseLocked(
@@ -759,7 +847,9 @@ internal object VirtualDisplayController {
                     lastUiFrameAtElapsedMs = now
                     val previewBitmap = createUiPreviewBitmap(bitmap)
                     val current = mutableSnapshots.value
-                    if (current.active) {
+                    // 破壁过渡期间冻结预览帧：任务搬走后虚拟屏是空画面，若继续刷新会把过渡层
+                    // 正在放大的那张位图替换成黑屏 —— 用户看到的「切全屏闪一下」就是这么来的。
+                    if (current.active && !current.materializingToMain) {
                         mutableSnapshots.value = current.copy(
                             frame = previewBitmap.asImageBitmap(),
                             frameSequence = frameSequenceGenerator.incrementAndGet(),
@@ -848,6 +938,21 @@ internal object VirtualDisplayController {
             )
         }
     }.getOrNull()
+
+    /** 破壁过渡：位图放大到全屏所需时间，与 overlay 的弹簧时长同量级。 */
+    private const val MaterializeExpandMs = 260L
+
+    /** 破壁过渡：迁移任务后给主屏窗口留的首帧时间，之后才开始淡出位图。 */
+    private const val MaterializeMainFrameWaitMs = 200L
+
+    /** 破壁过渡：位图淡出时长，必须与 VirtualDisplayMaterializeOverlay 的 tween 一致。 */
+    private const val MaterializeFadeOutMs = 220L
+
+    /** 破壁过渡：淡出结束到下线的余量，避免最后一帧硬切。 */
+    private const val MaterializeFadeTailMs = 40L
+
+    /** 画布顶边相对状态栏下沿的内边距（画廊装裱 Column 的垂直 padding）。 */
+    private const val StageCanvasTopInsetDp = 4f
 
     /** IWindowManager 事务码：本机 framework.jar 中 IWindowManager$Stub.TRANSACTION_setDisplayImePolicy。 */
     private const val WMS_TRANSACTION_SET_DISPLAY_IME_POLICY = 108
@@ -1234,21 +1339,100 @@ internal object VirtualDisplayController {
         }
     }
 
+    /**
+     * 虚拟屏尺寸必须与主屏「应用可布局区域」完全一致，并且取默认显示屏（主屏）的真实尺寸。
+     *
+     * 网易云这类 resizeMode=unresizable 的应用被 moveRootTaskToDisplay 搬回主屏时，
+     * 系统不会重新计算它的 activity 配置，只能沿用虚拟屏上的 mBounds：
+     * - 虚拟屏比主屏小 → size-compat 缩放/letterbox，出现左右黑边与「需要重新打开才能全屏」；
+     * - 虚拟屏只差一条 inset（本机 1440x3008 vs 主屏 1440x3168）→ 窗口铺到全屏，
+     *   但应用内容仍按 3008 排版，底部空出一条 160px。
+     * 本机主屏 mAppBounds 本身就是 1440x3168（状态栏/挖孔区域允许应用铺满），
+     * 所以这里直接取默认显示屏的真实尺寸，不再扣减 system bar insets。
+     */
+    @Suppress("DEPRECATION")
     private fun resolvePhysicalDisplayMetrics(context: Context): Triple<Int, Int, Int> {
         val dm = context.resources.displayMetrics
         var width = dm.widthPixels.coerceAtLeast(720)
         var height = dm.heightPixels.coerceAtLeast(1280)
         val density = dm.densityDpi.coerceIn(160, 640)
         runCatching {
-            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-            val point = Point()
-            @Suppress("DEPRECATION")
-            wm?.defaultDisplay?.getRealSize(point)
-            if (point.x > 0 && point.y > 0) {
-                width = point.x
-                height = point.y
+            val displayManager = context.getSystemService(DisplayManager::class.java)
+            val display = displayManager?.getDisplay(Display.DEFAULT_DISPLAY)
+                ?: (context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.defaultDisplay
+            if (display != null) {
+                val point = Point()
+                display.getRealSize(point)
+                if (point.x > 0 && point.y > 0) {
+                    width = point.x
+                    height = point.y
+                }
             }
+            AndroidAgentLogger.info("Virtual display metrics: main display=" + width + "x" + height)
         }
         return Triple(width, height, density)
+    }
+}
+
+/**
+ * 屏蔽系统的 size-compat（letterbox）判定。
+ *
+ * 网易云这类 targetSdk 较低、声明不可缩放的应用，在虚拟屏（1440x3168）里是满屏的；
+ * 一旦把任务搬到主屏，系统会按主屏 app bounds（扣掉 160 挖孔）重新判定尺寸，
+ * 判定失败即进入 size-compat：窗口被 scaleFactor 缩放、左右出现 Letterbox 黑边，
+ * 并弹出“全屏显示”兼容提示。
+ *
+ * 打开 Settings.Global.force_resizable_activities 后，系统不再把这些应用当作
+ * “不可缩放”，迁移时直接按目标 display 的 app bounds 重排，从源头避免缩放和黑边。
+ * 原值记录在 SharedPreferences，虚拟屏销毁时恢复，避免永久污染全局设置。
+ */
+internal object SizeCompatBypass {
+    private const val PREFS = "eta_size_compat_bypass"
+    private const val KEY_ORIGINAL = "original"
+    private const val KEY_APPLIED = "applied"
+    private const val SETTING = "force_resizable_activities"
+
+    fun ensure(context: Context, rootAvailable: () -> Boolean): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_APPLIED, false)) return true
+        if (!rootAvailable()) return false
+        return runCatching {
+            BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable).use { exec ->
+                val current = exec.execute("settings get global $SETTING", timeoutMillis = 4_000L)
+                val original = current.stdout.trim().ifBlank { "null" }
+                if (original == "1") {
+                    // 用户本来就开着（开发者选项），不需要接管，也不要在销毁时改回去。
+                    AndroidAgentLogger.info("Size compat bypass already enabled by user")
+                    return true
+                }
+                val put = exec.execute("settings put global $SETTING 1", timeoutMillis = 4_000L)
+                if (put.exitCode == 0) {
+                    prefs.edit()
+                        .putString(KEY_ORIGINAL, original)
+                        .putBoolean(KEY_APPLIED, true)
+                        .apply()
+                    AndroidAgentLogger.info("Size compat bypass enabled original=$original")
+                    true
+                } else {
+                    AndroidAgentLogger.warn("Size compat bypass enable failed exit=${put.exitCode}")
+                    false
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    fun restore(context: Context, rootAvailable: () -> Boolean) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_APPLIED, false)) return
+        val original = prefs.getString(KEY_ORIGINAL, "null") ?: "null"
+        val target = if (original == "1") "1" else "0"
+        prefs.edit().putBoolean(KEY_APPLIED, false).apply()
+        if (!rootAvailable()) return
+        runCatching {
+            BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable).use { exec ->
+                val put = exec.execute("settings put global $SETTING $target", timeoutMillis = 4_000L)
+                AndroidAgentLogger.info("Size compat bypass restored target=$target exit=${put.exitCode}")
+            }
+        }
     }
 }
