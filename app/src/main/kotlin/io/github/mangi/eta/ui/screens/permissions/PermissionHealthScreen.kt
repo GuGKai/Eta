@@ -1,6 +1,5 @@
 package io.github.mangi.eta.ui.screens.permissions
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessibilityNew
@@ -21,21 +20,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.itos.coui.layout.Divider
+import com.itos.coui.layout.Group
+import com.itos.coui.text.CouiTextKind
+import com.itos.coui.text.Text as CouiText
 import io.github.mangi.eta.R
-import io.github.mangi.eta.ui.components.EtaArrowPreference
-import io.github.mangi.eta.ui.components.EtaPreferenceColors
-import io.github.mangi.eta.ui.components.EtaPreferenceDivider
-import io.github.mangi.eta.ui.components.EtaPreferenceGroup
-import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
-import io.github.mangi.eta.ui.components.EtaPreferenceIcon
+import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.components.color
+import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
+import io.github.mangi.eta.ui.components.coui.CouiPreference
+import io.github.mangi.eta.ui.components.coui.CouiScaffoldPage
 import io.github.mangi.eta.ui.components.label
 import io.github.mangi.eta.ui.model.PermissionHealthAction
-import io.github.mangi.eta.ui.model.LOCAL_NETWORK_PERMISSION_ITEM_ID
 import io.github.mangi.eta.ui.model.PermissionHealthItemUi
 import io.github.mangi.eta.ui.model.PermissionHealthUiState
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -44,22 +48,47 @@ fun PermissionHealthScreen(
     onAction: (PermissionHealthAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    MiuixScaffoldPage(
-        title = stringResource(R.string.ui_permission_health_3048bb),
-        onBack = { onAction(PermissionHealthAction.NavigateBack) },
-        modifier = modifier,
-    ) {
-        item(key = "title") {
-            EtaPreferenceGroupTitle(stringResource(R.string.ui_permissions_and_status_35f368))
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            CouiScaffoldPage(
+                title = stringResource(R.string.ui_permission_health_3048bb),
+                onBack = { onAction(PermissionHealthAction.NavigateBack) },
+                modifier = modifier,
+            ) {
+                Group(title = stringResource(R.string.ui_permissions_and_status_35f368)) {
+                    state.items.forEachIndexed { index, item ->
+                        PermissionItemRow(
+                            item = item,
+                            onActionClick = { onAction(PermissionHealthAction.OpenItemAction(item.id)) },
+                        )
+                        if (index < state.items.lastIndex) {
+                            Divider()
+                        }
+                    }
+                }
+                CouiPageBottomSpacer()
+            }
         }
-        item(key = "card") {
-            EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp)) {
-                state.items.forEachIndexed { index, item ->
-                    if (index > 0) EtaPreferenceDivider()
-                    PermissionItemRow(
-                        item = item,
-                        onActionClick = { onAction(PermissionHealthAction.OpenItemAction(item.id)) },
-                    )
+        AppearanceUiStyle.MIUIX -> {
+            MiuixScaffoldPage(
+                title = stringResource(R.string.ui_permission_health_3048bb),
+                onBack = { onAction(PermissionHealthAction.NavigateBack) },
+                modifier = modifier,
+            ) {
+                item(key = "card") {
+                    SmallTitle(stringResource(R.string.ui_permissions_and_status_35f368))
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
+                    ) {
+                        state.items.forEach { item ->
+                            PermissionItemRow(
+                                item = item,
+                                onActionClick = { onAction(PermissionHealthAction.OpenItemAction(item.id)) },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -71,39 +100,29 @@ private fun PermissionItemRow(
     item: PermissionHealthItemUi,
     onActionClick: () -> Unit,
 ) {
-    val icon = when (item.id) {
-        "accessibility" -> Icons.Rounded.AccessibilityNew
-        "overlay" -> Icons.Rounded.Layers
-        "model" -> Icons.Rounded.Memory
-        "terminal" -> Icons.Rounded.Terminal
-        "notification" -> Icons.Rounded.Notifications
-        "root" -> Icons.Rounded.Key
-        "shizuku" -> Icons.Rounded.Memory
-        "xposed" -> Icons.Rounded.AccountTree
-        "background" -> Icons.Rounded.History
-        "app_list" -> Icons.Rounded.Dashboard
-        LOCAL_NETWORK_PERMISSION_ITEM_ID -> Icons.Rounded.AccountTree
-        "bluetooth" -> Icons.Rounded.Bluetooth
-        "location" -> Icons.Rounded.LocationOn
-        "notification_history" -> Icons.Rounded.NotificationsActive
-        "usage_access" -> Icons.Rounded.QueryStats
-        "notifications" -> Icons.Rounded.Notifications
-        else -> Icons.Rounded.Shield
-    }
-
-    EtaArrowPreference(
-        title = item.title,
-        summary = item.summary.takeIf { it.isNotBlank() },
-        startAction = {
-            EtaPreferenceIcon(icon = icon, tint = EtaPreferenceColors.Blue)
-        },
-        endActions = {
-            Text(
-                text = item.status.label(),
-                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                color = item.status.color(),
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            CouiPreference(
+                title = item.title,
+                summary = item.summary.takeIf { it.isNotBlank() },
+                value = item.status.label(),
+                valueColor = item.status.color(),
+                onClick = onActionClick,
             )
-        },
-        onClick = onActionClick,
-    )
+        }
+        AppearanceUiStyle.MIUIX -> {
+            ArrowPreference(
+                title = item.title,
+                summary = item.summary.takeIf { it.isNotBlank() },
+                endActions = {
+                    Text(
+                        text = item.status.label(),
+                        fontSize = MiuixTheme.textStyles.body2.fontSize,
+                        color = item.status.color(),
+                    )
+                },
+                onClick = onActionClick,
+            )
+        }
+    }
 }

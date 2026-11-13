@@ -38,6 +38,7 @@ internal fun AgentHomeScreen(
     /** 顶栏高度：消息列表用它做顶部内容内边距，让正文能滑到顶栏毛玻璃下方。 */
     topInset: Dp = 0.dp,
     isDrawerOpen: Boolean = false,
+    isBranching: Boolean = false,
     focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
     /** 输入栏正中的余额胶囊，由外壳注入；组件本身不感知余额状态。 */
@@ -66,6 +67,7 @@ internal fun AgentHomeScreen(
                     messages = state.messages,
                     modelPickerState = modelPickerState,
                     isCompacting = state.isCompacting,
+                    isBranching = isBranching,
                     input = state.input,
                     isStreaming = state.isStreaming,
                     reasoningEffort = state.reasoningEffort,
@@ -74,6 +76,7 @@ internal fun AgentHomeScreen(
                     pendingFileReferences = state.pendingFileReferences,
                     queuedMessages = state.queuedMessages,
                     inputSyncVersion = state.inputSyncVersion,
+                    focusInputOnSync = state.focusInputOnSync,
                     messageEdit = state.messageEdit,
                     onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
                     onCompactContext = { onAction(AgentHomeAction.CompactContext) },
@@ -95,6 +98,9 @@ internal fun AgentHomeScreen(
                     onCancelMessageEdit = { onAction(AgentHomeAction.CancelMessageEdit) },
                     onDeleteMessage = { id -> onAction(AgentHomeAction.DeleteMessage(id)) },
                     onRegenerateMessage = { id -> onAction(AgentHomeAction.RegenerateMessage(id)) },
+                    onBranchMessage = { id ->
+                        conversationKey?.let { onAction(AgentHomeAction.BranchConversation(it, id)) }
+                    },
                     onSelectReplyCandidate = { id, index -> onAction(AgentHomeAction.SelectReplyCandidate(id, index)) },
                     onSuggestionClick = { prompt ->
                         onAction(AgentHomeAction.SubmitMessage(prompt))

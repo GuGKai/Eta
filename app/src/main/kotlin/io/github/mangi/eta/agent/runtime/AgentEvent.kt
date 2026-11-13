@@ -24,7 +24,7 @@ internal sealed interface AgentEvent {
     ) : AgentEvent {
         val displayMessage: String get() = when (phase) {
             PHASE_STARTED -> RUNNING_DETAIL
-            PHASE_COMPLETED -> "上下文已压缩，用量将在下一次模型响应后更新。"
+            PHASE_COMPLETED -> "上下文已压缩，用量将在下次模型响应后更新"
             else -> "上下文压缩失败，原始上下文已保留。"
         }
         override fun toLogLine(): String =

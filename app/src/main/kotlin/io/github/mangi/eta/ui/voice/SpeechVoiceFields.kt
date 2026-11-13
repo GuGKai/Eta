@@ -9,14 +9,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import io.github.mangi.eta.R
+import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.TtsProvider
-import io.github.mangi.eta.ui.components.EtaDropdownPreference
-import io.github.mangi.eta.ui.components.EtaPreferenceDivider
-import io.github.mangi.eta.ui.components.EtaPreferenceGroup
-import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
+import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import top.yukonga.miuix.kmp.basic.DropdownItem
+import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 
-/** 播报音色：预设音色或自定义音色 ID。 */
 @Composable
 internal fun SpeechVoiceSection(store: SpeechSettingsStore) {
     val settings = store.settings
@@ -42,33 +41,49 @@ internal fun SpeechVoiceSection(store: SpeechSettingsStore) {
             TtsProvider.SYSTEM -> settings.copy(systemTtsVoice = it)
         })
     }
+    // 选中预设项就切过去；选中末尾的「自定义」则只打开输入框，不动已有音色。
+    val onSelectIndex: (Int) -> Unit = { index ->
+        val preset = presets.getOrNull(index)
+        if (preset == null) {
+            editingCustom = true
+        } else {
+            editingCustom = false
+            change(preset.id)
+        }
+    }
 
     Column {
-        EtaPreferenceGroupTitle(stringResource(R.string.speech_group_voice))
-        EtaPreferenceGroup {
-            EtaDropdownPreference(
-                title = stringResource(R.string.speech_voice),
-                items = presets.map { preset ->
-                    DropdownItem(text = stringResource(preset.name), summary = stringResource(preset.summary))
-                } + DropdownItem(text = stringResource(R.string.speech_voice_custom)),
-                selectedIndex = if (custom) presets.size else presetIndex,
-                useWindow = false,
-                onSelectedIndexChange = { index ->
-                    val preset = presets.getOrNull(index)
-                    editingCustom = preset == null
-                    if (preset != null) change(preset.id) else if (!custom) change("")
-                },
-            )
+        SpeechGroupCard(title = stringResource(R.string.speech_group_voice)) {
+            when (LocalUiStyle.current) {
+                AppearanceUiStyle.COUI -> {
+                    val labels = presets.map { preset ->
+                        "${stringResource(preset.name)} · ${stringResource(preset.summary)}"
+                    } + stringResource(R.string.speech_voice_custom)
+                    CouiDropdownPreference(
+                        title = stringResource(R.string.speech_voice),
+                        items = labels,
+                        selectedIndex = if (custom) presets.size else presetIndex,
+                        onSelectedIndexChange = onSelectIndex,
+                    )
+                }
+                AppearanceUiStyle.MIUIX -> {
+                    OverlaySpinnerPreference(
+                        title = stringResource(R.string.speech_voice),
+                        items = presets.map { preset ->
+                            DropdownItem(text = stringResource(preset.name), summary = stringResource(preset.summary))
+                        } + DropdownItem(text = stringResource(R.string.speech_voice_custom)),
+                        selectedIndex = if (custom) presets.size else presetIndex,
+                        onSelectedIndexChange = onSelectIndex,
+                    )
+                }
+            }
             AnimatedVisibility(visible = custom) {
-                Column {
-                    EtaPreferenceDivider(hasLeading = false)
-                    SpeechFieldColumn {
-                        SpeechField(
-                            label = stringResource(R.string.speech_voice_id),
-                            value = voice,
-                            onChange = { change(it.trim()) },
-                        )
-                    }
+                SpeechFieldColumn {
+                    SpeechField(
+                        label = stringResource(R.string.speech_voice_id),
+                        value = voice,
+                        onChange = { change(it.trim()) },
+                    )
                 }
             }
             SpeechDeliveryFields(store)

@@ -9,10 +9,11 @@ const val DEFAULT_INTERFACE_SCALE = 1f
 /** 会话正文字号倍率：只作用于助手回答与我发出的消息，思考过程不跟随。 */
 const val MIN_CHAT_TEXT_SCALE = 0.8f
 const val MAX_CHAT_TEXT_SCALE = 1.4f
-const val DEFAULT_CHAT_TEXT_SCALE = 1f
+const val DEFAULT_CHAT_TEXT_SCALE = 1.1f
 
 @Serializable
 data class AppearanceSettings(
+    val uiStyle: AppearanceUiStyle = AppearanceUiStyle.COUI,
     val themeMode: AppearanceThemeMode = AppearanceThemeMode.SYSTEM,
     val monetEnabled: Boolean = false,
     val paletteStyle: AppearancePaletteStyle = AppearancePaletteStyle.TONAL_SPOT,
@@ -29,6 +30,20 @@ data class AppearanceSettings(
         interfaceScale = normalizeInterfaceScale(interfaceScale),
         chatTextScale = normalizeChatTextScale(chatTextScale),
     )
+}
+
+@Serializable
+enum class AppearanceUiStyle(val persistedValue: String) {
+    COUI("coui"),
+    MIUIX("miuix");
+
+    val isCoui: Boolean
+        get() = this == COUI
+
+    companion object {
+        fun fromPersistedValue(value: String?): AppearanceUiStyle =
+            entries.firstOrNull { it.persistedValue == value } ?: COUI
+    }
 }
 
 @Serializable

@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 import io.github.libxposed.service.XposedService
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.agent.context.PersonalSearchTools
+import io.github.mangi.eta.agent.model.AgentFileToolCatalog
+import io.github.mangi.eta.agent.model.AgentPhoneToolCatalog
+import io.github.mangi.eta.agent.model.AgentTerminalToolCatalog
+import org.json.JSONArray
 
 /**
  * 模块配置中枢。
@@ -31,6 +36,11 @@ internal object Prefs {
         // 兼容旧版布尔协议；新 UI 不再写入，缺少三态配置时 true 仍表示 Gemini。
         const val POWER_KEY_TAKEOVER = "power_key_takeover"
         const val ASSISTANT_AUTO_CONFIG = "assistant_auto_config"
+        const val HOTWORD_SELF_HEAL = "hotword_self_heal"
+        const val GESTURE_BAR_CIRCLE_TO_SEARCH = "gesture_bar_circle_to_search"
+        const val DOUBLE_FINGER_CIRCLE_TO_SEARCH = "double_finger_circle_to_search"
+        const val LOCKSCREEN_VOICE_COMMAND = "lockscreen_voice_command"
+        const val SCREEN_ON_VOICE_COMMAND = "screen_on_voice_command"
         const val AGENT_CUSTOM_MODEL = "agent_custom_model"
         const val AGENT_REQUIRE_PREFIX = "agent_require_prefix"
         const val AGENT_TERMINAL_TOOLS = "agent_terminal_tools"
@@ -45,11 +55,17 @@ internal object Prefs {
         const val AGENT_SUBAGENT_ENABLED = "agent_subagent_enabled"
         const val AGENT_VIRTUAL_DISPLAY_ENABLED = "agent_virtual_display_enabled"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
+        const val AGENT_DISABLED_TOOLS_JSON = "agent_disabled_tools_json"
 
         /** 全部布尔开关及其默认值。 */
         val BOOLEAN_DEFAULTS: Map<String, Boolean> = mapOf(
             POWER_KEY_TAKEOVER to false,
             ASSISTANT_AUTO_CONFIG to false,
+            HOTWORD_SELF_HEAL to false,
+            GESTURE_BAR_CIRCLE_TO_SEARCH to true,
+            DOUBLE_FINGER_CIRCLE_TO_SEARCH to false,
+            LOCKSCREEN_VOICE_COMMAND to false,
+            SCREEN_ON_VOICE_COMMAND to false,
             AGENT_CUSTOM_MODEL to true,
             AGENT_REQUIRE_PREFIX to false,
             AGENT_TERMINAL_TOOLS to true,
@@ -92,7 +108,7 @@ internal object Prefs {
                     localAgent = context.applicationContext.getSharedPreferences(
                         LOCAL_AGENT_GROUP,
                         Context.MODE_PRIVATE,
-                    )
+                    ).also(::migrateLegacyGroupSwitchesIfNeeded)
                 }
             }
         }
@@ -199,7 +215,156 @@ internal object Prefs {
                 }
             }
         }
+        when {
+            local.contains(Keys.AGENT_DISABLED_TOOLS_JSON) -> {
+                remoteEditor.putString(
+                    Keys.AGENT_DISABLED_TOOLS_JSON,
+                    local.getString(Keys.AGENT_DISABLED_TOOLS_JSON, "[]"),
+                )
+                updateRemote = true
+            }
+            remotePreferences.contains(Keys.AGENT_DISABLED_TOOLS_JSON) -> {
+                localEditor.putString(
+                    Keys.AGENT_DISABLED_TOOLS_JSON,
+                    remotePreferences.getString(Keys.AGENT_DISABLED_TOOLS_JSON, "[]"),
+                )
+                updateLocal = true
+            }
+        }
         if (updateLocal) localEditor.commit()
         if (updateRemote) runCatching { remoteEditor.commit() }
     }
+
+    /** 将运行时工具名映射为工具列表中的主开关标识，确保同一能力的不同动作变体受同一开关约束。 */
+    fun canonicalToolSwitchId(toolName: String): String = when (toolName) {
+        "tap" -> "tap_area"
+        "long_press_element" -> "long_press"
+        "scroll_element" -> "scroll"
+        "input_text", "replace_text", "clear_text", "paste_text" -> "type_text"
+        "wait", "wait_for_package" -> "wait_for_text"
+        "browser_read", "browser_interact", "browser_screenshot" -> "browser_use"
+        "search_coloros_notes" -> "search_notes"
+        "search_coloros_memories" -> "search_system_memories"
+        else -> PersonalSearchTools.canonical(toolName)
+    }
+
+    fun disabledTools(preferences: SharedPreferences? = localAgent ?: remote): Set<String> {
+        val raw = runCatching {
+            preferences?.getString(Keys.AGENT_DISABLED_TOOLS_JSON, null)
+        }.getOrNull().orEmpty()
+        if (raw.isBlank()) return emptySet()
+        return runCatching {
+            val array = JSONArray(raw)
+            buildSet(array.length()) {
+                for (index in 0 until array.length()) {
+                    val item = array.optString(index).trim()
+                    if (item.isNotEmpty()) add(item)
+                }
+            }
+        }.getOrDefault(emptySet())
+    }
+
+    fun isToolEnabledInSet(toolName: String, disabled: Set<String>): Boolean {
+        if (disabled.isEmpty()) return true
+        val canonical = canonicalToolSwitchId(toolName)
+        return toolName !in disabled && canonical !in disabled
+    }
+
+    fun isToolEnabled(
+        toolName: String,
+        preferences: SharedPreferences? = localAgent ?: remote,
+    ): Boolean = isToolEnabledInSet(toolName, disabledTools(preferences))
+
+    fun setToolEnabled(
+        toolName: String,
+        enabled: Boolean,
+        service: XposedService? = null,
+    ): Boolean = setToolsEnabled(listOf(toolName), enabled, service)
+
+    fun setToolsEnabled(
+        toolNames: Collection<String>,
+        enabled: Boolean,
+        service: XposedService? = null,
+    ): Boolean {
+        val local = localAgent ?: return false
+        val updated = disabledTools(local).toMutableSet()
+        toolNames.forEach { rawName ->
+            val canonical = canonicalToolSwitchId(rawName)
+            if (enabled) {
+                updated -= rawName
+                updated -= canonical
+            } else {
+                updated += canonical
+            }
+        }
+        val encoded = JSONArray(updated.sorted()).toString()
+        val editor = local.edit().putString(Keys.AGENT_DISABLED_TOOLS_JSON, encoded)
+        LEGACY_TOOL_GROUP_KEYS.forEach { key ->
+            if (local.contains(key) && !local.getBoolean(key, true)) {
+                editor.putBoolean(key, true)
+            }
+        }
+        val committed = runCatching { editor.commit() }.getOrDefault(false)
+        if (committed && service != null) {
+            reconcileAgentPreferences(service)
+        }
+        return committed
+    }
+
+    private fun migrateLegacyGroupSwitchesIfNeeded(local: SharedPreferences) {
+        if (local.contains(Keys.AGENT_DISABLED_TOOLS_JSON)) return
+        val disabledLegacyGroups = LEGACY_TOOL_GROUP_KEYS.filter { key ->
+            local.contains(key) && !local.getBoolean(key, true)
+        }
+        if (disabledLegacyGroups.isEmpty()) return
+        val migratedDisabled = linkedSetOf<String>()
+        if (Keys.AGENT_BROWSER_TOOLS in disabledLegacyGroups) {
+            migratedDisabled += listOf("web_search", "fetch_url", "browser_use")
+        }
+        if (Keys.AGENT_TERMINAL_TOOLS in disabledLegacyGroups) {
+            migratedDisabled += AgentTerminalToolCatalog.names
+            migratedDisabled += AgentFileToolCatalog.names
+            migratedDisabled += "read_image"
+        }
+        if (Keys.AGENT_DEVICE_DIRECT_TOOLS in disabledLegacyGroups) {
+            migratedDisabled += AgentPhoneToolCatalog.direct
+            migratedDisabled += listOf(
+                "set_alarm", "set_timer", "device_status", "inspect_app",
+                "network_info", "top_memory_apps", "top_storage_apps",
+                "media_control", "set_volume",
+            )
+        }
+        if (Keys.AGENT_DEVICE_SENSITIVE_READ_TOOLS in disabledLegacyGroups) {
+            migratedDisabled += PersonalSearchTools.names
+            migratedDisabled += AgentPhoneToolCatalog.reads
+            migratedDisabled += listOf(
+                "read_personal_item", "summarize_bills", "get_setting", "wifi_credentials",
+                "recent_notifications", "search_notification_history", "recent_app_activity",
+                "app_usage_summary", "get_current_location", "get_device_environment",
+                "list_alarms", "list_active_timers", "search_clipboard_history",
+                "get_health_summary", "read_sms_code", "get_logcat", "search_media",
+                "search_audio", "search_recordings", "search_files", "search_calendar_events",
+                "search_contacts", "search_call_history", "search_messages", "search_downloads",
+                "search_notes", "search_coloros_recordings", "search_recording_summaries",
+                "search_system_memories", "search_saved_places", "search_personal_orders",
+                "search_qq_chat_images", "search_wechat_chat_images",
+            )
+        }
+        if (Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS in disabledLegacyGroups) {
+            migratedDisabled += AgentPhoneToolCatalog.writes
+            migratedDisabled += listOf("set_setting", "set_device_state", "app_state_control")
+        }
+        val editor = local.edit()
+            .putString(Keys.AGENT_DISABLED_TOOLS_JSON, JSONArray(migratedDisabled.sorted()).toString())
+        disabledLegacyGroups.forEach { key -> editor.putBoolean(key, true) }
+        runCatching { editor.commit() }
+    }
+
+    private val LEGACY_TOOL_GROUP_KEYS = listOf(
+        Keys.AGENT_TERMINAL_TOOLS,
+        Keys.AGENT_BROWSER_TOOLS,
+        Keys.AGENT_DEVICE_DIRECT_TOOLS,
+        Keys.AGENT_DEVICE_SENSITIVE_READ_TOOLS,
+        Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
+    )
 }

@@ -40,6 +40,8 @@
   <string name="action_continue">Continue</string>
   <string name="action_stop">Stop</string>
   <string name="action_edit">Edit</string>
+  <string name="action_pin_conversation">Pin</string>
+  <string name="action_unpin_conversation">Unpin</string>
   <string name="action_rename">Rename</string>
   <string name="action_export">Export</string>
   <string name="action_pin">Pin to top</string>
@@ -152,6 +154,9 @@
   <string name="appearance_title">Appearance &amp; Theme</string>
   <string name="appearance_group_color">Colors &amp; Theme</string>
   <string name="appearance_group_interface">Interface &amp; Effects</string>
+  <string name="appearance_ui_style">UI style</string>
+  <string name="appearance_ui_style_coui">COUI</string>
+  <string name="appearance_ui_style_miuix">Miuix</string>
   <string name="appearance_theme_mode">Theme mode</string>
   <string name="appearance_theme_system">Follow system</string>
   <string name="appearance_theme_light">Light</string>
@@ -1608,6 +1613,10 @@
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>
+  <string name="conversation_branch">Branch in new conversation</string>
+  <string name="conversation_branch_title">%1$s · Branch</string>
+  <string name="conversation_branch_unavailable">Cannot branch here: only turns with complete context and finished tool calls are supported.</string>
+  <string name="conversation_branch_failed">Failed to create branch. The original conversation is kept. Please try again.</string>
   <string name="conversation_context_loading">Loading conversation history…</string>
 
   <!-- 侧栏工作区（会话文件夹） -->
@@ -1627,4 +1636,19 @@
   <string name="action_delete_workspace">Delete workspace</string>
   <string name="action_move_to_workspace">Move to workspace</string>
   <string name="action_remove_from_workspace">Remove from workspace</string>
+  <string name="status_processing">Processing…</string>
+  <string name="systemizer_already_system">Google App is already a system priv-app</string>
+  <string name="systemizer_google_missing">Google App is not installed</string>
+  <string name="systemizer_root_manager_missing">Magisk or KernelSU was not detected</string>
+  <string name="systemizer_metamodule_missing">Enable metamodule support in KernelSU first</string>
+  <string name="systemizer_grant_kernelsu">Grant Eta root access in KernelSU</string>
+  <string name="systemizer_grant_magisk">Grant Eta root access in Magisk</string>
+  <string name="systemizer_root_denied">Root access was not granted</string>
+  <string name="systemizer_installed">Installation complete. Restart to apply changes</string>
+  <string name="ui_search_in_one_turn_179584">Circle to Search</string>
+  <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">Bright screen evokes automatic voice input</string>
+  <string name="ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a">Touch and hold with two fingers to start Circle to Search</string>
+  <string name="ui_convert_google_apps_to_system_apps_0f6d89">Convert Google Apps to system apps</string>
+  <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">Maintain Hey Google detection after screen rest</string>
+  <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">System applications have voice wake-up permissions, fewer self-start restrictions, and the experience is close to native. Will be installed via Magisk/KernelSU module and will take effect after reboot.</string>
 </resources>

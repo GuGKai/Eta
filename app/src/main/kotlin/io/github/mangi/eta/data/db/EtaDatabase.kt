@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 32,
+    version = 34,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -78,12 +78,15 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_29_30,
                         MIGRATION_30_31,
                         MIGRATION_31_32,
+                        MIGRATION_32_33,
+                        MIGRATION_33_34,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
                         override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
                     })
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    // 刻意不挂 fallbackToDestructiveMigration：迁移链一旦断掉，宁可抛出
+                    // IllegalStateException 让问题暴露，也不能静默清掉几百兆聊天记录。
                     .build()
                     .also { instance = it }
             }
@@ -99,7 +102,9 @@ internal abstract class EtaDatabase : RoomDatabase() {
         /** 26 → 27：运行结果与归档补错误码（PR #142）。 */
         internal val MIGRATION_26_27 = Migration(26, 27) { database ->
             listOf("runtime_results", "runtime_archive_runs").forEach { table ->
-                database.execSQL("ALTER TABLE $table ADD COLUMN error_code TEXT NOT NULL DEFAULT ''")
+                if (!database.columnExists(table, "error_code")) {
+                    database.execSQL("ALTER TABLE $table ADD COLUMN error_code TEXT NOT NULL DEFAULT ''")
+                }
             }
         }
 
@@ -127,9 +132,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
          * 纯上游库（有 model_id）、以及两者混合，都不会撞 duplicate column name。
          */
         internal val MIGRATION_22_23 = Migration(22, 23) { database ->
-            if (!database.hasColumn("conversations", "pinned")) {
-                database.execSQL("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
-            }
+            database.ensurePinnedColumn()
             if (!database.hasColumn("conversations", "model_id")) {
                 database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
             }
@@ -153,12 +156,16 @@ internal abstract class EtaDatabase : RoomDatabase() {
 
         /** 24 → 25：会话消息补请求耗时（PR）。 */
         internal val MIGRATION_24_25 = Migration(24, 25) { database ->
-            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN request_duration_ms INTEGER")
+            if (!database.columnExists("conversation_messages", "request_duration_ms")) {
+                database.execSQL("ALTER TABLE conversation_messages ADD COLUMN request_duration_ms INTEGER")
+            }
         }
 
         /** 25 → 26：会话记住最近一次模型用量（PR）。 */
         internal val MIGRATION_25_26 = Migration(25, 26) { database ->
-            database.execSQL("ALTER TABLE conversations ADD COLUMN last_model_usage_json TEXT NOT NULL DEFAULT ''")
+            if (!database.columnExists("conversations", "last_model_usage_json")) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN last_model_usage_json TEXT NOT NULL DEFAULT ''")
+            }
         }
 
         private fun androidx.sqlite.db.SupportSQLiteDatabase.hasColumn(table: String, column: String): Boolean =
@@ -195,9 +202,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
          * request_duration_ms、pinned；这里逐列逐表判断后再补，不重复加列。
          */
         internal val MIGRATION_27_28 = Migration(27, 28) { database ->
-            if (!database.conversationColumnExists("pinned")) {
-                database.execSQL("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
-            }
+            database.ensurePinnedColumn()
             if (!database.conversationColumnExists("model_id")) {
                 database.execSQL("ALTER TABLE conversations ADD COLUMN model_id TEXT")
             }
@@ -277,6 +282,78 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 }
                 found
             }
+
+
+        /**
+         * 32 → 33：把本地置顶列 pinned 并入上游的 is_pinned。
+         *
+         * 上游 3.4.0 与本地 fork 都占过 v24 这个版本号：上游在这里加 is_pinned，本地在这里建
+         * 自动任务表，本地一路用 pinned 表示置顶。设备上的库现在有三种来源：
+         *  - 本地旧库（pinned，无 is_pinned）—— 直接改名，置顶数据原地保留；
+         *  - 纯上游库（is_pinned，无 pinned）—— 已经对齐，什么都不做；
+         *  - 两列都在的混合库 —— 先把值并过去，再重建表去掉旧列，因为 Room 对整表列集合
+         *    做严格相等校验，多一列就抛 Migration didn't properly handle。
+         *
+         * 重建分支必须绕开外键级联：Room 的迁移跑在事务里，改不了 foreign_keys，
+         * 只能靠 legacy_alter_table 让改名不改写子表的引用（实测 FK 打开时直接 DROP
+         * 父表会连带删光 79361 条消息）。
+         */
+        internal val MIGRATION_32_33 = Migration(32, 33) { database ->
+            val hasPinned = database.conversationColumnExists("pinned")
+            val hasIsPinned = database.conversationColumnExists("is_pinned")
+            when {
+                hasPinned && !hasIsPinned -> database.execSQL(
+                    "ALTER TABLE conversations RENAME COLUMN pinned TO is_pinned",
+                )
+
+                hasPinned && hasIsPinned -> {
+                    database.execSQL("UPDATE conversations SET is_pinned = pinned")
+                    database.execSQL("PRAGMA legacy_alter_table = ON")
+                    database.execSQL(
+                        "CREATE TABLE conversations_sync_new (" +
+                            "id TEXT NOT NULL, title TEXT NOT NULL, thinking_enabled INTEGER NOT NULL, " +
+                            "reasoning_effort TEXT NOT NULL DEFAULT 'default', history_json TEXT NOT NULL, " +
+                            "applied_runtime_run_ids_json TEXT NOT NULL, roleplay_json TEXT NOT NULL DEFAULT '', " +
+                            "revisions_json TEXT NOT NULL DEFAULT '', last_model_usage_json TEXT NOT NULL DEFAULT '', " +
+                            "created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, model_id TEXT, " +
+                            "is_pinned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(id))",
+                    )
+                    database.execSQL(
+                        "INSERT INTO conversations_sync_new " +
+                            "SELECT id, title, thinking_enabled, reasoning_effort, history_json, " +
+                            "applied_runtime_run_ids_json, roleplay_json, revisions_json, last_model_usage_json, " +
+                            "created_at, updated_at, model_id, is_pinned FROM conversations",
+                    )
+                    database.execSQL("ALTER TABLE conversations RENAME TO conversations_sync_old")
+                    database.execSQL("ALTER TABLE conversations_sync_new RENAME TO conversations")
+                    database.execSQL("DROP TABLE conversations_sync_old")
+                    database.execSQL("PRAGMA legacy_alter_table = OFF")
+                }
+            }
+        }
+
+        /** 上游 3.4.1 新增本轮性能统计列（步数、模型/工具耗时、首字与解码指标）。 */
+        internal val MIGRATION_33_34 = Migration(33, 34) { database ->
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN step_count INTEGER")
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN llm_ms INTEGER")
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN tool_ms INTEGER")
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN ttft_ms INTEGER")
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN ttft_steps INTEGER")
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN decode_ms INTEGER")
+            database.execSQL("ALTER TABLE conversation_messages ADD COLUMN decode_tokens INTEGER")
+        }
+
+        /**
+         * 补齐置顶列，兼容两条迁移链。
+         *
+         * 上游在 v24 加的是 is_pinned，本地在 v22→23 加的是 pinned；谁都没有时才补本地旧名，
+         * 具体叫法留到最后由 MIGRATION_32_33 统一。
+         */
+        private fun androidx.sqlite.db.SupportSQLiteDatabase.ensurePinnedColumn() {
+            if (!columnExists("conversations", "is_pinned") && !columnExists("conversations", "pinned")) {
+                execSQL("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+            }
+        }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",

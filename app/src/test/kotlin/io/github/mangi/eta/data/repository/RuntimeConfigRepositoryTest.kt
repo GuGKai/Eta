@@ -30,7 +30,10 @@ class RuntimeConfigRepositoryTest {
             val restored = Json.decodeFromString<AgentModelClient.ModelConfig>(
                 RuntimeConfigRepository.runtimeConfigJson(config),
             )
-            assertEquals(prompt.orEmpty().trim(), restored.systemPrompt)
+            // 本 fork 在 Provider 未填提示词时注入 Eta 内置默认提示词，而不是留空。
+            val expected = prompt.orEmpty().trim().takeIf { it.isNotEmpty() }
+                ?: io.github.mangi.eta.data.provider.BuiltinProviders.DEFAULT_SYSTEM_PROMPT
+            assertEquals(expected, restored.systemPrompt)
         }
     }
 
@@ -42,7 +45,7 @@ class RuntimeConfigRepositoryTest {
             baseUrl = "https://untrusted.invalid/v1",
             apiKey = "fixture-must-not-be-projected",
             authMode = ProviderAuthModes.XAI_GROK,
-            endpointMode = OpenAiEndpointMode.RESPONSES,
+            endpointMode = OpenAiEndpointMode.CHAT_COMPLETIONS,
         )
         val config = RuntimeConfigRepository.buildRuntimeConfig(
             provider,
@@ -50,7 +53,7 @@ class RuntimeConfigRepositoryTest {
         )
 
         assertEquals("https://cli-chat-proxy.grok.com/v1", config.baseUrl)
-        assertEquals(OpenAiEndpointMode.CHAT_COMPLETIONS, config.openAiEndpointMode)
+        assertEquals(OpenAiEndpointMode.RESPONSES, config.openAiEndpointMode)
         assertEquals(ProviderSourceTypes.XAI, config.providerSourceType)
         assertEquals(ProviderAuthModes.XAI_GROK, config.authMode)
         assertEquals("", config.apiKey)

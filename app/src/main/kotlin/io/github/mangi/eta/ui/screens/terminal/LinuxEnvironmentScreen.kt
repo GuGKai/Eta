@@ -3,11 +3,10 @@ package io.github.mangi.eta.ui.screens.terminal
 import android.content.Context
 import android.text.format.Formatter
 import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -18,6 +17,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.terminal.AlpineEnvironmentInstaller
 import io.github.mangi.eta.agent.terminal.AlpineEnvironmentState
@@ -45,29 +45,34 @@ import io.github.mangi.eta.agent.terminal.PackageProfileInstallResult
 import io.github.mangi.eta.agent.terminal.PackageProfileInstallStage
 import io.github.mangi.eta.agent.terminal.SharedFolderMounts
 import io.github.mangi.eta.agent.terminal.terminalEnvironment
+import com.itos.coui.layout.CouiPageDefaults
+import com.itos.coui.layout.Divider
+import com.itos.coui.layout.Group
+import com.itos.coui.text.CouiTextKind
+import com.itos.coui.text.Text as CouiText
 import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.ui.app.KimiWebLaunchResult
 import io.github.mangi.eta.ui.app.KimiWebLauncher
+import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.app.launchForegroundExecution
 import io.github.mangi.eta.ui.app.message
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.app.rememberExecutionNotificationRequest
-import io.github.mangi.eta.ui.components.EtaArrowPreference
-import io.github.mangi.eta.ui.components.EtaCard
-import io.github.mangi.eta.ui.components.EtaPreference
-import io.github.mangi.eta.ui.components.EtaPreferenceColors
-import io.github.mangi.eta.ui.components.EtaPreferenceDefaults
-import io.github.mangi.eta.ui.components.EtaPreferenceDivider
-import io.github.mangi.eta.ui.components.EtaPreferenceGroup
-import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
-import io.github.mangi.eta.ui.components.EtaPreferenceIcon
-import io.github.mangi.eta.ui.components.EtaTextButton
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.coui.CouiButton
+import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
+import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.navigation.AppRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 
 private enum class InstallTarget {
     BASE,
@@ -292,10 +297,8 @@ internal fun LinuxEnvironmentScreen(
         }
     }
 
-    MiuixScaffoldPage(
-        title = stringResource(R.string.ui_linux_tool_environment_314d22),
-        onBack = onBack,
-    ) {
+    val uiStyle = LocalUiStyle.current
+    val listContent: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
         item(key = "status-card") {
             val version = when (selectedDistribution) {
                 LinuxDistribution.ALPINE -> status.version
@@ -343,7 +346,11 @@ internal fun LinuxEnvironmentScreen(
                 },
             )
         }
-        item(key = "configuration-title") { EtaPreferenceGroupTitle(stringResource(R.string.linux_environment_configuration)) }
+        item(key = "configuration-title") {
+            if (uiStyle != AppearanceUiStyle.COUI) {
+                SmallTitle(stringResource(R.string.linux_environment_configuration))
+            }
+        }
         item(key = "configuration-card") {
             LinuxEnvironmentConfiguration(
                 distribution = selectedDistribution,
@@ -368,45 +375,69 @@ internal fun LinuxEnvironmentScreen(
                 },
             )
         }
-        item(key = "files-title") { EtaPreferenceGroupTitle(stringResource(R.string.linux_environment_files)) }
+        item(key = "files-title") {
+            if (uiStyle != AppearanceUiStyle.COUI) {
+                SmallTitle(stringResource(R.string.linux_environment_files))
+            }
+        }
         item(key = "files-card") {
-            EtaPreferenceGroup {
-                EtaArrowPreference(
-                    title = stringResource(R.string.capability_workspace),
-                    summary = stringResource(R.string.capability_workspace_summary),
-                    startAction = { EtaPreferenceIcon(Icons.Rounded.Folder, tint = EtaPreferenceColors.Orange) },
-                    onClick = { onNavigate(AppRoute.Workspace) },
-                )
-                if (selectedBaseReady) {
-                    EtaPreferenceDivider(hasLeading = true)
-                    EtaArrowPreference(
-                        title = stringResource(R.string.shared_folders_entry_title),
-                        summary = stringResource(R.string.linux_environment_shared_folders_summary),
-                        startAction = { EtaPreferenceIcon(Icons.Rounded.FolderOpen, tint = EtaPreferenceColors.Orange) },
-                        onClick = { onNavigate(AppRoute.SharedFolders) },
+            if (uiStyle == AppearanceUiStyle.COUI) {
+                Group(title = stringResource(R.string.linux_environment_files)) {
+                    CouiPreference(
+                        title = stringResource(R.string.capability_workspace),
+                        summary = stringResource(R.string.capability_workspace_summary),
+                        onClick = { onNavigate(AppRoute.Workspace) },
                     )
-                    EtaPreferenceDivider(hasLeading = true)
-                    EtaArrowPreference(
-                        title = stringResource(R.string.linux_files_entry_title),
-                        summary = stringResource(R.string.linux_files_entry_summary),
-                        startAction = { EtaPreferenceIcon(Icons.Rounded.Description, tint = EtaPreferenceColors.Blue) },
-                        onClick = { onNavigate(AppRoute.LinuxFiles(selectedDistribution.wireName)) },
+                    if (selectedBaseReady) {
+                        Divider()
+                        CouiPreference(
+                            title = stringResource(R.string.shared_folders_entry_title),
+                            summary = stringResource(R.string.linux_environment_shared_folders_summary),
+                            onClick = { onNavigate(AppRoute.SharedFolders) },
+                        )
+                        Divider()
+                        CouiPreference(
+                            title = stringResource(R.string.linux_files_entry_title),
+                            summary = stringResource(R.string.linux_files_entry_summary),
+                            onClick = { onNavigate(AppRoute.LinuxFiles(selectedDistribution.wireName)) },
+                        )
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp),
+                ) {
+                    ArrowPreference(
+                        title = stringResource(R.string.capability_workspace),
+                        summary = stringResource(R.string.capability_workspace_summary),
+                        onClick = { onNavigate(AppRoute.Workspace) },
                     )
+                    if (selectedBaseReady) {
+                        ArrowPreference(
+                            title = stringResource(R.string.shared_folders_entry_title),
+                            summary = stringResource(R.string.linux_environment_shared_folders_summary),
+                            onClick = { onNavigate(AppRoute.SharedFolders) },
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.linux_files_entry_title),
+                            summary = stringResource(R.string.linux_files_entry_summary),
+                            onClick = { onNavigate(AppRoute.LinuxFiles(selectedDistribution.wireName)) },
+                        )
+                    }
                 }
             }
         }
 
         if (selectedToolsReady) {
             item(key = "optional-tools-title") {
-                EtaPreferenceGroupTitle(stringResource(R.string.ui_optional_tools_3097d6), modifier = Modifier.animateItem())
+                if (uiStyle != AppearanceUiStyle.COUI) {
+                    SmallTitle(stringResource(R.string.ui_optional_tools_3097d6), modifier = Modifier.animateItem())
+                }
             }
             item(key = "optional-tools-card") {
-                EtaPreferenceGroup(
-                    modifier = Modifier
-                        .animateItem()
-                        .padding(horizontal = EtaPreferenceDefaults.SidePadding)
-                        .padding(bottom = EtaPreferenceDefaults.GroupSpacing),
-                ) {
+                val optionalItemsContent: @Composable () -> Unit = {
                     packageProfileUis.forEachIndexed { index, profileUi ->
                         val ready = profileReady[profileUi.target] == true
                         val isKimi = profileUi.target == InstallTarget.KIMI
@@ -420,113 +451,211 @@ internal fun LinuxEnvironmentScreen(
                         } else {
                             profileUi.readyRes
                         }
-                        if (index > 0) EtaPreferenceDivider(hasLeading = false)
-                        EtaPreference(
-                            title = stringResource(profileUi.titleRes),
-                            summary = if (busyTarget == profileUi.target) {
-                                profileProgressSummary ?: stringResource(summaryRes)
-                            } else if (ready) {
-                                stringResource(readyRes)
-                            } else {
-                                stringResource(summaryRes)
-                            },
-                            endActions = {
-                                if (isKimi && kimiWebRunning) {
-                                    EtaTextButton(
-                                        text = stringResource(R.string.action_stop),
-                                        enabled = !kimiWebLaunching && !requiresRoot,
-                                        onClick = {
-                                            coroutineScope.launch {
-                                                val stopped = kimiWebLauncher.stop(selectedDistribution.terminalEnvironment)
-                                                kimiWebRunning = !stopped
-                                            }
-                                        },
-                                    )
+                        val rowTitle = stringResource(profileUi.titleRes)
+                        val rowSummary = if (busyTarget == profileUi.target) {
+                            profileProgressSummary ?: stringResource(summaryRes)
+                        } else if (ready) {
+                            stringResource(readyRes)
+                        } else {
+                            stringResource(summaryRes)
+                        }
+                        val primaryText = when {
+                            isKimi && ready -> stringResource(
+                                if (kimiWebLaunching) {
+                                    R.string.linux_kimi_web_starting
+                                } else if (kimiWebRunning) {
+                                    R.string.action_open
+                                } else {
+                                    R.string.linux_kimi_web_launch
+                                },
+                            )
+                            ready -> stringResource(R.string.linux_installed)
+                            busyTarget == profileUi.target -> stringResource(R.string.linux_installing)
+                            else -> stringResource(R.string.linux_install)
+                        }
+                        val primaryEnabled = !requiresRoot && if (isKimi && ready) {
+                            !kimiWebLaunching && busyTarget == null
+                        } else {
+                            busyTarget == null && !ready
+                        }
+                        val onPrimaryClick: () -> Unit = {
+                            if (isKimi && ready) {
+                                launchKimiWeb()
+                            } else if (busyTarget == null && !ready) {
+                                busyTarget = profileUi.target
+                                resultMessage = null
+                                val profileTitle = context.getString(profileUi.titleRes)
+                                launchInstallation {
+                                    val profileInstaller = profileInstallers.getValue(profileUi.target)
+                                    val result = profileInstaller.install { update ->
+                                        withContext(Dispatchers.Main.immediate) {
+                                            profileProgressSummary = update.summary(context, profileTitle)
+                                        }
+                                    }
+                                    profileReady = profileReady +
+                                        (profileUi.target to profileInstaller.isReady())
+                                    profileProgressSummary = null
+                                    busyTarget = null
+                                    resultMessage = result.toMessage(context, profileTitle)
                                 }
-                                EtaTextButton(
-                                    text = when {
-                                        isKimi && ready -> stringResource(
-                                            if (kimiWebLaunching) {
-                                                R.string.linux_kimi_web_starting
-                                            } else if (kimiWebRunning) {
-                                                R.string.action_open
-                                            } else {
-                                                R.string.linux_kimi_web_launch
-                                            },
+                            }
+                        }
+                        val onStopKimi: () -> Unit = {
+                            coroutineScope.launch {
+                                val stopped = kimiWebLauncher.stop(selectedDistribution.terminalEnvironment)
+                                kimiWebRunning = !stopped
+                            }
+                        }
+                        if (uiStyle == AppearanceUiStyle.COUI) {
+                            CouiPreference(
+                                title = rowTitle,
+                                summary = rowSummary,
+                                showChevron = false,
+                                trailing = {
+                                    if (isKimi && kimiWebRunning) {
+                                        CouiButton(
+                                            text = stringResource(R.string.action_stop),
+                                            enabled = !kimiWebLaunching && !requiresRoot,
+                                            minHeight = 32.dp,
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            onClick = onStopKimi,
                                         )
-                                        ready -> stringResource(R.string.linux_installed)
-                                        busyTarget == profileUi.target -> stringResource(R.string.linux_installing)
-                                        else -> stringResource(R.string.linux_install)
-                                    },
-                                    enabled = !requiresRoot && if (isKimi && ready) {
-                                        !kimiWebLaunching && busyTarget == null
-                                    } else {
-                                        busyTarget == null && !ready
-                                    },
-                                    onClick = {
-                                        if (isKimi && ready) {
-                                            launchKimiWeb()
-                                            return@EtaTextButton
-                                        }
-                                        if (busyTarget != null || ready) return@EtaTextButton
-                                        busyTarget = profileUi.target
-                                        resultMessage = null
-                                        val profileTitle = context.getString(profileUi.titleRes)
-                                        launchInstallation {
-                                            val profileInstaller = profileInstallers.getValue(profileUi.target)
-                                            val result = profileInstaller.install { update ->
-                                                withContext(Dispatchers.Main.immediate) {
-                                                    profileProgressSummary = update.summary(context, profileTitle)
-                                                }
-                                            }
-                                            profileReady = profileReady +
-                                                (profileUi.target to profileInstaller.isReady())
-                                            profileProgressSummary = null
-                                            busyTarget = null
-                                            resultMessage = result.toMessage(context, profileTitle)
-                                        }
-                                    },
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    CouiButton(
+                                        text = primaryText,
+                                        enabled = primaryEnabled,
+                                        minHeight = 32.dp,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        onClick = onPrimaryClick,
+                                    )
+                                },
+                            )
+                            Divider()
+                        } else {
+                            BasicComponent(
+                                title = rowTitle,
+                                summary = rowSummary,
+                                endActions = {
+                                    if (isKimi && kimiWebRunning) {
+                                        TextButton(
+                                            text = stringResource(R.string.action_stop),
+                                            enabled = !kimiWebLaunching && !requiresRoot,
+                                            minWidth = 0.dp,
+                                            minHeight = 32.dp,
+                                            insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            onClick = onStopKimi,
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    TextButton(
+                                        text = primaryText,
+                                        enabled = primaryEnabled,
+                                        minWidth = 0.dp,
+                                        minHeight = 32.dp,
+                                        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        onClick = onPrimaryClick,
+                                    )
+                                },
+                            )
+                        }
+                    }
+
+                    val apkSummary = apkAnalysisProgress?.summary(context) ?: if (apkAnalysisReady) {
+                        context.getString(R.string.linux_apk_tools_ready)
+                    } else {
+                        context.getString(R.string.linux_apk_tools_summary)
+                    }
+                    val apkButtonText = when {
+                        apkAnalysisReady -> context.getString(R.string.linux_installed)
+                        busyTarget == InstallTarget.APK_ANALYSIS -> context.getString(R.string.linux_installing)
+                        else -> context.getString(R.string.linux_install)
+                    }
+                    val apkEnabled = busyTarget == null && !requiresRoot && !apkAnalysisReady
+                    val onApkInstall: () -> Unit = {
+                        if (busyTarget == null && !apkAnalysisReady) {
+                            busyTarget = InstallTarget.APK_ANALYSIS
+                            resultMessage = null
+                            launchInstallation {
+                                val result = apkAnalysisInstaller.install { update ->
+                                    withContext(Dispatchers.Main.immediate) {
+                                        apkAnalysisProgress = update
+                                    }
+                                }
+                                apkAnalysisReady = apkAnalysisInstaller.isReady()
+                                apkAnalysisProgress = null
+                                busyTarget = null
+                                resultMessage = result.toMessage(context)
+                            }
+                        }
+                    }
+                    if (uiStyle == AppearanceUiStyle.COUI) {
+                        CouiPreference(
+                            title = stringResource(R.string.ui_apk_analysis_95ad17),
+                            summary = apkSummary,
+                            showChevron = false,
+                            trailing = {
+                                CouiButton(
+                                    text = apkButtonText,
+                                    enabled = apkEnabled,
+                                    minHeight = 32.dp,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    onClick = onApkInstall,
+                                )
+                            },
+                        )
+                    } else {
+                        BasicComponent(
+                            title = stringResource(R.string.ui_apk_analysis_95ad17),
+                            summary = apkSummary,
+                            endActions = {
+                                TextButton(
+                                    text = apkButtonText,
+                                    enabled = apkEnabled,
+                                    minWidth = 0.dp,
+                                    minHeight = 32.dp,
+                                    insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    onClick = onApkInstall,
                                 )
                             },
                         )
                     }
-                    EtaPreferenceDivider(hasLeading = false)
-                    EtaPreference(
-                        title = stringResource(R.string.ui_apk_analysis_95ad17),
-                        summary = apkAnalysisProgress?.summary(context) ?: if (apkAnalysisReady) {
-                            context.getString(R.string.linux_apk_tools_ready)
-                        } else {
-                            context.getString(R.string.linux_apk_tools_summary)
-                        },
-                        endActions = {
-                            EtaTextButton(
-                                text = when {
-                                    apkAnalysisReady -> context.getString(R.string.linux_installed)
-                                    busyTarget == InstallTarget.APK_ANALYSIS -> context.getString(R.string.linux_installing)
-                                    else -> context.getString(R.string.linux_install)
-                                },
-                                enabled = busyTarget == null && !requiresRoot && !apkAnalysisReady,
-                                onClick = {
-                                    if (busyTarget != null || apkAnalysisReady) return@EtaTextButton
-                                    busyTarget = InstallTarget.APK_ANALYSIS
-                                    resultMessage = null
-                                    launchInstallation {
-                                        val result = apkAnalysisInstaller.install { update ->
-                                            withContext(Dispatchers.Main.immediate) {
-                                                apkAnalysisProgress = update
-                                            }
-                                        }
-                                        apkAnalysisReady = apkAnalysisInstaller.isReady()
-                                        apkAnalysisProgress = null
-                                        busyTarget = null
-                                        resultMessage = result.toMessage(context)
-                                    }
-                                },
-                            )
-                        },
-                    )
+                }
+                if (uiStyle == AppearanceUiStyle.COUI) {
+                    Group(
+                        modifier = Modifier.animateItem(),
+                        title = stringResource(R.string.ui_optional_tools_3097d6),
+                    ) {
+                        optionalItemsContent()
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier
+                            .animateItem()
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
+                    ) {
+                        optionalItemsContent()
+                    }
                 }
             }
+        }
+    }
+
+    when (uiStyle) {
+        AppearanceUiStyle.COUI -> {
+            CouiLazyScaffoldPage(
+                title = stringResource(R.string.ui_linux_tool_environment_314d22),
+                onBack = onBack,
+                content = listContent,
+            )
+        }
+        AppearanceUiStyle.MIUIX -> {
+            MiuixScaffoldPage(
+                title = stringResource(R.string.ui_linux_tool_environment_314d22),
+                onBack = onBack,
+                content = listContent,
+            )
         }
     }
 }

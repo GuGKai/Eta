@@ -12,6 +12,7 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -30,6 +31,64 @@ class EtaDatabaseMigrationTest {
     @Test
     fun contribution25MigrationPreservesModelTasksAndUsageWhileAddingRuntimeErrors() =
         verifyForkMergeMigration(upstream = false, contribution = true)
+
+    /** 32 → 33：只有旧名 pinned 列时，改名成 is_pinned，行数和值都不能动。 */
+    @Test
+    fun migration32To33RenamesLegacyPinnedColumn() {
+        verifyPinnedMigration(createIsPinnedToo = false)
+    }
+
+    /** 32 → 33：两列并存时，以 pinned 为准覆盖 is_pinned，并清掉重复列。 */
+    @Test
+    fun migration32To33MergesDuplicatePinnedColumns() {
+        verifyPinnedMigration(createIsPinnedToo = true)
+    }
+
+    private fun verifyPinnedMigration(createIsPinnedToo: Boolean) {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val name = "migration-32-33-${UUID.randomUUID()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context).name(name).callback(
+                object : SupportSQLiteOpenHelper.Callback(32) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE conversations (id TEXT NOT NULL, title TEXT NOT NULL, " +
+                                (if (createIsPinnedToo) "is_pinned INTEGER NOT NULL DEFAULT 0, " else "") +
+                                "pinned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(id))",
+                        )
+                        db.execSQL("INSERT INTO conversations (id,title,pinned) VALUES ('c1','pinned-one',1)")
+                        db.execSQL("INSERT INTO conversations (id,title,pinned) VALUES ('c2','plain-one',0)")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                },
+            ).build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            EtaDatabase.MIGRATION_32_33.migrate(db)
+            val columns = mutableListOf<String>()
+            db.query("PRAGMA table_info(conversations)").use { cursor ->
+                while (cursor.moveToNext()) {
+                    columns += cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                }
+            }
+            assertEquals(1, columns.count { it == "is_pinned" })
+            assertEquals(0, columns.count { it == "pinned" })
+            db.query("SELECT id, is_pinned FROM conversations ORDER BY id").use { cursor ->
+                assertEquals(2, cursor.count)
+                assertTrue(cursor.moveToFirst())
+                assertEquals("c1", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+                assertTrue(cursor.moveToNext())
+                assertEquals("c2", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
 
     private fun verifyForkMergeMigration(upstream: Boolean, contribution: Boolean = false) {
         val context = RuntimeEnvironment.getApplication() as Context
@@ -201,6 +260,7 @@ class EtaDatabaseMigrationTest {
             assertEquals(emptyList<CharacterEntity>(), runBlocking(Dispatchers.IO) { database.characterDao().characters() })
             assertEquals("off", conversations.first { it.id == "conv-1" }.reasoningEffort)
             assertEquals(null, conversations.first { it.id == "conv-1" }.modelId)
+            assertEquals(false, conversations.first { it.id == "conv-1" }.isPinned)
             assertEquals("default", conversations.first { it.id == "conv-enabled" }.reasoningEffort)
             assertEquals(null, runBlocking(Dispatchers.IO) { database.conversationDao().state() })
             assertEquals(listOf("built-in", "manual"), provider.models.map { it.modelId })

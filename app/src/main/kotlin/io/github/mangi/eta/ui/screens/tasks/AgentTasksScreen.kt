@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -36,12 +36,6 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.automation.AgentTaskScheduler
 import io.github.mangi.eta.agent.automation.AgentTaskTools
 import io.github.mangi.eta.data.db.EtaDatabase
-import io.github.mangi.eta.ui.components.EtaPreference
-import io.github.mangi.eta.ui.components.EtaPreferenceColors
-import io.github.mangi.eta.ui.components.EtaPreferenceDivider
-import io.github.mangi.eta.ui.components.EtaPreferenceGroup
-import io.github.mangi.eta.ui.components.EtaSwitchPreference
-import io.github.mangi.eta.ui.components.EtaTextButton
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import java.time.DayOfWeek
 import java.time.Instant
@@ -54,9 +48,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private val TaskStatusSuccess = Color(0xFF34A853)
+private val TaskStatusWarning = Color(0xFFF29900)
 
 @Composable
 internal fun AgentTasksScreen(onBack: () -> Unit) {
@@ -91,8 +92,12 @@ internal fun AgentTasksScreen(onBack: () -> Unit) {
         onBack = onBack,
     ) {
         item {
-            EtaPreferenceGroup {
-                EtaPreference(
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp),
+            ) {
+                BasicComponent(
                     title = stringResource(R.string.automation_create_hint),
                     summary = stringResource(R.string.automation_create_summary),
                 )
@@ -122,14 +127,18 @@ internal fun AgentTasksScreen(onBack: () -> Unit) {
             val recentRuns = runs.filter { it.taskId == task.id }.take(3)
             val colors = MiuixTheme.colorScheme
             val statusColor = when (task.lastStatus) {
-                "completed" -> EtaPreferenceColors.Green
+                "completed" -> TaskStatusSuccess
                 "failed", "interrupted" -> colors.error
                 "queued", "running" -> colors.primary
-                "configuration_required" -> EtaPreferenceColors.Orange
+                "configuration_required" -> TaskStatusWarning
                 else -> colors.onSurfaceVariantSummary
             }
-            EtaPreferenceGroup {
-                EtaSwitchPreference(
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp),
+            ) {
+                SwitchPreference(
                     title = task.name,
                     summary = task.prompt,
                     checked = task.enabled,
@@ -141,7 +150,6 @@ internal fun AgentTasksScreen(onBack: () -> Unit) {
                         )
                     },
                 )
-                EtaPreferenceDivider(hasLeading = false)
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -238,39 +246,29 @@ private fun TaskDetail(label: String, value: String) {
 @Composable
 private fun TaskActions(onRun: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        EtaTextButton(
+        TextButton(
             text = stringResource(R.string.automation_run),
             onClick = onRun,
-            modifier = Modifier.fillMaxWidth(),
-            minHeight = 48.dp,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
             colors = ButtonDefaults.textButtonColorsPrimary(),
-            textStyle = MiuixTheme.textStyles.body2,
         )
         Row(
             modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            EtaTextButton(
+            TextButton(
                 text = stringResource(R.string.automation_cancel),
                 onClick = onCancel,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                minWidth = 0.dp,
-                minHeight = 48.dp,
-                insideMargin = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                textStyle = MiuixTheme.textStyles.body2,
             )
-            EtaTextButton(
+            TextButton(
                 text = stringResource(R.string.automation_delete),
                 onClick = onDelete,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                minWidth = 0.dp,
-                minHeight = 48.dp,
-                insideMargin = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                 colors = ButtonDefaults.textButtonColorsPrimary(
                     color = MiuixTheme.colorScheme.error.copy(alpha = 0.1f),
                     textColor = MiuixTheme.colorScheme.error,
                 ),
-                textStyle = MiuixTheme.textStyles.body2,
             )
         }
     }

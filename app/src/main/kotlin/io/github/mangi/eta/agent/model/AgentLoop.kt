@@ -4,6 +4,7 @@ import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentModelInterruptedException
+import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
@@ -61,6 +62,7 @@ internal class AgentLoop(
     private val accumulatedReasoning = StringBuilder()
     private val sensitiveToolCallIds = linkedSetOf<String>()
     private var pendingToolImageMessage: JSONObject? = null
+    private val turnMetrics = TurnMetricsAccumulator()
     private val context = AgentContextSession(
         config, messages, systemCount, operationId, provider, runController,
         { sensitiveToolCallIds }, onEvent, onContextSnapshot, { transcript.length() },
@@ -124,6 +126,9 @@ internal class AgentLoop(
                 roleplayContext?.projectMessages(messages) ?: messages,
             )
             var roundInputTokens: Int? = null
+            var roundUsage: AgentTokenUsage? = null
+            var stepStartedAtMs = monotonicNowMs()
+            var firstTokenAtMs: Long? = null
             val reasoningLengthBeforeRound = accumulatedReasoning.length
             var interrupted = false
             var attemptRound = round
@@ -137,6 +142,9 @@ internal class AgentLoop(
                         if (event is AgentEvent.RoundStarted) {
                             roundInputTokens = null
                             attemptRound = event.round
+                            roundUsage = null
+                            stepStartedAtMs = monotonicNowMs()
+                            firstTokenAtMs = null
                         }
                         onEvent(event)
                     },
@@ -145,7 +153,18 @@ internal class AgentLoop(
                                 providerEvent is ProviderEvent.BlockStart && providerEvent.kind == AssistantBlockKind.TOOL_CALL)) {
                             throw AgentModelFailure("REPLY_REWRITE_TOOL_CALL", false, "改写回复时模型请求了工具，已停止；原回复未改变。")
                         }
+                        if (providerEvent is ProviderEvent.RequestStarted) {
+                            stepStartedAtMs = monotonicNowMs()
+                            firstTokenAtMs = null
+                        }
+                        if (firstTokenAtMs == null &&
+                            providerEvent is ProviderEvent.BlockDelta &&
+                            providerEvent.delta.isNotEmpty()
+                        ) {
+                            firstTokenAtMs = monotonicNowMs()
+                        }
                         if (providerEvent is ProviderEvent.Usage) {
+                            roundUsage = providerEvent.usage
                             roundInputTokens = providerEvent.contextInputTokens ?: roundInputTokens
                         }
                         if (providerEvent is ProviderEvent.BlockDelta &&
@@ -153,7 +172,9 @@ internal class AgentLoop(
                         ) {
                             accumulatedReasoning.append(providerEvent.delta)
                         }
-                        providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
+                        if (providerEvent !is ProviderEvent.Usage) {
+                            providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
+                        }
                     },
                     discardAttemptReasoning = { accumulatedReasoning.setLength(reasoningLengthBeforeRound) },
                 ).also { response ->
@@ -172,6 +193,10 @@ internal class AgentLoop(
                 // 同一回合的重试仍需原始观察；整个回合结束后才移除截图。
                 if (!interrupted) discardPendingToolImageMessage()
             }
+            val completedAtMs = monotonicNowMs()
+            val stepLlmMs = (completedAtMs - stepStartedAtMs).coerceAtLeast(0L)
+            val stepTtftMs = firstTokenAtMs?.let { (it - stepStartedAtMs).coerceAtLeast(0L) }
+            val stepDecodeMs = firstTokenAtMs?.let { (completedAtMs - it).coerceAtLeast(0L) }
             context.observeInputTokens(roundInputTokens)
             round = completedRound.round
             val providerResponse = completedRound.response
@@ -207,9 +232,19 @@ internal class AgentLoop(
                     toolNames = toolCalls.map { it.name },
                 )
             )
+            val accumulatedUsage = turnMetrics.recordStep(
+                stepLlmMs = stepLlmMs,
+                stepTtftMs = stepTtftMs,
+                stepDecodeMs = stepDecodeMs,
+                stepUsage = roundUsage,
+                stepPromptTokens = roundInputTokens,
+            )
+            if (!accumulatedUsage.isEmpty) {
+                onEvent(AgentEvent.UsageReceived(round = round, usage = accumulatedUsage))
+            }
 
             if (toolCalls.isNotEmpty()) {
-                val outcomes = executeToolBatch(round, toolCalls, providerResponse.stopReason).first
+                val outcomes = executeToolBatch(round, toolCalls, providerResponse.stopReason)
                 appendToolImages(round, outcomes)
                 publishTranscript()
                 round += 1
@@ -280,6 +315,7 @@ internal class AgentLoop(
         val supplement = runController.pollSteeringMessage() ?: return false
         appendMessage(steeringMessage(supplement))
         context.userAppended()
+        turnMetrics.reset()
         return true
     }
 
@@ -287,6 +323,7 @@ internal class AgentLoop(
         val supplement = runController.pollSteeringOrSeal() ?: return false
         appendMessage(steeringMessage(supplement))
         context.userAppended()
+        turnMetrics.reset()
         return true
     }
 
@@ -301,7 +338,7 @@ internal class AgentLoop(
         round: Int,
         toolCalls: List<AgentModelClient.ToolCall>,
         stopReason: AssistantStopReason,
-    ): Pair<List<ToolOutcome>, AgentModelClient.ToolStop?> {
+    ): List<ToolOutcome> {
         fun publish(outcome: ToolOutcome) {
             val message = AgentConversationCodec.toolResultMessage(outcome.call, outcome.result)
             batchCheckpoints.remove(outcome.call.id)?.let { checkpoint ->
@@ -324,7 +361,7 @@ internal class AgentLoop(
             publish(outcome)
             outcome
         }
-        return outcomes to null
+        return outcomes
     }
 
     private fun executeOrderedTools(
@@ -334,13 +371,11 @@ internal class AgentLoop(
         stopOnError: Boolean = false,
         onBeforeCall: (AgentModelClient.ToolCall) -> Unit = {},
         onOutcome: (ToolOutcome) -> Unit = {},
-    ): Pair<List<ToolOutcome>, AgentModelClient.ToolStop?> {
+    ): List<ToolOutcome> {
         val outcomes = mutableListOf<ToolOutcome>()
-        var stop: AgentModelClient.ToolStop? = null
         var failed = false
         fun record(outcome: ToolOutcome) {
             outcomes += outcome
-            if (stop == null) stop = outcome.result.stop
             if (!traceFormatter.isSuccessResult(outcome.result)) failed = true
             onOutcome(outcome)
         }
@@ -348,12 +383,12 @@ internal class AgentLoop(
             listOf(AgentToolBatchPlanner.Segment(parallel = false, calls = toolCalls))
         for (segment in segments) {
             // 整段 subagent 由 planner 聚成一批（上游同轮并发派发语义），不再按并发上限切碎；
-            // 其它段仍按有界 wave 推进，避免排队的工作越过暂停/取消点。
+            // 其它段仍按有界 wave 推进，避免排队的工作越过插话/取消点。
             val subagentBatch = segment.calls.all { it.name == AgentSubagentToolCatalog.TOOL_NAME }
             val waves = if (segment.parallel && subagentBatch) listOf(segment.calls)
             else segment.calls.chunked(AgentToolBatchPlanner.MAX_CONCURRENT_CALLS)
             for (wave in waves) {
-                if (segment.parallel && wave.size > 1 && stop == null && !stopOnError &&
+                if (segment.parallel && wave.size > 1 && !stopOnError &&
                     !runController.hasPendingSteering
                 ) {
                     executeParallelTools(round, wave, onBeforeCall, ::record)
@@ -361,8 +396,6 @@ internal class AgentLoop(
                     for (call in wave) {
                         runController.throwIfCancelled()
                         val outcome = when {
-                            stop != null -> rejectedToolOutcome(round, call, "UI_EXECUTION_PAUSED",
-                                "本批次已因虚拟屏无响应或无进展暂停；后续工具未执行。")
                             runController.hasPendingSteering -> rejectedToolOutcome(round, call, "USER_SUPPLEMENT_RECEIVED",
                                 "用户已插话调整指令；此项尚未开始，未执行。保留已完成结果，按新指令重新规划。")
                             stopOnError && failed -> rejectedToolOutcome(round, call, "BATCH_STOPPED_ON_ERROR",
@@ -377,7 +410,7 @@ internal class AgentLoop(
                 }
             }
         }
-        return outcomes to stop
+        return outcomes
     }
 
     private fun executeParallelTools(
@@ -494,7 +527,7 @@ internal class AgentLoop(
                 progress.getJSONObject(calls.indexOfFirst { it.id == call.id }).put("status", status)
                 publishTranscript(force = true)
             }
-            val (outcomes, stop) = executeOrderedTools(round, calls,
+            val outcomes = executeOrderedTools(round, calls,
                 parallel = !sequential && !stopOnError,
                 stopOnError = stopOnError,
                 onBeforeCall = { call -> updateProgress(call, "unknown") },
@@ -503,14 +536,14 @@ internal class AgentLoop(
                         .getString("status") == "unknown"
                     val status = when {
                         !wasStarted || outcome.result.executionSkipped -> "skipped"
-                        outcome.result.stop != null || !traceFormatter.isSuccessResult(outcome.result) -> "failed"
+                        !traceFormatter.isSuccessResult(outcome.result) -> "failed"
                         else -> "completed"
                     }
                     updateProgress(outcome.call, status)
                 },
             )
             checkpoint.remove("code")
-            checkpoint.put("ok", stop == null && outcomes.all { traceFormatter.isSuccessResult(it.result) })
+            checkpoint.put("ok", outcomes.all { traceFormatter.isSuccessResult(it.result) })
                 .put("message", "以下仅保留每项执行状态；completed 项已执行，不要重复。原始参数与结果仅供当前回合使用，未写入持久会话。")
             val results = JSONArray()
             outcomes.forEachIndexed { index, outcome ->
@@ -523,13 +556,12 @@ internal class AgentLoop(
             }
             return finishTool(round, toolCall, AgentModelClient.ToolResult(
                 content = JSONObject()
-                    .put("ok", stop == null && outcomes.all { traceFormatter.isSuccessResult(it.result) })
+                    .put("ok", outcomes.all { traceFormatter.isSuccessResult(it.result) })
                     .put("total", outcomes.size)
                     .put("results", results)
                     .toString(),
                 sensitive = true,
                 images = outcomes.flatMap { it.result.images },
-                stop = stop,
             ))
         }
         if (toolCall.name !in availableToolNames) {
@@ -576,17 +608,24 @@ internal class AgentLoop(
                 .put("message", "用户已插话调整指令；此项未执行，按新指令重新规划。")
                 .toString(), executionSkipped = true,
         )
-        return try {
-            toolExecutor.execute(toolCall)
+        // 工具耗时按真实执行区间累计，供回答操作栏的性能统计；被拒绝、未开始或
+        // 整轮取消的调用不计入，避免统计被拒绝耗时污染。
+        val toolStartMs = monotonicNowMs()
+        try {
+            return toolExecutor.execute(toolCall)
         } catch (cancelled: AgentRunCancelledException) {
             throw cancelled
         } catch (throwable: Exception) {
             runController.throwIfCancelled()
-            AgentModelClient.ToolResult(JSONObject()
+            return AgentModelClient.ToolResult(JSONObject()
                 .put("ok", false)
                 .put("code", "TOOL_ERROR")
                 .put("message", throwable.message ?: throwable.javaClass.simpleName)
                 .toString())
+        } finally {
+            if (!runController.isCancelled) {
+                turnMetrics.recordToolMs((monotonicNowMs() - toolStartMs).coerceAtLeast(0L))
+            }
         }
     }
 
@@ -741,4 +780,78 @@ internal class AgentLoop(
             AssistantBlockKind.TOOL_CALL -> AgentEvent.AssistantBlockKind.TOOL_CALL
         }
 
+    private fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000L
+
+    private class TurnMetricsAccumulator {
+        private var stepCount: Int = 0
+        private var llmMs: Long = 0L
+        private var toolMs: Long = 0L
+        private var ttftMs: Long = 0L
+        private var ttftSteps: Int = 0
+        private var decodeMs: Long = 0L
+        private var decodeTokens: Int = 0
+        private var contextTokens: Int? = null
+        private var inputTokens: Int? = null
+        private var outputTokens: Int? = null
+        private var reasoningTokens: Int? = null
+        private var cachedTokens: Int? = null
+
+        fun reset() {
+            stepCount = 0
+            llmMs = 0L
+            toolMs = 0L
+            ttftMs = 0L
+            ttftSteps = 0
+            decodeMs = 0L
+            decodeTokens = 0
+            contextTokens = null
+            inputTokens = null
+            outputTokens = null
+            reasoningTokens = null
+            cachedTokens = null
+        }
+
+        fun recordStep(
+            stepLlmMs: Long,
+            stepTtftMs: Long?,
+            stepDecodeMs: Long?,
+            stepUsage: AgentTokenUsage?,
+            stepPromptTokens: Int? = null,
+        ): AgentTokenUsage {
+            stepCount += 1
+            llmMs += stepLlmMs.coerceAtLeast(0L)
+            if (stepTtftMs != null) {
+                ttftMs += stepTtftMs.coerceAtLeast(0L)
+                ttftSteps += 1
+            }
+            val stepOut = stepUsage?.outputTokens
+            if (stepDecodeMs != null && stepOut != null && stepOut > 0) {
+                decodeMs += stepDecodeMs.coerceAtLeast(0L)
+                decodeTokens += stepOut
+            }
+            stepUsage?.contextTokens?.let { contextTokens = it }
+            (stepPromptTokens ?: stepUsage?.inputTokens)?.let { inputTokens = (inputTokens ?: 0) + it }
+            stepUsage?.outputTokens?.let { outputTokens = (outputTokens ?: 0) + it }
+            stepUsage?.reasoningTokens?.let { reasoningTokens = (reasoningTokens ?: 0) + it }
+            stepUsage?.cachedTokens?.let { cachedTokens = (cachedTokens ?: 0) + it }
+            return AgentTokenUsage(
+                contextTokens = contextTokens,
+                inputTokens = inputTokens,
+                outputTokens = outputTokens,
+                reasoningTokens = reasoningTokens,
+                cachedTokens = cachedTokens,
+                stepCount = stepCount.takeIf { it > 0 },
+                llmMs = llmMs.takeIf { stepCount > 0 },
+                toolMs = toolMs.takeIf { it > 0L },
+                ttftMs = ttftMs.takeIf { ttftSteps > 0 },
+                ttftSteps = ttftSteps.takeIf { it > 0 },
+                decodeMs = decodeMs.takeIf { decodeTokens > 0 && it > 0L },
+                decodeTokens = decodeTokens.takeIf { decodeMs > 0L && it > 0 },
+            )
+        }
+
+        fun recordToolMs(elapsedMs: Long) {
+            toolMs += elapsedMs.coerceAtLeast(0L)
+        }
+    }
 }

@@ -28,7 +28,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.DeepSeekBalanceStore
+import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
@@ -90,7 +93,32 @@ internal fun AccountBalanceCapsules(
     if (editing) {
         var input by remember { mutableStateOf(state.spent?.let { plainAmount(it) }.orEmpty()) }
         val parsed = parseAmount(input)
-        WindowDialog(
+        // COUI 样式：用 COUI 的确认弹窗组件，只保留标题，解释文字不再显示。
+        if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+            CouiConfirmDialog(
+                visible = true,
+                title = stringResource(R.string.deepseek_seed_title),
+                message = null,
+                confirmText = stringResource(R.string.action_confirm),
+                confirmEnabled = parsed != null,
+                onConfirm = {
+                    parsed?.let(onReseed)
+                    editing = false
+                },
+                onDismissRequest = { editing = false },
+            ) {
+                TextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = stringResource(R.string.deepseek_seed_hint),
+                    useLabelAsPlaceholder = true,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            WindowDialog(
             show = true,
             cornerRadius = DialogDefaults.CornerRadius,
             title = stringResource(R.string.deepseek_seed_title),
@@ -120,6 +148,7 @@ internal fun AccountBalanceCapsules(
                         editing = false
                     },
                 )
+            }
             }
         }
     }

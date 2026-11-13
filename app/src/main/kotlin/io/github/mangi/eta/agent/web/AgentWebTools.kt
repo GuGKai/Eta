@@ -87,10 +87,11 @@ internal class AgentWebTools(
                 val page = searchPage(query, limit, provider)
                 return searchResult(page).put("attempts", attempts)
             } catch (error: WebRequestException) {
-                if (error.code == "WEB_CANCELLED") throw error
+                if (error.code == "WEB_CANCELLED" || error.code == "INVALID_ARGUMENT") throw error
                 attempts.put(JSONObject().put("provider", provider).put("code", error.code)
                     .put("http_status", error.status ?: JSONObject.NULL))
             } catch (error: WebSearchException) {
+                if (error.code == "INVALID_ARGUMENT") throw error
                 attempts.put(JSONObject().put("provider", provider).put("code", error.code))
             } catch (error: WebPageContentException) {
                 attempts.put(JSONObject().put("provider", provider).put("code", error.code))

@@ -351,6 +351,10 @@ internal object AgentModelClient {
             get() = hostedWebSearchEnabled && providerType == ProviderTypes.OPENAI_COMPATIBLE &&
                 openAiEndpointMode == OpenAiEndpointMode.RESPONSES
 
+        /** 托管网页搜索的工具名：仅 OpenAI Responses 端点保留该能力，工具名固定。 */
+        val hostedWebSearchToolName: String
+            get() = "web_search"
+
         val effectiveReasoningEffort: ReasoningEffort
             get() = reasoningEffort ?: ReasoningEffort.fromLegacy(thinkingEnabled)
 

@@ -161,7 +161,6 @@ internal fun AgentOverlayCapsulePanel(
                 .fillMaxWidth()
                 .padding(top = 6.dp, bottom = 6.dp)
                 .graphicsLayer { applyClearance(clearance) }
-                .shadow(10.dp, stageShape, ambientColor = accent, spotColor = accent)
                 .clip(stageShape)
                 .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f))
                 .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),

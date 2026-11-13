@@ -7,6 +7,13 @@ internal data class AgentTokenUsage(
     val reasoningTokens: Int? = null,
     val cachedTokens: Int? = null,
     val requestDurationMs: Long? = null,
+    val stepCount: Int? = null,
+    val llmMs: Long? = null,
+    val toolMs: Long? = null,
+    val ttftMs: Long? = null,
+    val ttftSteps: Int? = null,
+    val decodeMs: Long? = null,
+    val decodeTokens: Int? = null,
 ) {
     fun merge(other: AgentTokenUsage): AgentTokenUsage = AgentTokenUsage(
         other.contextTokens ?: contextTokens, other.inputTokens ?: inputTokens,
@@ -19,5 +26,12 @@ internal data class AgentTokenUsage(
             inputTokens == null &&
             outputTokens == null &&
             reasoningTokens == null &&
-            cachedTokens == null
+            cachedTokens == null &&
+            stepCount == null &&
+            llmMs == null &&
+            toolMs == null &&
+            ttftMs == null &&
+            ttftSteps == null &&
+            decodeMs == null &&
+            decodeTokens == null
 }

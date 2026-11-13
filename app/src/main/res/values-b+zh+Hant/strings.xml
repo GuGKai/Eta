@@ -43,6 +43,8 @@
   <string name="action_continue">繼續</string>
   <string name="action_stop">停止</string>
   <string name="action_edit">編輯</string>
+  <string name="action_pin_conversation">釘選對話</string>
+  <string name="action_unpin_conversation">取消釘選</string>
   <string name="action_rename">重新命名</string>
   <string name="action_done">完成</string>
   <string name="action_add">新增</string>
@@ -150,6 +152,9 @@
   <string name="appearance_title">外觀與主題</string>
   <string name="appearance_group_color">顏色與主題</string>
   <string name="appearance_group_interface">介面與效果</string>
+  <string name="appearance_ui_style">介面樣式</string>
+  <string name="appearance_ui_style_coui">COUI</string>
+  <string name="appearance_ui_style_miuix">Miuix</string>
   <string name="appearance_theme_mode">主題模式</string>
   <string name="appearance_theme_system">跟隨系統</string>
   <string name="appearance_theme_light">淺色</string>
@@ -1536,4 +1541,23 @@
   <string name="action_delete_workspace">刪除工作區</string>
   <string name="action_move_to_workspace">移動到工作區</string>
   <string name="action_remove_from_workspace">移出工作區</string>
+  <string name="conversation_branch">在新對話中分支</string>
+  <string name="conversation_branch_title">%1$s · 分支</string>
+  <string name="conversation_branch_unavailable">無法從此處分支：僅支援上下文完整且工具呼叫已結束的輪次。</string>
+  <string name="conversation_branch_failed">建立分支失敗，原對話已保留，請重試。</string>
+  <string name="status_processing">處理中…</string>
+  <string name="systemizer_already_system">Google 應用已是系統 priv-app</string>
+  <string name="systemizer_google_missing">未安裝 Google 應用</string>
+  <string name="systemizer_root_manager_missing">未偵測到 Magisk 或 KernelSU</string>
+  <string name="systemizer_metamodule_missing">請先在 KernelSU 中啟用 metamodule 支援</string>
+  <string name="systemizer_grant_kernelsu">請在 KernelSU 中授予 Eta root 權限</string>
+  <string name="systemizer_grant_magisk">請在 Magisk 中授予 Eta root 權限</string>
+  <string name="systemizer_root_denied">未授予 root 權限</string>
+  <string name="systemizer_installed">安裝完成，重新啟動後生效</string>
+  <string name="ui_search_in_one_turn_179584">一圈即搜</string>
+  <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏自動喚起語音輸入</string>
+  <string name="ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a">雙指長按喚起一圈即搜</string>
+  <string name="ui_convert_google_apps_to_system_apps_0f6d89">將 Google 應用轉為系統應用</string>
+  <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">螢幕休眠後仍保持 Hey Google 偵測</string>
+  <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">系統應用擁有語音喚醒權限，自啟動限制更少，體驗接近原生。將透過 Magisk/KernelSU 模組安裝，重新啟動後生效。</string>
 </resources>

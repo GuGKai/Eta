@@ -41,7 +41,23 @@ internal object CanvasRoutingPolicy {
      */
     const val FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 16
 
-    /** 受信任后台交互画布所需的完整标志组合：支持触摸、独立焦点、不抢夺主屏顶部焦点、销毁时回收窗口。 */
+    /** android.view.Display.getFlags() 返回的受信任标志位，用于检验虚拟屏是否真正取得系统级 TRUSTED 权限。 */
+    const val DISPLAY_FLAG_TRUSTED = 1 shl 7
+    const val DISPLAY_FLAG_OWN_FOCUS = 1 shl 11
+    const val DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 12
+
+    /** WindowManager IME 显示策略：禁止虚拟屏在主屏回退弹出或抢占软键盘。 */
+    const val DISPLAY_IME_POLICY_LOCAL = 0
+    const val DISPLAY_IME_POLICY_FALLBACK_DISPLAY = 1
+    const val DISPLAY_IME_POLICY_HIDE = 2
+
+    /**
+     * 受信任后台交互画布所需的完整标志组合：支持触摸、独立焦点、不抢夺主屏顶部焦点、销毁时回收窗口。
+     *
+     * 保留 FLAG_OWN_FOCUS：虚拟屏内仍需真实输入焦点（STEAL_TOP_FOCUS_DISABLED 同样要求 TRUSTED + OWN_FOCUS
+     * 才生效）；不弹软键盘由 DISPLAY_IME_POLICY_HIDE 配合 IME 事务保险（108/107 + 读回重试）保证，
+     * 而不是靠放弃虚拟屏焦点来实现。
+     */
     const val TRUSTED_INTERACTIVE_FLAGS: Int =
         FLAG_PUBLIC or
             FLAG_OWN_CONTENT_ONLY or
@@ -54,6 +70,14 @@ internal object CanvasRoutingPolicy {
             FLAG_TOUCH_FEEDBACK_DISABLED or
             FLAG_OWN_FOCUS or
             FLAG_STEAL_TOP_FOCUS_DISABLED
+
+    // Android 13 尚无独立焦点与禁止抢占顶层焦点的组合能力，后台画布从 Android 14 起启用。
+    fun supportsBackgroundDisplay(sdkInt: Int): Boolean = sdkInt >= 34
+
+    fun hasRequiredDisplayFlags(flags: Int): Boolean {
+        val required = DISPLAY_FLAG_TRUSTED or DISPLAY_FLAG_OWN_FOCUS or DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED
+        return flags and required == required
+    }
 
     private val MAIN_DISPLAY_ONLY_PACKAGES = setOf(
         "android",
