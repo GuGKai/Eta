@@ -681,6 +681,7 @@ class AgentRuntimeWireTest {
                 round = 2,
                 kind = AgentEvent.AssistantBlockKind.THINKING,
                 index = 0,
+                startedAtEpochMs = 1_760_000_000_000L,
             ),
             AgentEvent.AssistantBlockDelta(
                 round = 2,
@@ -695,6 +696,7 @@ class AgentRuntimeWireTest {
                 index = 0,
                 contentChars = 4,
                 replacementContent = "思考",
+                elapsedMs = 4_200L,
             ),
             AgentEvent.AssistantReceived(
                 round = 2,
@@ -743,7 +745,16 @@ class AgentRuntimeWireTest {
 
         events.forEach { event ->
             assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
+            assertEquals(event, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(event)))
         }
+        val shortEnd = AgentEvent.AssistantBlockEnd(
+            round = 1,
+            kind = AgentEvent.AssistantBlockKind.THINKING,
+            index = 0,
+            contentChars = 2,
+            elapsedMs = 500L,
+        )
+        assertEquals(shortEnd, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(shortEnd)))
     }
 
     @Test
