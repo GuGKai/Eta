@@ -8,6 +8,7 @@ import io.github.mangi.eta.agent.context.PersonalSearchTools
 import io.github.mangi.eta.agent.model.AgentFileToolCatalog
 import io.github.mangi.eta.agent.model.AgentPhoneToolCatalog
 import io.github.mangi.eta.agent.model.AgentTerminalToolCatalog
+import io.github.mangi.eta.data.model.ReasoningEffort
 import org.json.JSONArray
 
 /**
@@ -138,6 +139,16 @@ internal object Prefs {
 
     fun getString(key: String): String {
         return remote?.getString(key, "") ?: ""
+    }
+
+    fun defaultReasoningEffort(
+        preferences: SharedPreferences? = localAgent ?: remote,
+    ): ReasoningEffort {
+        val raw = runCatching {
+            preferences?.getString(Keys.AGENT_DEFAULT_REASONING_EFFORT, null)
+        }.getOrNull()
+        val parsed = ReasoningEffort.fromWireValue(raw)
+        return if (parsed != null && parsed != ReasoningEffort.OFF) parsed else ReasoningEffort.DEFAULT
     }
 
     fun powerAssistantTarget(): PowerAssistantTarget = powerAssistantTarget(remote)
