@@ -1684,5 +1684,4 @@
   <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">息屏后仍保持 Hey Google 检测</string>
   <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">系统应用拥有语音唤醒权限，自启动限制更少，体验接近原生。将通过 Magisk/KernelSU 模块安装，重启后生效。</string>
   <string name="settings_keep_screen_on">运行期间保持屏幕常亮</string>
-  <string name="settings_keep_screen_on_summary">Agent 执行任务期间防止屏幕自动熄灭</string>
 </resources>
