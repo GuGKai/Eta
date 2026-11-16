@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 35,
+    version = 36,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -81,6 +81,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_32_33,
                         MIGRATION_33_34,
                         MIGRATION_34_35,
+                        MIGRATION_35_36,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -371,10 +372,16 @@ internal abstract class EtaDatabase : RoomDatabase() {
             }
         }
 
+        /** 35 → 36：MCP 工具目录记录截断原因（上游 #216；本地库版本号高于上游，故改名续接）。 */
+        internal val MIGRATION_35_36 = Migration(35, 36) { database ->
+            database.execSQL("ALTER TABLE mcp_servers ADD COLUMN tools_truncation_reason TEXT")
+        }
+
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",
                 "runtime_inflight_runs" to "run_id", "conversation_context_checkpoints" to "conversation_id",
-                "conversation_messages" to "id", "conversations" to "id")
+                "conversation_messages" to "id", "conversations" to "id",
+                "mcp_servers" to "id")
                 .plus(if (database.version >= 21 || database.query(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'roleplay_characters'"
                 ).use { it.moveToFirst() }) mapOf("roleplay_characters" to "id", "roleplay_user_persona" to "id") else emptyMap())
