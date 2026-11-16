@@ -1804,11 +1804,13 @@ internal class AgentAppState(
             messages = messages,
             state = if (preserveCurrentDraft) {
                 state.copy(
+                    history = history,
                     journal = editBoundary?.journalPrefix ?: state.journal,
                     messageEdit = null,
                 )
             } else {
                 state.copy(
+                    history = history,
                     journal = editBoundary?.journalPrefix ?: state.journal,
                     input = "",
                     pendingImages = emptyList(),
@@ -1991,7 +1993,10 @@ internal class AgentAppState(
             history = boundary.historyPrefix,
             userHistoryMessage = userHistoryMessage,
             messages = homeState.messages.take(boundary.userMessageIndex + 1),
-            state = homeState.copy(journal = boundary.journalPrefix),
+            state = homeState.copy(
+                history = boundary.historyPrefix,
+                journal = boundary.journalPrefix,
+            ),
             reasoningEffort = homeState.reasoningEffort,
         )
     }
