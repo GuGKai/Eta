@@ -1,4 +1,6 @@
 system
-com.heytap.speechassist
+com.android.systemui
+com.google.android.googlequicksearchbox
+com.coloros.colordirectservice
 com.oplus.aimemory
 com.miui.voiceassist

@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.Hub
@@ -682,28 +681,6 @@ private fun SettingsPageContent(
                     }
                 }
 
-                if (prefs != null || hasConnectedFramework) {
-                    Group(title = stringResource(R.string.ui_xiaobu_xiaoai_compatible_entrance_ae918a)) {
-                        SwitchPref(
-                            context = context,
-                            prefs = prefs,
-                            title = stringResource(R.string.ui_enable_vendor_assistant_custom_models_c8e465),
-                            key = Prefs.Keys.AGENT_CUSTOM_MODEL,
-                            icon = Icons.Rounded.Cloud,
-                            iconTint = SettingsIconColors.Blue,
-                        )
-                        CouiIconDivider()
-                        SwitchPref(
-                            context = context,
-                            prefs = prefs,
-                            title = stringResource(R.string.ui_only_take_over_with_agent_prefix_d17556),
-                            key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
-                            icon = Icons.Rounded.FilterAlt,
-                            iconTint = SettingsIconColors.Blue,
-                        )
-                    }
-                }
-
                 if (prefs != null || hasConnectedFramework || capabilities.root.isGranted || hasUsedSystemizer) {
                     Group(title = "Gemini") {
                         val hasFrameworkRows = prefs != null || hasConnectedFramework
@@ -1160,30 +1137,6 @@ private fun SettingsPageContent(
                                 key = Prefs.Keys.ASSISTANT_AUTO_CONFIG,
                                 icon = Icons.Rounded.Settings,
                                 iconTint = SettingsIconColors.Green,
-                            )
-                        }
-                    }
-                }
-
-                if (prefs != null || hasConnectedFramework) {
-                    item(key = "section_oem_assistant_compatibility") {
-                        SmallTitle(stringResource(R.string.ui_xiaobu_xiaoai_compatible_entrance_ae918a))
-                        SettingsGroupCard {
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_enable_vendor_assistant_custom_models_c8e465),
-                                key = Prefs.Keys.AGENT_CUSTOM_MODEL,
-                                icon = Icons.Rounded.Cloud,
-                                iconTint = SettingsIconColors.Blue,
-                            )
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_only_take_over_with_agent_prefix_d17556),
-                                key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
-                                icon = Icons.Rounded.FilterAlt,
-                                iconTint = SettingsIconColors.Blue,
                             )
                         }
                     }

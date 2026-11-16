@@ -169,7 +169,6 @@ internal object AgentRuntimeWire {
     private const val KEY_HANDOFF_PAYLOAD = "handoff_payload"
     private const val KEY_HANDOFF_DISMISS_ENTRY_SURFACE_ON_FOREGROUND_OPERATION =
         "handoff_dismiss_entry_surface_on_foreground_operation"
-    private const val LEGACY_BREENO_HANDOFF_SOURCE = "breeno"
     private const val KEY_CREATED_AT = "created_at"
     private const val KEY_ELAPSED_MS = "elapsed_ms"
     private const val KEY_RESULTS = "results"
@@ -564,13 +563,10 @@ internal object AgentRuntimeWire {
             id = bundle.getString(KEY_HANDOFF_ID).orEmpty(),
             source = source,
             payload = bundle.getString(KEY_HANDOFF_PAYLOAD).orEmpty(),
-            dismissEntrySurfaceOnForegroundOperation = if (
-                bundle.containsKey(KEY_HANDOFF_DISMISS_ENTRY_SURFACE_ON_FOREGROUND_OPERATION)
-            ) {
-                bundle.getBoolean(KEY_HANDOFF_DISMISS_ENTRY_SURFACE_ON_FOREGROUND_OPERATION)
-            } else {
-                source == LEGACY_BREENO_HANDOFF_SOURCE
-            }
+            dismissEntrySurfaceOnForegroundOperation = bundle.getBoolean(
+                KEY_HANDOFF_DISMISS_ENTRY_SURFACE_ON_FOREGROUND_OPERATION,
+                false,
+            ),
         )
     }
 
