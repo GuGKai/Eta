@@ -1576,4 +1576,6 @@
   <string name="ui_convert_google_apps_to_system_apps_0f6d89">將 Google 應用轉為系統應用</string>
   <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">螢幕休眠後仍保持 Hey Google 偵測</string>
   <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">系統應用擁有語音喚醒權限，自啟動限制更少，體驗接近原生。將透過 Magisk/KernelSU 模組安裝，重新啟動後生效。</string>
+  <string name="settings_keep_screen_on">執行期間保持螢幕恆亮</string>
+  <string name="settings_keep_screen_on_summary">Agent 執行任務期間防止螢幕自動熄滅</string>
 </resources>

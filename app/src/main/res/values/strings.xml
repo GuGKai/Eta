@@ -1702,4 +1702,6 @@
   <string name="ui_convert_google_apps_to_system_apps_0f6d89">Convert Google Apps to system apps</string>
   <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">Maintain Hey Google detection after screen rest</string>
   <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">System applications have voice wake-up permissions, fewer self-start restrictions, and the experience is close to native. Will be installed via Magisk/KernelSU module and will take effect after reboot.</string>
+  <string name="settings_keep_screen_on">Keep screen on while running</string>
+  <string name="settings_keep_screen_on_summary">Prevent screen sleep while an agent task is running</string>
 </resources>
