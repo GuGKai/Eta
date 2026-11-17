@@ -335,6 +335,12 @@ internal fun ConversationPanePanel(
                 .orEmpty()
         }
     }
+    // 搜索结果可能来自任意分类：点击后把分类 chip 归位到「全部」，
+    // 这样结束搜索时这条会话一定还在当前列表里，不会因为停留在别的文件夹而「消失」。
+    val selectConversationRow: (String) -> Unit = { conversationId ->
+        if (isCoui) selectWorkspace(WorkspaceChipAllKey)
+        onConversationSelected(conversationId)
+    }
     val groups = remember(scopedConversations) { scopedConversations.groupForDrawer() }
 
     // 折叠状态按分组 key 记住：既跨「离开侧栏再回来」，也跨应用重启；落盘到 SharedPreferences。
@@ -492,7 +498,7 @@ internal fun ConversationPanePanel(
                                             ConversationHistoryRow(
                                                 conversation = conversation,
                                                 selected = conversation.id == state.selectedConversationId,
-                                                onClick = { onConversationSelected(conversation.id) },
+                                                onClick = { selectConversationRow(conversation.id) },
                                                 onTogglePin = { onConversationTogglePin(conversation) },
                                                 onRename = { onConversationRename(conversation) },
                                                 onExport = { onConversationExport(conversation) },
@@ -574,7 +580,7 @@ internal fun ConversationPanePanel(
                                             ConversationHistoryRow(
                                                 conversation = conversation,
                                                 selected = conversation.id == state.selectedConversationId,
-                                                onClick = { onConversationSelected(conversation.id) },
+                                                onClick = { selectConversationRow(conversation.id) },
                                                 onTogglePin = { onConversationTogglePin(conversation) },
                                                 onRename = { onConversationRename(conversation) },
                                                 onExport = { onConversationExport(conversation) },

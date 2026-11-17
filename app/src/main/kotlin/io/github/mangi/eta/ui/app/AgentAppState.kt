@@ -3326,13 +3326,29 @@ internal class AgentAppState(
             .sortedByDescending { it.isPinned }
         val query = conversationPaneState.searchQuery.trim()
         val buckets = summaries.groupForWorkspaces()
+        // 搜索不受文件夹归属限制：工作区里的会话也展开进同一个池子。
+        // 只过滤未归类会话时，一旦把会话都归了类，标题和内容就全都搜不到。
+        val searchPool = if (buckets.workspaces.isEmpty()) {
+            buckets.loose
+        } else {
+            val seen = HashSet<String>(summaries.size * 2)
+            val merged = ArrayList<ConversationSummaryUi>(summaries.size)
+            buckets.loose.forEach { summary -> if (seen.add(summary.id)) merged += summary }
+            buckets.workspaces.forEach { workspace ->
+                workspace.conversations.forEach { summary -> if (seen.add(summary.id)) merged += summary }
+            }
+            merged.sortedWith(
+                compareByDescending<ConversationSummaryUi> { it.isPinned }
+                    .thenByDescending { summary -> summary.updatedAtMillis },
+            )
+        }
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = selectedConversationId,
             conversations = if (query.isBlank()) {
                 buckets.loose
             } else {
                 contentMatchCache.keys.retainAll(conversationsById.keys)
-                buckets.loose.filter { summary ->
+                searchPool.filter { summary ->
                     summary.title.contains(query, ignoreCase = true) ||
                         summary.preview.contains(query, ignoreCase = true) ||
                         summary.id in persistedSearchMatches || conversationContentMatches(summary.id, query)
