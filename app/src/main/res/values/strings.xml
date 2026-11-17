@@ -1689,4 +1689,9 @@
   <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">Maintain Hey Google detection after screen rest</string>
   <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">System applications have voice wake-up permissions, fewer self-start restrictions, and the experience is close to native. Will be installed via Magisk/KernelSU module and will take effect after reboot.</string>
   <string name="settings_keep_screen_on">Keep screen on while running</string>
+  <string name="assistant_role_status_default">Set as default</string>
+  <string name="assistant_role_status_unset">Not set</string>
+  <string name="assistant_role_summary_default">Active default assistant, tap to open system settings</string>
+  <string name="assistant_role_system_settings_title">System default assistant settings</string>
+  <string name="assistant_role_system_settings_summary">Open system settings to switch or manage manually</string>
 </resources>

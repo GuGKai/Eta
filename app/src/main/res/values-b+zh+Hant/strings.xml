@@ -1563,4 +1563,9 @@
   <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">螢幕休眠後仍保持 Hey Google 偵測</string>
   <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">系統應用擁有語音喚醒權限，自啟動限制更少，體驗接近原生。將透過 Magisk/KernelSU 模組安裝，重新啟動後生效。</string>
   <string name="settings_keep_screen_on">執行期間保持螢幕恆亮</string>
+  <string name="assistant_role_status_default">已設為預設</string>
+  <string name="assistant_role_status_unset">未設為預設</string>
+  <string name="assistant_role_summary_default">已是系統預設數位助理，點擊開啟系統設定</string>
+  <string name="assistant_role_system_settings_title">系統預設助理設定</string>
+  <string name="assistant_role_system_settings_summary">若系統彈窗未生效，可前往系統設定手動選擇</string>
 </resources>
