@@ -94,6 +94,19 @@ enum class SystemNoticeCode(val wireValue: String) {
     }
 }
 
+/**
+ * 压缩提示的展示归一：隐去旧版写入的归档编号标签（如「（fold-1）」），
+ * 并把旧措辞「下一次模型响应」统一成「下次模型响应」。
+ * 只改展示，数据库中的原始文本保持不动，老会话也能显示当前文案。
+ */
+private val COMPACTION_ARCHIVE_TAG = Regex("（fold-\\d+）")
+
+fun String.normalizedCompactionNotice(): String {
+    if (isEmpty()) return this
+    val withoutTag = if (contains("fold-")) replace(COMPACTION_ARCHIVE_TAG, "") else this
+    return withoutTag.replace("下一次模型响应", "下次模型响应")
+}
+
 /** Eta 自己生成的消息只保存稳定状态码，展示时再按当前语言解析。 */
 @Immutable
 data class SystemNoticeMessageUi(

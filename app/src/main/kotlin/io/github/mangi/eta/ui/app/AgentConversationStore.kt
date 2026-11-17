@@ -32,6 +32,7 @@ import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.ui.model.normalizedCompactionNotice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -562,7 +563,11 @@ internal object AgentConversationStore {
                 SystemNoticeMessageUi(
                     id = id,
                     code = code,
-                    detail = resultSummary,
+                    detail = if (code == SystemNoticeCode.ContextCompaction) {
+                        resultSummary?.normalizedCompactionNotice()
+                    } else {
+                        resultSummary
+                    },
                     contextTokens = if (storedBefore != null) null else contextTokens,
                     usage = noticeUsage,
                     archiveId = compactionArchiveId.orEmpty(),

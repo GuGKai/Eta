@@ -26,10 +26,7 @@ internal sealed interface AgentEvent {
     ) : AgentEvent {
         val displayMessage: String get() = when (phase) {
             PHASE_STARTED -> RUNNING_DETAIL
-            PHASE_COMPLETED -> {
-                val archiveTag = archiveId.takeIf { it.isNotBlank() }?.let { "（$it）" }.orEmpty()
-                "上下文已压缩$archiveTag，用量将在下一次模型响应后更新。"
-            }
+            PHASE_COMPLETED -> COMPLETED_DETAIL
             else -> "上下文压缩失败，原始上下文已保留。"
         }
         override fun toLogLine(): String = buildString {
@@ -51,6 +48,9 @@ internal sealed interface AgentEvent {
             const val PHASE_COMPLETED = "completed"
             /** 进行中的展示文案同时是 UI 判定运行态的依据，改动必须与 UI 侧同步。 */
             const val RUNNING_DETAIL = "正在压缩上下文…"
+
+            /** 完成后只提示压缩已生效，不再展示内部归档编号（archiveId 仍用于日志与缓存诊断）。 */
+            const val COMPLETED_DETAIL = "上下文已压缩，用量将在下次模型响应后更新。"
         }
     }
 
