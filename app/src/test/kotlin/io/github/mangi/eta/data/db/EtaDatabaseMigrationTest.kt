@@ -135,8 +135,15 @@ class EtaDatabaseMigrationTest {
             helper.close()
         }
         val database = Room.databaseBuilder(context, EtaDatabase::class.java, name)
-            .addMigrations(EtaDatabase.MIGRATION_22_23, EtaDatabase.MIGRATION_23_24,
-                EtaDatabase.MIGRATION_24_25, EtaDatabase.MIGRATION_25_26, EtaDatabase.MIGRATION_26_27).build()
+            .addMigrations(
+                EtaDatabase.MIGRATION_22_23, EtaDatabase.MIGRATION_23_24,
+                EtaDatabase.MIGRATION_24_25, EtaDatabase.MIGRATION_25_26,
+                EtaDatabase.MIGRATION_26_27, EtaDatabase.MIGRATION_27_28,
+                EtaDatabase.MIGRATION_28_29, EtaDatabase.MIGRATION_29_30,
+                EtaDatabase.MIGRATION_30_31, EtaDatabase.MIGRATION_31_32,
+                EtaDatabase.MIGRATION_32_33, EtaDatabase.MIGRATION_33_34,
+                EtaDatabase.MIGRATION_34_35, EtaDatabase.MIGRATION_35_36,
+            ).build()
         try {
             runBlocking(Dispatchers.IO) {
                 val conversation = database.conversationDao().conversations().first { it.id == "conv-1" }
@@ -157,8 +164,9 @@ class EtaDatabaseMigrationTest {
         }
     }
 
+    /** 6 → 当前库版本（36）整条迁移链：数据保留 + 上下文搬进 checkpoint 表。 */
     @Test
-    fun migration6To27PreservesDataAndMovesCompleteConversationContext() {
+    fun migration6ToLatestPreservesDataAndMovesCompleteConversationContext() {
         val context = RuntimeEnvironment.getApplication() as Context
         val databaseName = "migration-${UUID.randomUUID()}.db"
         createVersion6Database(context, databaseName)
@@ -197,6 +205,15 @@ class EtaDatabaseMigrationTest {
                 EtaDatabase.MIGRATION_24_25,
                 EtaDatabase.MIGRATION_25_26,
                 EtaDatabase.MIGRATION_26_27,
+                EtaDatabase.MIGRATION_27_28,
+                EtaDatabase.MIGRATION_28_29,
+                EtaDatabase.MIGRATION_29_30,
+                EtaDatabase.MIGRATION_30_31,
+                EtaDatabase.MIGRATION_31_32,
+                EtaDatabase.MIGRATION_32_33,
+                EtaDatabase.MIGRATION_33_34,
+                EtaDatabase.MIGRATION_34_35,
+                EtaDatabase.MIGRATION_35_36,
             )
             .build()
         try {
