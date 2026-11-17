@@ -654,7 +654,6 @@
   <string name="page_authorized_284cc0">Authorized</string>
   <string name="page_base_url_must_be_a_valid_http_s_address_0e7d58">Base URL must be a valid HTTP(S) address</string>
   <string name="page_can_t_open_default_assistant_settings_02c66f">Can\'t open default assistant settings</string>
-  <string name="page_choose_eta_as_your_default_digital_assistant_4a73a9">Choose Eta as your default digital assistant</string>
   <string name="page_configuration_d7d7ce">Configuration</string>
   <string name="page_configuration_write_failed_8c2554">Configuration write failed</string>
   <string name="page_create_fcbd09">create</string>
@@ -1687,11 +1686,6 @@
   <string name="ui_maintain_hey_google_detection_after_screen_rest_9d6877">Maintain Hey Google detection after screen rest</string>
   <string name="ui_system_applications_have_voice_wake_up_permissions_f_0190f2">System applications have voice wake-up permissions, fewer self-start restrictions, and the experience is close to native. Will be installed via Magisk/KernelSU module and will take effect after reboot.</string>
   <string name="settings_keep_screen_on">Keep screen on while running</string>
-  <string name="assistant_role_status_default">Set as default</string>
   <string name="assistant_role_status_unset">Not set</string>
-  <string name="assistant_role_summary_default">Active default assistant, tap to open system settings</string>
   <string name="assistant_role_status_other">Other app</string>
-  <string name="assistant_role_summary_other">Current default: %1$s. Tap to switch to Eta</string>
-  <string name="assistant_role_system_settings_title">System default assistant settings</string>
-  <string name="assistant_role_system_settings_summary">Open system settings to switch or manage manually</string>
 </resources>
