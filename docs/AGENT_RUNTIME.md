@@ -30,7 +30,7 @@ Eta 的 Agent Runtime 负责把一次用户输入组织为模型回合、工具�
 pending steering
 → provider response
 → assistant history
-→ tool batch（按模型顺序串行执行）
+→ tool batch（独立读取可并行，其余按模型顺序执行）
 → contiguous tool results
 → optional image observations
 → next turn / final result
@@ -38,7 +38,7 @@ pending steering
 
 关键不变量：
 
-- steering 默认逐条排队，只在当前 turn 完整结束后注入；它不会取消当前 HTTP 请求或关闭工具资源。
+- 运行中发送插话会中断当前 Chat/Responses/Anthropic 模型 HTTP 请求及重试等待，在同一 run 中按到达顺序注入待处理消息。已经开始的工具完成后再调整；未开始的普通调用、并发下一波和 batch 子调用跳过，返回明确的 USER_SUPPLEMENT_RECEIVED，持久检查点记录 skipped。不会关闭工具、终端或虚拟屏。
 - 同一 assistant 消息中的全部 tool result 必须连续写入，再追加不受 Provider 原生 tool-result image 支持的图片观察。
 - `finish_reason=length` 或 `max_tokens` 且包含工具调用时，不执行任何可能被截断的参数；为每个调用写入结构化错误结果，让模型重新规划。
 - 只有明确的 `tool_calls` / `tool_use` 终止原因才允许执行工具；`stop`、内容过滤或未知终止原因中夹带的调用一律作为协议矛盾拒绝。
@@ -46,14 +46,17 @@ pending steering
 - transcript 只返回本次 run 新增的 assistant、tool 和运行中 steering 消息，不重复旧 history 或本轮初始用户消息。
 - 同一 run 的工具批次保持串行；不同会话可以并行。手机前台另按 GUI 操作阶段互斥，终端会话保留各自执行顺序。
 - 单次 run 不设置固定回合数或总时限，由模型自然结束、用户取消或不可恢复错误终止。
+- cancel 终止本轮，pause 在检查点挂起，插话只中断生成并在动作边界重新规划；三者分别保留各自的状态。中断流中的半截正文、工具参数和未完成签名思考块不进入模型历史，界面回放也移除该未提交回合；已完成工作保留。
+- cancel 的主线程路径只做原子终态与资源关闭：共享浏览器按会话实例与 runId 校验归属；终端立即封闭新的进程接纳，并在后台按独立进程组终止同步命令、会话和 async job，再完成线程与流回收；已提交的后台命令由 App 宿主管理，需单独停止。Android 上 `setsid` 或 PID/PGID ownership 握手不可用时会 fail closed；非 Android 测试环境才允许父子树快照回退。终止前还会核验随机 ownership token，避免陈旧 PGID 复用后误杀无关进程。
 - cancel 是终止信号；pause 是检查点阻塞；steering 是下一回合输入。三者不能互相模拟。
-- cancel 的主线程路径只发出取消并关闭资源接纳：浏览器按会话实例和 runId 校验归属；终端立即封闭新的前台进程接纳，并在后台按独立进程组终止同步命令与会话、回收所属线程与流；已提交的后台命令由 App 宿主管理，需单独停止。Android 上 `setsid` 或 PID/PGID ownership 握手不可用时会 fail closed；非 Android 测试环境才允许父子树快照回退。终止前还会核验随机 ownership token，避免陈旧 PGID 复用后误杀无关进程。
 - 最终 steering 检查会原子关闭接收入口；Loop 返回后不会再把无人消费的补充指令误报为已接收。补充指令也不会解除 pause。
 - 用户取消和正常完成通过各自 `AgentRuntimeSession` 的 `RUNNING → COMMITTING → TERMINAL` 状态机竞争唯一终态；提交胜者独占 outbox、归档和最终发布，客户端等待最终结果或 Binder 断连，不按等待时长取消任务。新会话的请求不替换其他会话的任务。
 - 入口请求只能缩小工具能力，不能自行授权。Runtime 在开始 run 时裁剪配置，在每次浏览器、终端和设备工具执行前重新读取用户开关，并在 thinking 关闭时移除自定义请求体中的 reasoning/thinking 覆盖字段。
 - 设备工具分为直达工具、敏感读取工具和敏感操作工具，当前均默认开启。Runtime 在每次执行前重新读取用户开关；开关允许且参数符合工具 Schema 后即可执行，不再匹配用户原话，也不维护关键包、系统应用或 Settings key 黑名单。
 - 微信发送不提供专用工具、参数协议或额外策略层，完全使用通用 GUI 工具观察和操作微信界面。
 - 通知、短信验证码、Wi‑Fi 凭据、日志及设置读写返回的原始值属于瞬时敏感工具数据。当前模型回合可以使用原始值，但持久 transcript 会同时替换对应工具参数和结果，避免进入会话数据库或后续 IPC。
+
+聊天页任务执行期间可以继续输入文字；有文字时发送按钮变为「插话」，旁边保留独立停止按钮。插话通过带运行 ID 的 Binder 请求发送，只能调整当前会话对应的运行，不能在结束后偷偷新开任务。Runtime 确认接收后在当前模型请求或下一动作边界处理；拒绝或确认超时保留草稿，延迟恢复不会覆盖新输入的文字。超时表示接收状态未知，因此不会自动重发。
 
 助理入口的 `assistant_screen_context` 是有界、可选的单次运行字段；旧入口缺失时按空内容处理。应用原始内容只保留在当前用户消息的临时元数据中，并在发给 Provider 时投影为数据文本。稳定会话编码和压缩摘要输入不包含该元数据，用户原话保持不变。截图仍使用既有图片传输协议。
 
@@ -125,11 +128,11 @@ OpenAI 请求按当前模型能力配置编码思考档位，不另行维护请�
 
 推理界面展示 Provider 返回的可见推理内容，不由 Eta 生成或补写。Responses 支持 `reasoning_summary_text.delta` 和 `reasoning_text.delta`；终态读取 reasoning item 的 `summary[]` 与 `content[].reasoning_text`，并兼容旧接口的单字段 `reasoning_text`。标准内容与旧字段同时存在时不重复追加，终态仍按 item 和内容块身份校准流式结果。Responses 只对精确命中官方目录且未被远端显式标记为 `reasoning:false` 的模型补齐推理能力，不会因 Endpoint 类型而假定所有模型支持推理。
 
-Chat Completions 消费 `reasoning_content`，并兼容 `reasoning` 和 `reasoning_details` 中的可见文本或摘要；同一分片同时包含多种表示时只显示一次。Anthropic 消费 `content_block_start` 中已有的文字及后续 `thinking_delta` / `text_delta`，思考签名和加密内容不作为文字展示。各协议共用 SSE 分帧，支持多行 `data:`、注释心跳和 UTF-8；正文、思考、工具的解释仍由各自 Provider 负责。Chat 在 `finish_reason` 到达时结束可见块，再接收用量与 `[DONE]`；Responses 和 Anthropic 收到各自终态事件后立即收尾，不等待连接关闭。缺少合法终态或 Anthropic 可见/工具块未闭合时返回未完成错误。
+Chat Completions 消费 `reasoning_content`，并兼容 `reasoning` 和 `reasoning_details` 中的可见文本或摘要；同一分片同时包含多种表示时只显示一次。Anthropic 消费 `content_block_start` 中已有的文字及后续 `thinking_delta` / `text_delta`，思考签名和加密内容不作为文字展示。三种协议共用 SSE 分帧，支持多行 `data:`、注释心跳和 UTF-8；正文、思考、工具的解释仍由各自 Provider 负责。Chat 在 `finish_reason` 到达时结束可见块，再接收用量与 `[DONE]`；Responses 和 Anthropic 收到各自终态事件后立即收尾，不等待连接关闭。缺少合法终态或 Anthropic 可见/工具块未闭合时返回未完成错误。
 
 Anthropic 工具回合会在当前 run 的模型上下文中按原顺序回传思考块、签名及加密块，供工具结果继续使用；这些 Provider 专用块不进入持久会话。签名待回传时沿用上一轮的系统提示与工具目录并保持原始上下文，自动压缩延后到签名回合完成，强制压缩则明确报错；工具执行仍按实时权限校验。工具回合完成后的上下文压缩会清除旧签名。
 
-Chat Completions、Responses、Anthropic Messages 与 Gemini Interactions 在 Provider 边界统一投影为带 `round + block index` 身份的正文、思考和工具块。Responses 额外使用 `item_id/output_index/content_index` 区分同一轮中的多个 output item；Chat Completions 在 delta 类型切换时创建新块；Anthropic 直接保留 `content_block.index`，Gemini 使用 step index。正文、思考或工具不会跨越块身份回填；终态校准或引用补齐仅更新对应正文块，不用整轮聚合正文覆盖最后一个块。
+Chat Completions、Responses、Anthropic Messages 与 Gemini Interactions 在 Provider 边界统一投影为带 `round + block index` 身份的正文、思考和工具块。Responses 额外使用 `item_id/output_index/content_index` 区分同一轮中的多个 output item；Chat Completions 在 delta 类型切换时创建新块；Anthropic 直接保留 `content_block.index`。正文、思考或工具类型一旦切换，上一段可见块立即定稿，后续同类型内容也不会跨过工具卡片回填到旧块。终态只在 Provider 的权威内容与已流式内容不一致时携带一次替换，不用整轮聚合正文覆盖最后一个块。
 
 服务端网页搜索为独立开关，默认关闭。OpenAI-compatible Responses 开启后请求增加 `web_search` 托管工具；搜索开始和结束作为独立运行事件投影到 UI，不进入 Eta 本地工具执行器。实际启用托管搜索时，模型目录不再公开本地 `web_search` 函数；`fetch_url` 与 `browser_use` 仍按本地 `browserTools` 开关提供。托管搜索不受本地 `browserTools` 开关控制。Anthropic 和 Chat Completions 不启用该开关，也不会收到 Responses 工具字段。最终回答中的 `url_citation` 会去重并转换为可点击 Markdown 引用；偏移无效时降级为回答末尾的来源列表。当前不接入 file search、code interpreter、Provider 托管 MCP 或其他托管工具。
 
@@ -147,7 +150,7 @@ Gemini Google Search 仅在用户开启、模型已确认支持、入口声明�
 
 模型流使用独立的 HTTP 配置：连接等待 15 秒、写入等待 30 秒、读取等待 5 分钟；读取限制针对等待新数据，不是整个任务的总时限。MCP、模型列表与下载继续沿用各自配置。模型 HTTP 客户端关闭底层连接自动重试，模型回合的有限重试统一由 Loop 编排。
 
-连接中断、超时、提前 EOF、暂时限流和部分服务端错误最多重试 3 次，依次等待 2、4、8 秒；每个成功的模型回合重新获得独立预算。认证、额度、计费、证书、协议格式等非暂时性失败不自动重试。重试等待可取消，并遵守暂停检查点；排队的 steering 留到当前回合及工具批次完成后处理。
+连接中断、超时、提前 EOF、暂时限流和部分服务端错误最多重试 3 次，依次等待 2、4、8 秒；每个成功的模型回合重新获得独立预算。认证、额度、计费、证书、协议格式等非暂时性失败不自动重试。重试等待可取消，并遵守暂停检查点；插话会唤醒重试等待并立即重新规划，不消耗网络重试预算。
 
 失败尝试不提交 assistant history，不执行其中的本地工具调用；前面完成的工具结果、当前回合的工具 schema 和截图在重试期间保持不变。重试使用新的展示轮次，失败的半截输出留在运行轨迹并标注重试，后续输出不会拼接到旧块；最终推理摘要不包含被替换的失败尝试。重试事件通过既有 IPC、checkpoint 和归档编码保存，恢复回放不会重新执行工具。若 Provider 已报告托管工具开始执行，本次失败不自动重试，避免重复触发服务端操作。
 
@@ -165,7 +168,7 @@ MCP 地址由用户直接配置，HTTP、HTTPS、局域网与本机地址使用�
 
 每次 run 只把 `# 核心记忆` 的预算内内容、一级/二级标题索引和 revision 放入系统背景。核心预算为 `min(32000, max(4000, contextWindow / 16))` 个字符；模型窗口未知时按 128K 计算。没有 `# 核心记忆` 标题时不自动注入正文。其余内容由 `memory_get` 按行分页或按文本检索，单次最多返回 32000 字符。
 
-`memory_write` 支持行区间替换、独立章节追加与清空；单次模型生成内容最多 3500 字符，设置页的用户手动编辑不受此单次工具限制。关闭记忆不会删除文件，后续 run 不再注入或暴露工具；已开始的 run 在每次执行记忆工具前也会重新检查开关。
+`memory_write` 支持提交行区间替换、独立章节追加与清空方案，由用户在通知中心同意后应用（见 [学习审批](LEARNING_INBOX.md)）；单次模型生成内容最多 3500 字符，设置页的用户手动编辑不受此单次工具限制。关闭记忆不会删除文件，后续 run 不再注入或暴露工具；已开始的 run 在每次执行记忆工具前也会重新检查开关。
 
 记忆内容只作为可编辑背景，不具有指令优先级。记忆工具原始参数与结果可供当前 Agent Loop 使用，但对应工具调用在持久 transcript 中整体脱敏；运行事件只保存操作类型、行数、字节数和错误码，不保存正文或查询词。
 

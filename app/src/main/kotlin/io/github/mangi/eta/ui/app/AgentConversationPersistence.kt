@@ -81,6 +81,8 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
         val journal: List<AgentModelClient.ConversationMessage>,
         val isConversationLoaded: Boolean,
         val messageStartIndex: Int,
+        /** 最近一次模型用量；与其余元数据一样参与增量写入判定。 */
+        val lastModelUsage: io.github.mangi.eta.ui.model.TokenUsageUi?,
     ) {
         constructor(
             state: AgentChatHomeUiState,
@@ -92,12 +94,14 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
             state.roleplay, if (state.roleplay == null) RoleplayMessageState() else state.roleplayMessages,
             state.modelId, state.messages, state.history, state.journal.ifEmpty { state.history },
             state.isConversationLoaded, state.messageStartIndex,
+            lastModelUsage = state.lastModelUsage,
         )
 
         fun sameMetadata(other: Content): Boolean =
             title == other.title && updatedAt == other.updatedAt && isPinned == other.isPinned &&
                 reasoningEffort == other.reasoningEffort &&
                 appliedRuntimeRunIds == other.appliedRuntimeRunIds && roleplay == other.roleplay &&
-                roleplayMessages == other.roleplayMessages && modelId == other.modelId
+                roleplayMessages == other.roleplayMessages && modelId == other.modelId &&
+                lastModelUsage == other.lastModelUsage
     }
 }

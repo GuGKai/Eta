@@ -29,6 +29,7 @@ internal class AgentRunMessageProjector(
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> = when (event) {
         is AgentEvent.GuiControlChanged -> messages
+        is AgentEvent.SearchSuggestions -> attachSearchSuggestions(runId, event, messages)
         is AgentEvent.AssistantBlockStart -> startAssistantBlock(runId, event, messages)
         is AgentEvent.AssistantBlockDelta -> when (event.kind) {
             AgentEvent.AssistantBlockKind.TEXT ->
@@ -44,8 +45,15 @@ internal class AgentRunMessageProjector(
                 finalizeThinkingBlock(runId, event.round, event.index, event.replacementContent, messages)
             AgentEvent.AssistantBlockKind.TOOL_CALL -> messages
         }
-        is AgentEvent.SearchSuggestions -> attachSearchSuggestions(runId, event, messages)
         is AgentEvent.UsageReceived -> attachUsage(runId, event.round, event.usage.toUi(), messages)
+        is AgentEvent.ModelRequestInterrupted -> {
+            val thinkingPrefix = "$runId-thinking-${event.round}-"
+            thinkingStartedAt.keys.removeAll { it.startsWith(thinkingPrefix) }
+            failRunningTools("已按插话调整", messages.filterNot { message ->
+                message is AgentMessageUi && isAssistantMessageForRound(message.id, runId, event.round) ||
+                    message is ThinkingMessageUi && isThinkingMessageForRound(message.id, runId, event.round)
+            })
+        }
         is AgentEvent.ToolStarted ->
             startTool(runId, event, finalizeTextRound(runId, event.round, finalizeThinkingRound(runId, event.round, messages)))
         is AgentEvent.ToolFinished -> finishTool(runId, event, messages)
@@ -83,6 +91,10 @@ internal class AgentRunMessageProjector(
         -> messages
     }
 
+    /**
+     * 搜索建议是模型附在本轮回答后的可视化 HTML 片段，只挂在目标回答消息上；
+     * 每轮份数与字节数都走 [SearchSuggestionsBudget] 限额，超出直接丢弃。
+     */
     private fun attachSearchSuggestions(
         runId: String,
         event: AgentEvent.SearchSuggestions,
@@ -99,7 +111,11 @@ internal class AgentRunMessageProjector(
             }
         if (!budget.accept(event.round, messages.size, event.html)) return messages
         return messages.map { message ->
-            if (message === target) target.copy(searchSuggestionsHtml = target.searchSuggestionsHtml + event.html) else message
+            if (message === target) {
+                target.copy(searchSuggestionsHtml = target.searchSuggestionsHtml + event.html)
+            } else {
+                message
+            }
         }
     }
 
@@ -767,6 +783,7 @@ internal fun AgentTokenUsage.toUi(): TokenUsageUi =
         cachedTokens = cachedTokens,
         cacheWriteTokens = cacheWriteTokens,
         requestKind = requestKind,
+        requestDurationMs = requestDurationMs,
         stepCount = stepCount,
         llmMs = llmMs,
         toolMs = toolMs,

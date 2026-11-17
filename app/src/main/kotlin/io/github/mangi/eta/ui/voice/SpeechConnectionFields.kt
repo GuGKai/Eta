@@ -54,6 +54,8 @@ internal fun SpeechConnectionSection(store: SpeechSettingsStore, synthesis: Bool
         TtsProvider.MINIMAX -> MiniMaxConnectionSection(store)
         TtsProvider.MIMO -> MimoTtsConnectionSection(store)
         TtsProvider.DEEPSEEK -> DeepSeekTtsConnectionSection(store)
+        // 系统语音走设备 TTS 引擎，没有服务端连接配置。
+        TtsProvider.SYSTEM -> Unit
     }
 }
 

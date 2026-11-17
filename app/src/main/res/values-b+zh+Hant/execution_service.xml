@@ -5,7 +5,21 @@
     <plurals name="execution_summary">
         <item quantity="other">%1$d 項任務正在執行，可返回 Eta 查看進度</item>
     </plurals>
-    <string name="execution_stop">停止執行任務</string>
+    <string name="execution_stop">停止任務</string>
+    <string name="execution_supplement">補充</string>
+    <string name="execution_pause">暫停</string>
+    <string name="execution_resume">恢復</string>
+    <string name="vd_capsule_hide">隱藏膠囊</string>
+    <string name="vd_capsule_show">顯示膠囊</string>
+    <string name="execution_paused">暫停中</string>
     <string name="execution_chip_running">操作中</string>
     <string name="execution_chip_answering">回答中</string>
+    <string name="execution_reply_done_channel">回覆完成提醒</string>
+    <string name="execution_reply_done_title">Eta 已完成回覆</string>
+    <string name="execution_reply_done_fallback">點擊查看回覆</string>
+    <string name="execution_keepalive_title">虛擬螢幕保持中</string>
+    <string name="execution_keepalive_summary">點按返回 Eta 對話</string>
+    <string name="execution_background_task">後台任務</string>
+    <string name="execution_background_more">%1$s 等 %2$d 項</string>
+    <string name="execution_background_since">後台命令執行中 · 從 %1$s 開始</string>
 </resources>

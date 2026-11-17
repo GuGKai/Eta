@@ -30,6 +30,19 @@ internal fun rememberTopBarBackdrop(): LayerBackdrop? {
     }
 }
 
+/**
+ * 任意页面自用的顶栏 backdrop：底色用调用方给的容器色，避免 COUI 模式下
+ * 采样层垫了 Miuix 的 surface 色导致顶栏和面板不同色。
+ */
+@Composable
+internal fun rememberTopBarBackdrop(baseColor: Color): LayerBackdrop? {
+    if (!LocalBlurEnabled.current || !isRuntimeShaderSupported()) return null
+    return rememberLayerBackdrop {
+        drawRect(baseColor)
+        drawContent()
+    }
+}
+
 @Composable
 internal fun TopBarBackdrop(
     backdrop: LayerBackdrop?,

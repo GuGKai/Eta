@@ -18,6 +18,7 @@ internal data class RuntimeResultEntity(
     val ok: Boolean,
     val content: String,
     val error: String?,
+    @ColumnInfo(name = "error_code", defaultValue = "''") val errorCode: String = "",
     @ColumnInfo(name = "reasoning_content") val reasoningContent: String,
     @ColumnInfo(name = "transcript_json") val transcriptJson: String,
     @ColumnInfo(name = "context_snapshot_json", defaultValue = "''") val contextSnapshotJson: String = "",
@@ -50,6 +51,7 @@ internal data class RuntimeArchiveRunEntity(
     val ok: Boolean,
     val content: String,
     val error: String?,
+    @ColumnInfo(name = "error_code", defaultValue = "''") val errorCode: String = "",
     @ColumnInfo(name = "reasoning_content") val reasoningContent: String,
     @ColumnInfo(name = "transcript_json") val transcriptJson: String,
     @ColumnInfo(name = "context_snapshot_json", defaultValue = "''") val contextSnapshotJson: String = "",
@@ -57,6 +59,8 @@ internal data class RuntimeArchiveRunEntity(
     @ColumnInfo(name = "rewrite_target_message_id") val rewriteTargetMessageId: String? = null,
     @ColumnInfo(name = "user_image_previews_json") val userImagePreviewsJson: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+    /** 这一轮的实际耗时；浮窗等外部入口的会话导入后靠它显示「本轮用时」。 */
+    @ColumnInfo(name = "elapsed_ms", defaultValue = "0") val elapsedMs: Long = 0,
 )
 
 @Entity(

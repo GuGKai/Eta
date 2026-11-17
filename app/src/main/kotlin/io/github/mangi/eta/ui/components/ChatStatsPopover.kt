@@ -79,8 +79,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal fun TurnStatsPill(
     usage: TokenUsageUi,
     modifier: Modifier = Modifier,
+    /** 本轮墙钟总用时（用户发出消息 → 整轮结束）；胶囊外面优先显示它。 */
+    roundDurationMs: Long? = null,
 ) {
-    if (!usage.hasPerformanceStats) return
+    if (!usage.hasPerformanceStats && roundDurationMs == null) return
     var open by remember { mutableStateOf(false) }
     val steps = (usage.stepCount ?: 1).coerceAtLeast(1)
     val llmMs = usage.llmMs ?: 0L
@@ -94,11 +96,13 @@ internal fun TurnStatsPill(
         null
     }
     val speedText = tps?.let { "${formatTokensPerSecond(it)} tok/s" }
+    val actualMs = roundDurationMs?.takeIf { it > 0L }
     val pillLabel = when {
-        avgTtftMs != null && speedText != null -> "${formatStatDuration(avgTtftMs)} · $speedText"
+        // 胶囊外面显示「真实用时」（整轮墙钟时间）；没有记录时退回模型用时，避免老消息空白。
+        actualMs != null && speedText != null -> "${formatStatDuration(actualMs)} · $speedText"
+        actualMs != null -> formatStatDuration(actualMs)
         speedText != null -> speedText
         llmMs > 0L -> formatStatDuration(llmMs)
-        avgTtftMs != null -> "TTFT ${formatStatDuration(avgTtftMs)}"
         else -> return
     }
 
@@ -163,6 +167,9 @@ internal fun TurnStatsPill(
                 )
                 StatsSectionDivider()
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (actualMs != null) {
+                        StatsDetailRow(label = "真实用时", value = formatStatDuration(actualMs))
+                    }
                     if (llmMs > 0L) {
                         StatsDetailRow(label = "模型用时", value = formatStatDuration(llmMs))
                     }
@@ -231,76 +238,23 @@ internal fun ContextUsageStatsPopoverPopup(
                 )
             }
             if (stats.hasTokenUsage) {
-                if (stats.promptTokens > 0 || stats.outputTokens > 0) {
-                    if (cacheHit != null) {
-                        StatsDetailRow(label = "缓存命中", value = "$cacheHit%")
-                    }
+                if (cacheHit != null) {
+                    StatsDetailRow(label = "缓存命中", value = "$cacheHit%")
+                }
+                StatsDetailRow(
+                    label = "未缓存输入",
+                    value = "${formatExactTokenCount(stats.uncachedInputTokens)} tok",
+                )
+                if (stats.cachedTokens > 0) {
                     StatsDetailRow(
-                        label = "未命中",
-                        value = "${formatExactTokenCount(stats.uncachedInputTokens)} tok",
-                    )
-                    if (stats.hasCacheWriteTokens || stats.cacheWriteTokens > 0) {
-                        StatsDetailRow(
-                            label = "缓存写入",
-                            value = "${formatExactTokenCount(stats.cacheWriteTokens)} tok",
-                        )
-                    }
-                    if (stats.cachedTokens > 0) {
-                        StatsDetailRow(
-                            label = "缓存读取",
-                            value = "${formatExactTokenCount(stats.cachedTokens)} tok",
-                        )
-                    }
-                    StatsOutputRow(
-                        outputTokens = stats.outputTokens,
-                        reasoningTokens = stats.reasoningTokens,
+                        label = "缓存读取",
+                        value = "${formatExactTokenCount(stats.cachedTokens)} tok",
                     )
                 }
-                if (stats.compactionCount > 0) {
-                    val lastIn = stats.lastCompactionPromptTokens ?: stats.compactionPromptTokens
-                    val lastCached = stats.lastCompactionCachedTokens ?: stats.compactionCachedTokens
-                    val lastHit = formatCacheHitPercent(lastCached, lastIn)
-                    val label = when {
-                        stats.compactionCount == 1 && stats.lastCompactionArchiveId.isNotBlank() ->
-                            "最近压缩（${stats.lastCompactionArchiveId}）"
-                        stats.compactionCount == 1 -> "最近压缩"
-                        else -> "压缩请求（${stats.compactionCount} 次）"
-                    }
-                    val detailValue = buildString {
-                        append("${formatExactTokenCount(lastIn)} tok")
-                        lastHit?.let { append(" · 命中 $it%") }
-                    }
-                    StatsDetailRow(label = label, value = detailValue)
-                    if (stats.compactionCount > 1) {
-                        StatsDetailRow(
-                            label = "压缩累计",
-                            value = "${formatExactTokenCount(stats.compactionPromptTokens + stats.compactionOutputTokens)} tok",
-                        )
-                    }
-                    stats.lastCompactionPaybackTurns?.let { paybackTurns ->
-                        val paybackValue = if (stats.lastCompactionPaidBack) {
-                            "已回本（已 ${stats.lastCompactionTurnsAfter} 轮）"
-                        } else {
-                            "需 $paybackTurns 轮（已 ${stats.lastCompactionTurnsAfter} 轮）"
-                        }
-                        StatsDetailRow(label = "压缩回本", value = paybackValue)
-                    }
-                }
-                if (stats.subagentCount > 0) {
-                    val subLabel = if (stats.subagentCount == 1) "子智能体" else "子智能体（${stats.subagentCount} 次）"
-                    val subHit = formatCacheHitPercent(stats.subagentCachedTokens, stats.subagentPromptTokens)
-                    val subValue = buildString {
-                        append("${formatExactTokenCount(stats.subagentPromptTokens)} tok")
-                        subHit?.let { append(" · 命中 $it%") }
-                    }
-                    StatsDetailRow(label = subLabel, value = subValue)
-                }
-                if (stats.ttlOrPrefixMissTokens > 5_000) {
-                    StatsDetailRow(
-                        label = "非增量未命中",
-                        value = "${formatExactTokenCount(stats.ttlOrPrefixMissTokens)} tok",
-                    )
-                }
+                StatsOutputRow(
+                    outputTokens = stats.outputTokens,
+                    reasoningTokens = stats.reasoningTokens,
+                )
             }
         }
 
@@ -313,6 +267,9 @@ internal fun ContextUsageStatsPopoverPopup(
             )
             StatsSectionDivider()
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (stats.roundMs > 0L) {
+                    StatsDetailRow(label = "真实用时", value = formatStatDuration(stats.roundMs))
+                }
                 if (stats.llmMs > 0L) {
                     StatsDetailRow(label = "模型用时", value = formatStatDuration(stats.llmMs))
                 }
@@ -576,15 +533,12 @@ private class StatsPopoverPositionProvider(
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
+        // 水平：始终在窗口正中，不跟随触发按钮。
         val minX = marginPx
         val maxX = (windowSize.width - popupContentSize.width - marginPx).coerceAtLeast(minX)
-        val preferredX = if (layoutDirection == LayoutDirection.Rtl) {
-            anchorBounds.right - popupContentSize.width
-        } else {
-            anchorBounds.left
-        }
-        val x = preferredX.coerceIn(minX, maxX)
+        val x = ((windowSize.width - popupContentSize.width) / 2).coerceIn(minX, maxX)
 
+        // 垂直：沿用原逻辑，优先在触发按钮上方弹出，上方放不下再落到下方。
         val aboveY = anchorBounds.top - popupContentSize.height - verticalGapPx
         val belowY = anchorBounds.bottom + verticalGapPx
         val y = if (aboveY >= marginPx || belowY + popupContentSize.height > windowSize.height - marginPx) {

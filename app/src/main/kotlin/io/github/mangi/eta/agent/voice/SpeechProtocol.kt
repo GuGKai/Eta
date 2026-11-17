@@ -77,6 +77,8 @@ internal fun validateSpeechSettings(
                 required(settings.deepseekTts.voice, "音色")
                 speechBaseUrl(settings.deepseekTts.baseUrl)
             }
+            // 系统语音用设备自带引擎，没有服务地址和 API Key 需要校验。
+            TtsProvider.SYSTEM -> Unit
         }
     } else when (settings.asr) {
         AsrProvider.MIMO -> {

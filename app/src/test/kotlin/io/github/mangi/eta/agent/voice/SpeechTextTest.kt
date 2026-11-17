@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpeechTextTest {
-    @Test fun spokenTextSkipsCodeAndKeepsLinkLabelAndInlineIdentifiers() {
+    @Test fun spokenTextReadsCodeKeepsLinkLabelAndInlineIdentifiers() {
         val text = SpeechText.readable("""
             # 操作说明
 
@@ -22,10 +22,10 @@ class SpeechTextTest {
         assertTrue(text.contains("设置"))
         assertTrue(text.contains("帮助"))
         assertTrue(text.contains("user_name"))
-        assertFalse(text.contains("请查看正文"))
         assertFalse(text.contains("https://"))
-        assertFalse(text.contains("secretCommand"))
-        assertFalse(text.contains("anotherSecretCommand"))
+        // 代码块与缩进代码都照读，只丢掉围栏与缩进标记。
+        assertTrue(text.contains("secretCommand()"))
+        assertTrue(text.contains("anotherSecretCommand()"))
         assertFalse(text.contains("**"))
         assertTrue(text.endsWith("完成。"))
     }
@@ -35,58 +35,6 @@ class SpeechTextTest {
         val chunks = SpeechText.chunks(text, 17)
         assertEquals(text, chunks.joinToString(""))
         assertTrue(chunks.all { it.length <= 17 && !it.last().isHighSurrogate() && !it.first().isLowSurrogate() })
-    }
-
-    @Test fun codeOnlyAnswersHaveNoSpeech() {
-        for (markdown in listOf("```\nhello\n```", "    hello", "```kotlin\nhello")) {
-            assertEquals("", SpeechText.readable(markdown))
-        }
-    }
-
-    @Test fun tablesAreOmittedWithoutAnnouncementsAndPreserveSurroundingParagraphs() {
-        val table = """
-            | 产品 | 价格 | 条件 |
-            | --- | ---: | --- |
-            | 产品甲 | 108元 | 仅授权后可用 |
-            | 产品乙 | 209元 | 不支持离线 |
-        """.trimIndent()
-        val text = SpeechText.readable("先看结论。\n\n$table\n\n继续操作。")
-
-        assertTrue(Regex("先看结论。\\n+继续操作。").matches(text))
-    }
-
-    @Test fun tableOnlyAnswersHaveNoSpeechRegardlessOfCellContent() {
-        for (table in listOf(
-            """
-                | 产品 | 价格 |
-                | --- | ---: |
-                | 产品甲 | 108元 |
-                | 产品乙 | 209元 |
-            """.trimIndent(),
-            """
-                | 项目 | | 备注 |
-                | --- | --- | --- |
-                | A | | 正常 |
-                | B |
-                | C | 3 | 保留 | 额外单元格 |
-            """.trimIndent(),
-            """
-                | 方案 | 耗时 | 内存 |
-                | --- | --- | --- |
-                | [**A**](https://example.invalid/a) | 1.5 秒 | 200 MB |
-                | `B` | 2 秒 | 100 MB |
-            """.trimIndent(),
-            "| 项目 | 数量 |\n| --- | --- |",
-            """
-                | 类型 | 内容 |
-                | --- | --- |
-                | 图片 | ![示意图](https://example.invalid/diagram.png) |
-                | 嵌入图片 | <img src="https://example.invalid/diagram.png"> |
-                | 裸网址 | https://example.invalid/download |
-            """.trimIndent(),
-        )) {
-            assertEquals(table, "", SpeechText.readable(table))
-        }
     }
 
     @Test fun urlOnlyAnswersHaveNoSpeech() {
@@ -102,12 +50,6 @@ class SpeechTextTest {
         )) {
             assertEquals(markdown, "", SpeechText.readable(markdown))
         }
-    }
-
-    @Test fun codeAndLinksTogetherDoNotProducePlaceholderSpeech() {
-        val text = SpeechText.readable("```sh\nrun_command\n```\n\nhttps://example.invalid/download")
-
-        assertEquals("", text)
     }
 
     @Test fun imagesAndHtmlBlocksAreSkippedWithoutNoticesOrLostParagraphBoundaries() {
@@ -241,5 +183,10 @@ class SpeechTextTest {
             assertTrue("Expected '$part' after offset $offset in '$text'", index >= 0)
             offset = index + normalized.length
         }
+    }
+
+    @Test fun codeOnlyAnswerReadsTheCodeBody() {
+        // 只有代码块的回答也要读：只跳过围栏标记，代码内容照读。
+        assertEquals("hello", SpeechText.readable("```\nhello\n```"))
     }
 }

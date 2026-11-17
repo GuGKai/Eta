@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.components.EtaMonospace
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -77,7 +78,9 @@ internal class MarkdownStyle(
 internal fun rememberMarkdownStyle(tone: MarkdownTone): MarkdownStyle {
     val colors = MiuixTheme.colorScheme
     val textStyles = MiuixTheme.textStyles
-    return remember(tone, colors, textStyles) {
+    // 会话正文与我发出的消息共用同一个字号倍率；思考过程不跟随。
+    val chatTextScale = LocalAppearanceSettings.current.chatTextScale
+    return remember(tone, colors, textStyles, chatTextScale) {
         val answer = tone == MarkdownTone.Answer
         val isDark = colors.surface.luminance() < 0.5f
         // COUI 与 Miuix 的 onSurface 自带不同基础 alpha；统一归一为纯墨色基色后再按层级分配浓度，
@@ -108,9 +111,11 @@ internal fun rememberMarkdownStyle(tone: MarkdownTone): MarkdownStyle {
         } else {
             ink.copy(alpha = if (isDark) 0.44f else 0.40f)
         }
+        // 会话正文字号倍率只作用于回答语气，思考过程保持紧凑字号。
+        val scale = if (answer) chatTextScale else 1f
         val body = (if (answer) textStyles.body1 else textStyles.body2).copy(
-            fontSize = if (answer) 16.sp else 13.5.sp,
-            lineHeight = if (answer) ANSWER_LINE_HEIGHT_SP.sp else THINKING_LINE_HEIGHT_SP.sp,
+            fontSize = if (answer) 16.sp * scale else 13.5.sp,
+            lineHeight = if (answer) ANSWER_LINE_HEIGHT_SP.sp * scale else THINKING_LINE_HEIGHT_SP.sp,
             letterSpacing = if (answer) 0.1.sp else 0.sp,
             color = textColor,
             lineHeightStyle = EditorialLineHeightStyle,
@@ -119,28 +124,28 @@ internal fun rememberMarkdownStyle(tone: MarkdownTone): MarkdownStyle {
         val headings = if (answer) {
             listOf(
                 body.copy(
-                    fontSize = 20.sp,
-                    lineHeight = 28.sp,
+                    fontSize = 20.sp * scale,
+                    lineHeight = 28.sp * scale,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.2).sp,
                     color = strongColor,
                 ),
                 body.copy(
-                    fontSize = 18.sp,
-                    lineHeight = 26.sp,
+                    fontSize = 18.sp * scale,
+                    lineHeight = 26.sp * scale,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.1).sp,
                     color = strongColor,
                 ),
                 body.copy(
-                    fontSize = 16.5.sp,
-                    lineHeight = 24.sp,
+                    fontSize = 16.5.sp * scale,
+                    lineHeight = 24.sp * scale,
                     fontWeight = FontWeight.Bold,
                     color = strongColor,
                 ),
                 body.copy(
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
+                    fontSize = 16.sp * scale,
+                    lineHeight = 24.sp * scale,
                     fontWeight = FontWeight.Bold,
                     color = strongColor,
                 ),
@@ -172,14 +177,14 @@ internal fun rememberMarkdownStyle(tone: MarkdownTone): MarkdownStyle {
             headings = headings,
             code = TextStyle(
                 fontFamily = EtaMonospace,
-                fontSize = if (answer) 13.sp else 12.sp,
-                lineHeight = if (answer) 20.sp else 18.sp,
+                fontSize = if (answer) 13.sp * scale else 12.sp,
+                lineHeight = if (answer) 20.sp * scale else 18.sp,
                 color = inlineCodeColor,
                 lineHeightStyle = EditorialLineHeightStyle,
             ),
             table = body.copy(
-                fontSize = if (answer) 14.sp else 13.sp,
-                lineHeight = if (answer) 21.sp else 19.sp,
+                fontSize = if (answer) 14.sp * scale else 13.sp,
+                lineHeight = if (answer) 21.sp * scale else 19.sp,
             ),
             textColor = textColor,
             strongColor = strongColor,
@@ -248,3 +253,21 @@ internal fun MarkdownBlock.isStructuredContainer(): Boolean = when (this) {
 internal const val ANSWER_LINE_HEIGHT_SP = 25
 internal const val THINKING_LINE_HEIGHT_SP = 21
 private const val THINKING_GAP_SCALE = 0.75f
+
+/**
+ * 会话正文字号倍率：只作用于助手回答与我发出的消息（正文、标题、代码、表格），
+ * 思考过程与工具过程不跟随。
+ */
+internal fun TextStyle.scaleChatText(factor: Float): TextStyle =
+    if (factor == 1f) {
+        this
+    } else {
+        copy(
+            fontSize = fontSize.scaleIfSpecified(factor),
+            lineHeight = lineHeight.scaleIfSpecified(factor),
+        )
+    }
+
+/** TextUnit 未指定时不能参与算术，原样返回。 */
+internal fun TextUnit.scaleIfSpecified(factor: Float): TextUnit =
+    if (this == TextUnit.Unspecified) this else this * factor

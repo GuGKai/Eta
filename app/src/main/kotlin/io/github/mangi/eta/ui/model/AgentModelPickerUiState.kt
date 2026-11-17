@@ -39,6 +39,8 @@ internal data class AgentModelOptionUi(
 internal data class SessionStatsSummaryUi(
     val turns: Int = 0,
     val steps: Int = 0,
+    /** 整场累计真实用时：各轮「用户发出 → 整轮结束」的墙钟时间之和。 */
+    val roundMs: Long = 0L,
     val llmMs: Long = 0L,
     val toolMs: Long = 0L,
     val ttftMs: Long = 0L,
@@ -83,7 +85,8 @@ internal data class SessionStatsSummaryUi(
             subagentOutputTokens
 
     val hasPerformanceStats: Boolean
-        get() = llmMs > 0L || toolMs > 0L || ttftSteps > 0 || (decodeMs > 0L && decodeTokens > 0)
+        get() = roundMs > 0L || llmMs > 0L || toolMs > 0L || ttftSteps > 0 ||
+            (decodeMs > 0L && decodeTokens > 0)
 }
 
 @Immutable
@@ -199,6 +202,7 @@ internal fun latestContextUsage(
 internal fun deriveSessionStatsSummary(messages: List<AgentChatMessageUi>): SessionStatsSummaryUi {
     var turns = 0
     var steps = 0
+    var roundMs = 0L
     var llmMs = 0L
     var toolMs = 0L
     var ttftMs = 0L
@@ -236,6 +240,7 @@ internal fun deriveSessionStatsSummary(messages: List<AgentChatMessageUi>): Sess
                 val turnSteps = (usage.stepCount ?: 1).coerceAtLeast(1)
                 turns += 1
                 steps += turnSteps
+                message.roundDurationMs?.takeIf { it > 0L }?.let { roundMs += it }
                 usage.llmMs?.takeIf { it > 0L }?.let { llmMs += it }
                 usage.toolMs?.takeIf { it > 0L }?.let { toolMs += it }
                 val recordedTtftSteps = usage.ttftSteps ?: if (usage.ttftMs != null) 1 else 0
@@ -313,6 +318,7 @@ internal fun deriveSessionStatsSummary(messages: List<AgentChatMessageUi>): Sess
     return SessionStatsSummaryUi(
         turns = turns,
         steps = steps,
+        roundMs = roundMs,
         llmMs = llmMs,
         toolMs = toolMs,
         ttftMs = ttftMs,

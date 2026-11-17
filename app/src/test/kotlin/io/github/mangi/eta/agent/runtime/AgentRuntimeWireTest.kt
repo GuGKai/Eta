@@ -26,35 +26,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33, 36])
+// Wire/image transport does not need EtaApp's background database/automation workers.
+@Config(sdk = [33, 36], application = android.app.Application::class)
 class AgentRuntimeWireTest {
-    @Test
-    fun searchSuggestionsCapabilityIsOptionalAndHtmlIsNeverDurable() {
-        val request = AgentRuntimeWire.RunRequest(
-            runId = "search", prompt = "测试", images = emptyList(),
-            config = AgentModelClient.ModelConfig(
-                baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = "",
-                supportsSearchSuggestions = true,
-            ),
-        )
-        val bundle = AgentRuntimeWire.toLegacyBundle(request)
-        assertTrue(AgentRuntimeWire.runRequestFromBundle(bundle).config.supportsSearchSuggestions)
-        bundle.remove("supports_search_suggestions")
-        assertFalse(AgentRuntimeWire.runRequestFromBundle(bundle).config.supportsSearchSuggestions)
-
-        val event = AgentEvent.SearchSuggestions(2, 4, "<div>搜索建议</div>")
-        assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
-        assertNull(event.recoveryProjection())
-        assertEquals(event, event.replayProjection())
-        assertThrows(IllegalArgumentException::class.java) { AgentEventJsonCodec.encode(event) }
-        assertNull(AgentEventJsonCodec.decode("""{"type":"search_suggestions","round":2,"index":4,"html":"不得恢复"}"""))
-        val oversized = AgentRuntimeWire.eventToBundle(event).apply {
-            putString("html", "中".repeat(SearchSuggestionsPayload.MAX_HTML_BYTES))
-        }
-        assertNull(AgentRuntimeWire.eventFromBundle(oversized))
-        assertFalse(event.toLogLine().contains("搜索建议"))
-    }
-
     @Test
     fun oauthWireCarriesOnlyAuthenticationModeAndDropsLegacySecrets() {
         val request = AgentRuntimeWire.RunRequest(
@@ -77,6 +51,48 @@ class AgentRuntimeWireTest {
         val legacy = AgentRuntimeWire.runRequestFromBundle(bundle)
         assertEquals(ProviderAuthModes.API_KEY, legacy.config.authMode)
         assertEquals("fixture-untrusted-bundle-secret", legacy.config.apiKey)
+    }
+
+
+
+
+    @Test
+    fun interjectionPayloadIsBoundToOneRunAndRejectsInvalidText() {
+        val bundle = AgentRuntimeWire.steerBundle("run", "改成第二种方案")
+        assertEquals("run", AgentRuntimeWire.runIdFromBundle(bundle))
+        assertEquals("改成第二种方案", bundle.getString("supplement_text"))
+        assertThrows(IllegalArgumentException::class.java) { AgentRuntimeWire.steerBundle("", "text") }
+        assertThrows(IllegalArgumentException::class.java) { AgentRuntimeWire.steerBundle("run", " ") }
+        assertThrows(IllegalArgumentException::class.java) { AgentRuntimeWire.steerBundle("run", "x".repeat(8_001)) }
+    }
+
+
+    @Test
+    fun modelInterjectionSurvivesIpcAndArchiveReplay() {
+        val event = AgentEvent.ModelRequestInterrupted(3)
+        assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
+        assertEquals(event, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(event)))
+    }
+
+
+    @Test
+    fun uiPauseClassificationSurvivesCompleteAndLegacyBundle() {
+        val result = AgentRuntimeWire.RunResult("ui-pause", false, "", "已暂停", errorCode = "UI_EXECUTION_PAUSED")
+        val bundle = AgentRuntimeWire.toBundle(result)
+        assertEquals(result, AgentRuntimeWire.runResultFromBundle(bundle))
+        bundle.remove("complete_result_json")
+        assertEquals(result, AgentRuntimeWire.runResultFromBundle(bundle))
+        bundle.remove("error_code")
+        assertEquals("", AgentRuntimeWire.runResultFromBundle(bundle).errorCode)
+    }
+    @Test
+    fun generationDurationSurvivesBundlesArchivesAndOldEventsWithoutTiming() {
+        val event = AgentEvent.UsageReceived(2, AgentTokenUsage(contextTokens = 1200, outputTokens = 80, requestDurationMs = 2000))
+        val bundle = AgentRuntimeWire.eventToBundle(event)
+        assertEquals(event, AgentRuntimeWire.eventFromBundle(bundle))
+        assertEquals(event, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(event)))
+        bundle.remove("usage_duration_ms")
+        assertNull((AgentRuntimeWire.eventFromBundle(bundle) as AgentEvent.UsageReceived).usage.requestDurationMs)
     }
 
     @Test

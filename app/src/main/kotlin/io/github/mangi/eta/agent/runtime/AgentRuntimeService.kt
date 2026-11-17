@@ -4,7 +4,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import android.app.Service
 import android.app.ActivityOptions
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
+import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.MainActivity
 import android.os.Build
 import android.content.Context
@@ -39,6 +43,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.itos.coui.effect.LocalCouiContourGlowEnabled
+import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
@@ -47,7 +52,9 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
-import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
+import io.github.mangi.eta.agent.overlay.StageCanvasHeight
+import io.github.mangi.eta.agent.overlay.AgentOverlayCapsuleLens
+import io.github.mangi.eta.agent.overlay.AgentOverlayCapsulePanel
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
@@ -57,6 +64,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.overlay.applyEvent
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplaySnapshot
+import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.ModuleConfig
@@ -65,6 +73,7 @@ import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.app.AgentAppTheme
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -106,24 +115,40 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private var windowManager: WindowManager? = null
     private var glowView: ComposeView? = null
+    /** 展开态面板窗口：宽度恒为装裱视窗宽度，收起态整体 NOT_TOUCHABLE。 */
     private var capsuleView: ComposeView? = null
+    /** 收起态微缩镜窗口：宽度恒为 46.dp，与面板窗口并存，切换只改透明度。 */
+    private var capsuleLensView: ComposeView? = null
     private var resultCardView: ComposeView? = null
     private var glowParams: WindowManager.LayoutParams? = null
     private var capsuleParams: WindowManager.LayoutParams? = null
+    private var capsuleLensParams: WindowManager.LayoutParams? = null
     private var resultCardParams: WindowManager.LayoutParams? = null
     private var resultCardBack: Pair<OnBackInvokedDispatcher, OnBackInvokedCallback>? = null
+
+    /** 回复完成通知的独立渠道：用户可在系统通知设置里单独配置声音/震动。 */
+    private val replyChannelId = "eta_reply_done"
+    private val replyNotificationId = 1108
+    private val replyPreviewLimit = 60
 
     /** 窗口只投影当前手机控制者；各运行的状态保留在自己的记录中。 */
     private val state = mutableStateOf(AgentOverlayState.Initial)
     private val virtualDisplayState = mutableStateOf(VirtualDisplaySnapshot.Inactive)
+    private val capsuleVisible = mutableStateOf(true)
     private val capsuleExpanded = mutableStateOf(false)
     private val capsuleSupplementFocusable = mutableStateOf(false)
+    /**
+     * 边缘彩虹光是否点亮：只在实际操作屏幕时亮，动作结束后再停留 [GLOW_LINGER_MS] 才淡出。
+     */
+    private val glowActive = mutableStateOf(false)
+    private val hideGlow = Runnable { glowActive.value = false }
     /** Agent 手势穿过胶囊时为 true：窗口不可触摸，胶囊淡出让路。 */
     private val capsuleYielded = mutableStateOf(false)
     private val restoreCapsule = Runnable { setCapsuleYielded(false) }
     private val clearanceHost = object : AgentOverlayClearance.Host {
         override fun capsuleTouchBounds(): Rect? {
-            val view = capsuleView?.takeIf { it.isAttachedToWindow } ?: return null
+            val view = (if (capsuleExpanded.value) capsuleView else capsuleLensView)
+                ?.takeIf { it.isAttachedToWindow } ?: return null
             val location = IntArray(2).also(view::getLocationOnScreen)
             val slop = dpToPx(CAPSULE_CLEARANCE_SLOP_DP)
             return Rect(
@@ -158,11 +183,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             VirtualDisplayController.snapshots.collect { snapshot ->
                 val wasActive = virtualDisplayState.value.active
                 virtualDisplayState.value = snapshot
+                // 比例（换应用、旋转）或全屏回落后窗口该有多宽会变，按当前展开态每次都校准一次。
+                applyCapsuleWindowBounds()
+                // 全屏外置 / 搬回虚拟屏都会让胶囊整体隐身，窗口的触摸标志必须跟着走，
+                // 否则隐身期间那块矩形仍然吃掉屏幕上的点击。
+                applyCapsuleInteraction()
                 if (wasActive != snapshot.active) {
                     if (!snapshot.active) VirtualDisplayController.setStageExpanded(false)
-                    updateCapsuleWindowBounds()
                     displayedRun?.let(::syncActiveRunOverlayVisibility)
                 }
+            }
+        }
+        serviceScope.launch {
+            VirtualDisplayController.capsuleVisible.collect { visible ->
+                capsuleVisible.value = visible
+                applyCapsuleInteraction()
             }
         }
     }
@@ -198,7 +233,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         displayedRun = null
         serviceScope.cancel()
-        AgentExecutionService.updateRunStatus(this, null, activeRunCount = 0)
+        AgentExecutionService.updateRunStates(this, emptyList(), taskCount = 0)
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         AgentOverlayClearance.detach(clearanceHost)
@@ -206,12 +241,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleLensView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         resultCardView = null
         capsuleView = null
+        capsuleLensView = null
         glowView = null
         resultCardParams = null
         capsuleParams = null
+        capsuleLensParams = null
         glowParams = null
         windowManager = null
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -248,12 +286,24 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         finishWithFailure("Agent Runtime 请求缺少 runId 或用户输入", msg.replyTo)
                         return
                     }
-                    ingestRunRequest(incoming, msg.replyTo, msg.sendingUid == android.os.Process.myUid())
+                    ingestRunRequest(incoming, msg.replyTo)
                 }
 
                 AgentRuntimeWire.MSG_CANCEL -> {
                     val runId = msg.data?.let(AgentRuntimeWire::runIdFromBundle).orEmpty()
                     if (runId.isNotBlank()) cancelRun(runId)
+                }
+
+                AgentRuntimeWire.MSG_STEER_RUN -> {
+                    val runId = AgentRuntimeWire.runIdFromBundle(msg.data)
+                    val text = msg.data.getString("supplement_text").orEmpty()
+                    val valid = runCatching { AgentRuntimeWire.steerBundle(runId, text) }.isSuccess
+                    val accepted = valid && requestSupplement(runId, text)
+                    runCatching {
+                        msg.replyTo?.send(Message.obtain(null, AgentRuntimeWire.MSG_STEER_RESPONSE).apply {
+                            data = AgentRuntimeWire.ackBundle(runId).apply { putBoolean("accepted", accepted) }
+                        })
+                    }
                 }
 
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
@@ -298,16 +348,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun ingestRunRequest(
         incoming: AgentRuntimeWire.IncomingRunRequest,
         replyTo: Messenger?,
-        isEtaProcess: Boolean,
     ) {
         val run = admitRun(incoming.request, replyTo, incoming) ?: return
         thread(name = "agent-runtime-image-ingest") {
             val prepared = runCatching {
                 run.session.controller.throwIfCancelled()
                 run.awaitPredecessors()
-                val request = AgentRuntimeRequestConfigResolver.constrainPresentation(
-                    AgentRuntimeImageTransfer.materialize(incoming), isEtaProcess,
-                )
+                val request = AgentRuntimeImageTransfer.materialize(incoming)
                 if (!AgentRuntimeRequestConfigResolver.requiresRuntimeConfig(request)) {
                     request
                 } else {
@@ -432,7 +479,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
-        val allowBoundFallback = RootAccess.isGranted
+        // 自动任务由调度器发起，需要绑定服务回退才能后台执行。
+        val automated = io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId)
+        val allowBoundFallback = RootAccess.isGranted || automated
         val executionHeld = AgentExecutionService.acquire(
             this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
         ) { mainHandler.post { cancelRun(request.runId) } }
@@ -495,6 +544,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         postTerminalOverlay(
             run = run,
             result = outcome.result,
+            // 助理浮窗的任务可能已经没有入口浮层（用户关窗后后台续跑）：通知直接指向这轮会话。
+            replyConversationKey = run.request.handoff
+                ?.takeIf { it.source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE }
+                ?.payload
+                ?.let { payload -> AgentExternalArchivePayload.from(payload)?.conversationKey }
+                ?.takeIf(String::isNotBlank),
             completedContext = outcome.response?.let { completedResponse ->
                 outcome.completedRequest?.let { completedRequest ->
                     RuntimeRunRegistry.CompletedContext(
@@ -560,10 +615,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         run: RuntimeRunRegistry.Run,
         result: AgentRuntimeWire.RunResult,
         completedContext: RuntimeRunRegistry.CompletedContext? = null,
+        replyConversationKey: String? = null,
     ) {
         mainHandler.post {
             if (destroyed) return@post
             run.completedContext = completedContext
+            // 回复完成通知与窗口投影解耦：纯后台运行（本轮没接管手机、不是窗口投影对象）
+            // 同样要提醒，否则用户离开界面后完全收不到结果。notifyReplyCompleted 内部
+            // 已跳过「用户此刻能直接读到回复」的情形。
+            if (result.ok) notifyReplyCompleted(result.content, replyConversationKey)
             val guiState = guiControl.state.value
             if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
                 (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
@@ -582,7 +642,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     enterFinalState(
                         AgentOverlayState(
                             phase = AgentOverlayPhase.FAILED,
-                            status = if (result.error == "已停止") {
+                            status = if (result.errorCode == "UI_EXECUTION_PAUSED") {
+                                AgentOverlayStatus.Paused
+                            } else if (result.error == "已停止") {
                                 AgentOverlayStatus.Stopped
                             } else {
                                 AgentOverlayStatus.RunFailed
@@ -595,6 +657,56 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AndroidAgentLogger.warnThrottled("runtime_terminal_overlay_failed") {
                     "Agent runtime terminal overlay failed: type=${throwable.safeLogType()}"
                 }
+            }
+        }
+    }
+
+    /**
+     * 回复完成后弹出的普通通知：走独立渠道，用户可在系统通知设置里配置是否响铃/震动。
+     * 带 [conversationKey]（助理浮窗的会话）时点击直接落在对应会话上。
+     */
+    private fun notifyReplyCompleted(content: String, conversationKey: String? = null) {
+        // 用户此刻能直接读到回复（Eta 本体界面，或语音唤醒的助理浮窗）时不发通知；
+        // 只有浮窗已经收起、回答落在用户看不到的地方（关窗后台续跑）才提醒。
+        if (AppForegroundState.hasVisibleSurface) return
+        runCatching {
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+            if (manager.getNotificationChannel(replyChannelId) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        replyChannelId,
+                        getString(R.string.execution_reply_done_channel),
+                        NotificationManager.IMPORTANCE_DEFAULT,
+                    ),
+                )
+            }
+            val body = MarkdownTextStripper.strip(content)
+            val openIntent = Intent(this, MainActivity::class.java).apply {
+                if (!conversationKey.isNullOrBlank()) {
+                    setAction(EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION)
+                    putExtra(EtaAssistantOverlayService.EXTRA_CONVERSATION_KEY, conversationKey)
+                }
+            }
+            val open = PendingIntent.getActivity(
+                this,
+                0,
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val preview = body.take(replyPreviewLimit)
+                .ifBlank { getString(R.string.execution_reply_done_fallback) }
+            val notification = Notification.Builder(this, replyChannelId)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(getString(R.string.execution_reply_done_title))
+                .setContentText(preview)
+                .setStyle(Notification.BigTextStyle().bigText(body))
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build()
+            manager.notify(replyNotificationId, notification)
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_reply_notification_failed") {
+                "Agent reply notification failed: type=${throwable.safeLogType()}"
             }
         }
     }
@@ -837,11 +949,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         guiControl.resumeForUser()
     }
 
-    private fun requestSupplement(runId: String?, text: String) {
+    private fun requestSupplement(runId: String?, text: String): Boolean {
         val supplementText = text.trim()
-        if (supplementText.isBlank()) return
-        val run = displayedRun?.takeIf { it.runId == runId } ?: return
-        if (guiControl.state.value.userPaused && guiControl.state.value.ownerRunId == null) return
+        if (supplementText.isBlank()) return false
+        // 先按当前浮层投影的 run 匹配；浮层没显示（或显示的是别的 run）时回退到注册表，
+        // 否则多会话并行/后台续跑时插话会被误判成失败。
+        val run = displayedRun?.takeIf { it.runId == runId }
+            ?: runId?.let(runs::get)
+            ?: return false
+        if (guiControl.state.value.userPaused && guiControl.state.value.ownerRunId == null) return false
         setCapsuleInputMode(focusable = false)
         runs.get(run.runId)?.let { active ->
             val event = active.supplement(supplementText)
@@ -850,7 +966,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     state.value = state.value.copy(
                         status = AgentOverlayStatus.Finishing,
                     )
-                    return
+                    return false
                 }
             } else {
                 AndroidAgentLogger.info(
@@ -858,15 +974,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 )
                 active.overlayState = active.overlayState.applyEvent(event)
                 state.value = active.overlayState
-                return
+                return true
             }
         }
 
-        val completed = run.completedContext ?: return
+        val completed = run.completedContext ?: return false
         if (completed.request.operation != AgentRuntimeWire.OP_CHAT ||
             completed.request.handoff?.source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
             state.value = state.value.copy(status = AgentOverlayStatus.ContinuationUnavailable)
-            return
+            return false
         }
         val continuationRequest = AgentContinuationBuilder.build(
             request = completed.request,
@@ -874,6 +990,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             supplement = supplementText,
         )
         startRun(continuationRequest)
+        return true
     }
 
     private fun ensureOverlayVisible() {
@@ -965,31 +1082,65 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         displayedRun?.completedContext = null
         displayedRun = run
         capsuleExpanded.value = false
+        applyCapsuleInteraction()
     }
 
     private fun publishExecutionState() {
         val guiState = guiControl.state.value
-        val activeRuns = runs.all().filterNot { it.session.isTerminal }
-        val owner = activeRuns.firstOrNull { it.runId == guiState.ownerRunId }
-        val status = if (owner != null && guiState.userPaused) {
-            AgentOverlayStatus.Paused
-        } else {
-            (owner ?: activeRuns.firstOrNull())?.overlayState?.status
+        val ownerRunId = guiState.ownerRunId
+        // 每个活跃 run 各自一张通知卡片：没有 GUI 所有权时（纯终端、文件类任务）同样投影当前环节，
+        // 否则该任务会退回「N 项任务正在运行」，也不显示暂停按钮。
+        val notices = ArrayList<ExecutionRunNotice>()
+        for (active in runs.all()) {
+            if (active.session.isTerminal) continue
+            // 暂停是全局开关，只落到持有 GUI 所有权的那个任务上，避免别的任务被误标成「暂停中」。
+            val paused = guiState.userPaused && active.runId == ownerRunId
+            notices.add(
+                ExecutionRunNotice(
+                    runId = active.runId,
+                    taskLabel = taskLabelOf(active),
+                    status = if (paused) AgentOverlayStatus.Paused else active.overlayState.status,
+                    completedSteps = active.overlayState.completedSteps,
+                    paused = paused,
+                ),
+            )
         }
-        AgentExecutionService.updateRunStatus(
-            this,
-            status,
-            activeRunCount = activeRuns.size,
-        )
+        AgentExecutionService.updateRunStates(this, notices, taskCount = notices.size)
+    }
+
+    /** 卡片上的任务摘要：取首轮用户输入的第一行，截短到能在一行里显示。 */
+    private fun taskLabelOf(run: RuntimeRunRegistry.Run): String {
+        val firstLine = run.request.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        return firstLine.take(12)
     }
 
     private fun setKeepScreenOn(enabled: Boolean) {
         keepScreenOnState.value = enabled
         capsuleView?.keepScreenOn = enabled
+        capsuleLensView?.keepScreenOn = enabled
+    }
+    /**
+     * 边缘光的活跃期。
+     *
+     * 只有真正操作屏幕的工具才点亮；动作结束（[AgentEvent.ToolFinished] 或工具截图回传）后
+     * 再停留 [GLOW_LINGER_MS] 才淡出，期间任何新的操作都会重新点亮并取消这次淡出。
+     * 任务跑在虚拟屏上时手机上不显示运行叠层，直接保持熄灭。
+     */
+    private fun refreshGlowFor(event: AgentEvent) {
+        if (!AgentOverlayVisibilityPolicy.shouldRevealFor(event)) return
+        mainHandler.removeCallbacks(hideGlow)
+        if (event is AgentEvent.ToolFinished || event is AgentEvent.ToolImagesAttached) {
+            mainHandler.postDelayed(hideGlow, GLOW_LINGER_MS)
+        } else {
+            glowActive.value = true
+        }
     }
 
     private fun showOverlay() {
-        if (capsuleView != null) return
+        // 「叠层已挂出」的判据必须是边缘光窗口，不是胶囊。胶囊停用后 capsuleView 恒为 null，
+        // 若继续拿它当判据，每次屏幕操作都会重新走完这里、往 WindowManager 再叠一层全屏光效窗口：
+        // 边框越叠越宽、多份 Compose + 无限旋转动画把帧率拖垮，且任务结束后也不会消失。
+        if (glowView != null) return
         // TYPE_ACCESSIBILITY_OVERLAY 免 SYSTEM_ALERT_WINDOW 权限；仅回退态（无障碍未启用）才需检查
         if (AgentAccessibilityService.current() == null && !Settings.canDrawOverlays(this)) return
         val wm = overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
@@ -1001,6 +1152,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 state = state.value,
                 corners = screenCornerRadii(),
                 virtualDisplay = virtualDisplayState.value,
+                active = glowActive.value,
             )
         }
         val glowLp = glowLayoutParams()
@@ -1012,27 +1164,43 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         glowView = glow
         glowParams = glowLp
 
-        // ── 状态胶囊窗口：状态栏下方居中，收起时一句状态（含微缩镜），点击展开控制与画廊视窗 ─
-        val capsule = createOverlayComposeView {
-            val controlRunId = displayedRun?.runId
-            AgentOverlayCapsule(
+        // ── 微缩镜窗口：收起态唯一可见的部分，宽度恒定 46.dp ─────────────
+        // 窗口矩形内的透明区域同样吃点击，所以收起态的窗口必须和看得见的图形一样大，
+        // 微缩镜外面的触摸才能落到下层应用上。
+        val lens = createOverlayComposeView {
+            AgentOverlayCapsuleLens(
                 state = state.value,
                 expanded = capsuleExpanded.value,
                 yielded = capsuleYielded.value,
                 onToggleExpanded = ::toggleCapsule,
-                onCollapsedSettled = ::onCapsuleCollapsedSettled,
-                onPause = {
-                    VirtualDisplayController.setUserControlling(false)
-                    requestPause(controlRunId)
-                },
-                onResume = {
-                    VirtualDisplayController.setUserControlling(false)
-                    requestResume()
-                },
-                onStop = { requestStop(controlRunId) },
-                onSupplementModeChange = ::setCapsuleInputMode,
-                onSupplement = { requestSupplement(controlRunId, it) },
                 virtualDisplay = virtualDisplayState.value,
+                capsuleVisible = capsuleVisible.value,
+            )
+        }
+        val lensLp = capsuleLensLayoutParams()
+        lens.keepScreenOn = keepScreenOn.value
+        runCatching { wm.addView(lens, lensLp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_add_view_failed") {
+                "Agent runtime capsule lens addView failed: type=${throwable.safeLogType()}"
+            }
+            return
+        }
+        capsuleLensView = lens
+        capsuleLensParams = lensLp
+
+        // ── 面板窗口：宽度恒定装裱视窗宽度，收起态整体不可触摸 ─────────────
+        // 两个窗口宽度都固定，开关时不存在任何重排，画面上只剩透明度变化。
+        val capsule = createOverlayComposeView {
+            val controlRunId = displayedRun?.runId
+            AgentOverlayCapsulePanel(
+                state = state.value,
+                expanded = capsuleExpanded.value,
+                yielded = capsuleYielded.value,
+                onToggleExpanded = ::toggleCapsule,
+                onSupplementModeChange = ::setCapsuleInputMode,
+                onSupplement = { text: String -> requestSupplement(controlRunId, text) },
+                virtualDisplay = virtualDisplayState.value,
+                capsuleVisible = capsuleVisible.value,
                 onTakeOverVirtualDisplay = {
                     VirtualDisplayController.setUserControlling(true)
                     requestPause(controlRunId)
@@ -1042,24 +1210,25 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     requestResume()
                 },
                 onFullscreenVirtualDisplay = ::requestFullscreenVirtualDisplay,
-                onTapVirtualCanvas = { nx, ny, longPress ->
+                onTapVirtualCanvas = { nx: Float, ny: Float, longPress: Boolean ->
                     VirtualDisplayController.dispatchUserTapOnCanvas(nx, ny, longPress)
                 },
-                onSwipeVirtualCanvas = { sx, sy, ex, ey, durationMs ->
+                onSwipeVirtualCanvas = { sx: Float, sy: Float, ex: Float, ey: Float, durationMs: Int ->
                     VirtualDisplayController.dispatchUserSwipeOnCanvas(sx, sy, ex, ey, durationMs)
                 },
             )
         }
-        val capsuleLp = capsuleLayoutParams()
+        val capsuleLp = capsulePanelLayoutParams()
         capsule.keepScreenOn = keepScreenOn.value
         runCatching { wm.addView(capsule, capsuleLp) }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_capsule_add_view_failed") {
-                "Agent runtime capsule addView failed: type=${throwable.safeLogType()}"
+                "Agent runtime capsule panel addView failed: type=${throwable.safeLogType()}"
             }
             return
         }
         capsuleView = capsule
         capsuleParams = capsuleLp
+        applyCapsuleInteraction()
     }
 
     /**
@@ -1069,75 +1238,78 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun setCapsuleYielded(yielded: Boolean) {
         if (!yielded) mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = yielded
+        applyCapsuleInteraction()
+    }
+
+    /**
+     * 两个胶囊窗口的触摸／焦点标志位统一在这里刷新。
+     *
+     * - 收起态只有微缩镜窗口可触，面板窗口整体 FLAG_NOT_TOUCHABLE，矩形里的透明区域不再截走下层手势；
+     * - 展开态反过来，微缩镜窗口让位给面板。
+     * 除标志位外不动任何几何，所以开关时画面里不会有位移。
+     */
+    private fun applyCapsuleInteraction() {
+        val virtualDisplay = virtualDisplayState.value
+        // 胶囊只在「虚拟屏正常驻留」时出现：全屏破壁、搬回过程、虚拟屏释放、用户手动隐藏时内容都不画，
+        // 此时窗口必须整体让出触摸，否则那块透明矩形会把下面的点击吃掉。
+        val stageUsable = virtualDisplay.active &&
+            !virtualDisplay.materializingToMain &&
+            !virtualDisplay.externalizedToMain &&
+            capsuleVisible.value
+        val expanded = capsuleExpanded.value
+        val blocked = capsuleYielded.value
+        updateCapsuleFlags(
+            view = capsuleLensView,
+            params = capsuleLensParams,
+            touchable = stageUsable && !blocked && !expanded,
+            focusable = false,
+        )
+        updateCapsuleFlags(
+            view = capsuleView,
+            params = capsuleParams,
+            touchable = stageUsable && !blocked && expanded,
+            focusable = stageUsable && capsuleSupplementFocusable.value,
+        )
+    }
+
+    private fun updateCapsuleFlags(
+        view: ComposeView?,
+        params: WindowManager.LayoutParams?,
+        touchable: Boolean,
+        focusable: Boolean,
+    ) {
         val wm = windowManager ?: return
-        val capsule = capsuleView ?: return
-        val lp = capsuleParams ?: return
-        val nextFlags = if (yielded) {
-            lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        } else {
-            lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        }
-        if (lp.flags == nextFlags) return
-        lp.flags = nextFlags
-        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_capsule_clearance_failed") {
-                "Agent runtime capsule clearance update failed: type=${throwable.safeLogType()}"
+        if (view == null || params == null) return
+        val notTouchable = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        val notFocusable = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        val withTouch = if (touchable) params.flags and notTouchable.inv() else params.flags or notTouchable
+        val next = if (focusable) withTouch and notFocusable.inv() else withTouch or notFocusable
+        if (params.flags == next) return
+        params.flags = next
+        runCatching { wm.updateViewLayout(view, params) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_interaction_failed") {
+                "Agent runtime capsule interaction update failed: type=${throwable.safeLogType()}"
             }
         }
     }
 
+    /**
+     * 开关胶囊：两个窗口的尺寸与位置都不动，只切透明度（Compose 内）与触摸标志位。
+     * 早期单窗口版本要按展开态改窗口宽度，Compose 会在新宽度下重新测量内容，
+     * 实机上看起来就是整体左右移动 —— 拆成两个定宽窗口后这个现象不存在。
+     */
     private fun toggleCapsule() {
         val expand = !capsuleExpanded.value
         VirtualDisplayController.setStageExpanded(expand && virtualDisplayState.value.active)
-        // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
-        if (expand) updateCapsuleWindowBounds(expanding = true)
         capsuleExpanded.value = expand
-    }
-
-    private fun onCapsuleCollapsedSettled() {
-        if (!capsuleExpanded.value) {
-            VirtualDisplayController.setStageExpanded(false)
-            updateCapsuleWindowBounds(expanding = false)
-        }
-    }
-
-    private fun updateCapsuleWindowBounds(expanding: Boolean = capsuleExpanded.value) {
-        val vdActive = virtualDisplayState.value.active
-        val focusable = capsuleSupplementFocusable.value
-        val widthDp = if (vdActive && expanding && !focusable) {
-            CAPSULE_STAGE_WINDOW_WIDTH_DP
-        } else if (vdActive) {
-            CAPSULE_MICRO_WINDOW_WIDTH_DP
-        } else {
-            CAPSULE_WINDOW_WIDTH_DP
-        }
-        val heightDp = when {
-            focusable -> CAPSULE_SUPPLEMENT_HEIGHT_DP
-            expanding && vdActive -> CAPSULE_STAGE_HEIGHT_DP
-            expanding -> CAPSULE_CONTROLS_HEIGHT_DP
-            else -> CAPSULE_COLLAPSED_HEIGHT_DP
-        }
-        setCapsuleWindowSize(widthDp, heightDp)
-    }
-
-    private fun setCapsuleWindowSize(widthDp: Int, heightDp: Int) {
-        val wm = windowManager ?: return
-        val capsule = capsuleView ?: return
-        val lp = capsuleParams ?: return
-        val width = dpToPx(widthDp)
-        val height = dpToPx(heightDp)
-        if (lp.width == width && lp.height == height) return
-        lp.width = width
-        lp.height = height
-        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_capsule_resize_failed") {
-                "Agent runtime capsule resize failed: type=${throwable.safeLogType()}"
-            }
-        }
+        applyCapsuleInteraction()
     }
 
     private fun requestFullscreenVirtualDisplay() {
         capsuleExpanded.value = false
+        // 收起后必须立刻把窗口标志刷新一遍：展开态时微缩镜窗口是 FLAG_NOT_TOUCHABLE，
+        // 只改 Compose 状态不刷新窗口，用户从全屏回来后点胶囊会毫无反应。
+        applyCapsuleInteraction()
         VirtualDisplayController.setStageExpanded(false)
         thread(name = "eta-vd-fullscreen-handoff", isDaemon = true) {
             VirtualDisplayController.handoffToMainDisplay(this@AgentRuntimeService)
@@ -1277,15 +1449,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
 
     /**
-     * 胶囊窗口使用固定宽度与分档高度，动画只在窗口内进行。
-     * WRAP_CONTENT 会让每一帧的尺寸变化都触发 WindowManager 重新布局整个窗口，这是卡顿的来源；
-     * 但窗口内透明区域同样会吞掉触摸（包括 Agent 自己注入的点击），所以高度只在需要时扩大：
-     * 展开前先扩到目标档，收起动画结束后再缩回，见 [setCapsuleWindowHeight]。
+     * 微缩镜窗口：左上角定位、宽度恒为 46.dp（微缩镜 26.dp + 两侧 10.dp 阴影留白）。
+     * 窗口宽度决定可触摸范围，必须和看得见的图形一样大，否则会截走下层的点击。
      */
-    private fun capsuleLayoutParams(): WindowManager.LayoutParams =
+    private fun capsuleLensLayoutParams(): WindowManager.LayoutParams =
+        capsuleBaseLayoutParams(capsuleLensWindowWidthPx())
+
+    /** 面板窗口：宽度恒为装裱视窗宽度，收起态由 FLAG_NOT_TOUCHABLE 整体让出触摸。 */
+    private fun capsulePanelLayoutParams(): WindowManager.LayoutParams =
+        capsuleBaseLayoutParams(capsuleStageWidthPx())
+
+    /** 两个胶囊窗口共用：宽度固定、左上角定位 + 手动横向居中，位置就不会随开关变化。 */
+    private fun capsuleBaseLayoutParams(width: Int): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
-            dpToPx(if (virtualDisplayState.value.active) CAPSULE_MICRO_WINDOW_WIDTH_DP else CAPSULE_WINDOW_WIDTH_DP),
-            dpToPx(CAPSULE_COLLAPSED_HEIGHT_DP),
+            width,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -1293,12 +1471,51 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            // 贴在状态栏下方居中：远离多数应用的主要点击区，也和系统胶囊、流体云的位置习惯一致。
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.TOP or Gravity.START
+            x = ((screenWidthPx() - width) / 2).coerceAtLeast(0)
             y = statusBarHeightPx()
             windowAnimations = 0
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
+
+    private fun screenWidthPx(): Int =
+        (overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+            ?.currentWindowMetrics?.bounds?.width()
+            ?: resources.displayMetrics.widthPixels
+
+    /** 装裱视窗宽度 = 画布宽（高 336.dp × 虚拟屏比例）+ 两侧衬底 20.dp + 内边距 24.dp。 */
+    private fun capsuleStageWidthPx(): Int {
+        val aspect = virtualDisplayState.value.aspectRatio.takeIf { it > 0.05f } ?: DEFAULT_CANVAS_ASPECT
+        val widthDp = StageCanvasHeight.value * aspect + CAPSULE_STAGE_SIDE_EXTRA_DP
+        return dpToPx(widthDp.toInt().coerceIn(140, 460))
+    }
+
+    /** 收起态窗口宽：微缩镜外框 26.dp + 两侧各 10.dp 阴影留白，与看得见的图形一致。 */
+    private fun capsuleLensWindowWidthPx(): Int =
+        dpToPx(CAPSULE_LENS_WINDOW_WIDTH_DP + CAPSULE_LENS_SHADOW_MARGIN_DP * 2)
+
+    /**
+     * 按当前展开态校准窗口宽度与横向居中位置。
+     *
+     * 窗口矩形的透明区域也算窗口，收起态必须是「微缩镜大小」才能把外面的点击让给下层应用；
+     * 展开态则要装裱宽度，让三个按钮落在画布宽度内。两种宽度都居中，
+     * 所以切换只改窗口尺寸，屏幕上的图形位置不变。
+     */
+    private fun applyCapsuleWindowBounds() {
+        val wm = windowManager ?: return
+        val capsule = capsuleView ?: return
+        val lp = capsuleParams ?: return
+        val width = capsuleStageWidthPx()
+        val x = ((screenWidthPx() - width) / 2).coerceAtLeast(0)
+        if (lp.width == width && lp.x == x) return
+        lp.width = width
+        lp.x = x
+        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_capsule_width_sync_failed") {
+                "Agent runtime capsule width sync failed: type=${throwable.safeLogType()}"
+            }
+        }
+    }
 
     private fun statusBarHeightPx(): Int {
         val metrics = (overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
@@ -1389,22 +1606,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun setCapsuleInputMode(focusable: Boolean) {
         capsuleSupplementFocusable.value = focusable
-        updateCapsuleWindowBounds()
-        val wm = windowManager ?: return
-        val capsule = capsuleView ?: return
-        val lp = capsuleParams ?: return
-        val nextFlags = if (focusable) {
-            lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        } else {
-            lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        }
-        if (lp.flags == nextFlags) return
-        lp.flags = nextFlags
-        runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
-            AndroidAgentLogger.warnThrottled("runtime_capsule_focus_update_failed") {
-                "Agent runtime capsule focus update failed: type=${throwable.safeLogType()}"
-            }
-        }
+        applyCapsuleInteraction()
     }
 
     private fun resultCardWindowHeightPx(): Int =
@@ -1440,11 +1642,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
         capsuleView?.keepScreenOn = false
+        capsuleLensView?.keepScreenOn = false
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleLensView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView = null
+        capsuleLensView = null
         glowView = null
         capsuleParams = null
+        capsuleLensParams = null
         glowParams = null
     }
 
@@ -1464,15 +1670,19 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.removeCallbacks(restoreCapsule)
         capsuleYielded.value = false
         capsuleView?.keepScreenOn = false
+        capsuleLensView?.keepScreenOn = false
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        capsuleLensView?.let { view -> runCatching { windowManager?.removeView(view) } }
         glowView?.let { view -> runCatching { windowManager?.removeView(view) } }
         resultCardView = null
         capsuleView = null
+        capsuleLensView = null
         glowView = null
         resultCardParams = null
         capsuleParams = null
+        capsuleLensParams = null
         glowParams = null
         windowManager = null
     }
@@ -1511,15 +1721,48 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         private const val ACTION_KEEP_ALIVE = "io.github.mangi.eta.agent.runtime.KEEP_ALIVE"
         private const val HIDE_DELAY_MS = 2_500L
+        /** 边缘彩虹光在最后一次屏幕操作结束后继续停留的时长。 */
+        private const val GLOW_LINGER_MS = 10_000L
+
+        /**
+         * 执行通知的「暂停」入口：直接落到当前会话的 run controller 上。
+         *
+         * 返回 false 表示此刻没有正在跑的会话（runtime 服务不在、或任务已到终态），
+         * 调用方据此不把通知切成暂停态。
+         */
+        fun pauseFromNotification(runId: String? = null): Boolean {
+            val service = activeInstance ?: return false
+            // 通知卡片带着自己的 runId：并行任务时只暂停被点的那一个，不落到别的任务上。
+            val target = runId?.let { service.runs.get(it) } ?: service.displayedRun ?: return false
+            if (service.runs.get(target.runId)?.session?.isTerminal != false) return false
+            service.mainHandler.post { service.requestPause(target.runId) }
+            return true
+        }
+
+        /** 执行通知的「恢复」入口；只有确实处于暂停态才需要恢复。 */
+        fun resumeFromNotification(): Boolean {
+            val service = activeInstance ?: return false
+            if (service.state.value.phase != AgentOverlayPhase.PAUSED) return false
+            service.mainHandler.post { service.requestResume() }
+            return true
+        }
         private const val RESULT_REVIEW_DELAY_MS = 120_000L
         private const val RESULT_CARD_HEIGHT_RATIO = 0.5f
         private const val RESULT_OPEN_REQUEST_CODE = 1108
-        private const val CAPSULE_WINDOW_WIDTH_DP = 272
-        private const val CAPSULE_MICRO_WINDOW_WIDTH_DP = 290
+        /** 收起态胶囊只剩一枚微缩镜（26×38.dp），窗口按它收，透明区不再挡住顶部触摸。 */
+        private const val CAPSULE_WINDOW_WIDTH_DP = 34
+        private const val CAPSULE_MICRO_WINDOW_WIDTH_DP = 34
         private const val CAPSULE_STAGE_WINDOW_WIDTH_DP = 324
-        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
+        private const val CAPSULE_COLLAPSED_HEIGHT_DP = 52
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
-        private const val CAPSULE_STAGE_HEIGHT_DP = 524
+        private const val CAPSULE_STAGE_HEIGHT_DP = 420
+        /** 装裱视窗两侧的额外宽度：衬底 10.dp × 2 + 面板内边距 12.dp × 2。 */
+        private const val CAPSULE_STAGE_SIDE_EXTRA_DP = 44
+        /** 收起态微缩镜外框宽（26.dp）与两侧阴影留白：窗口只包住看得见的这一小块。 */
+        private const val CAPSULE_LENS_WINDOW_WIDTH_DP = 26
+        private const val CAPSULE_LENS_SHADOW_MARGIN_DP = 10
+        /** 拿不到虚拟屏比例时的兜底画布比例（9:19.5）。 */
+        private const val DEFAULT_CANVAS_ASPECT = 0.462f
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260
         /** 注入点击只是一个点，目标控件常贴着胶囊边缘，判定范围向外多留一点。 */
         private const val CAPSULE_CLEARANCE_SLOP_DP = 8

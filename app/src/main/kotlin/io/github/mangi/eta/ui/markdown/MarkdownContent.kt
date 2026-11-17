@@ -53,13 +53,17 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
@@ -80,6 +84,7 @@ import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlin.math.abs
 
 /**
  * 绘制一份已解析的 [MarkdownDocument]。
@@ -93,9 +98,39 @@ internal fun MarkdownContent(
     style: MarkdownStyle,
     modifier: Modifier = Modifier,
     reveal: SmoothTextRevealCoordinator? = null,
+    /** 首个文本块首行字顶的窗口坐标（px）：正文停靠要贴的是首行文字，不是条目顶边。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val scope = remember(style, reveal) { MarkdownRenderScope(style, reveal) }
-    MarkdownBlockColumn(blocks = document.blocks, scope = scope, compact = false, modifier = modifier)
+    MarkdownBlockColumn(
+        blocks = document.blocks,
+        scope = scope,
+        compact = false,
+        modifier = modifier,
+        onFirstLineTop = onFirstLineTop,
+    )
+}
+
+/**
+ * 只渲染一段块，供大文档做分页懒加载（例如整份 MEMORY.md）。
+ *
+ * 不给显现协调器：分页视图只用于已完成内容的静态阅读。
+ */
+@Composable
+internal fun MarkdownBlockPage(
+    blocks: List<MarkdownBlock>,
+    style: MarkdownStyle,
+    modifier: Modifier = Modifier,
+    previousBlock: MarkdownBlock? = null,
+) {
+    val scope = remember(style) { MarkdownRenderScope(style, null) }
+    MarkdownBlockColumn(
+        blocks = blocks,
+        scope = scope,
+        compact = false,
+        modifier = modifier,
+        leadingPrevious = previousBlock,
+    )
 }
 
 /**
@@ -169,46 +204,95 @@ private class MarkdownRenderScope(
 /** 嵌套列表的层级只影响 marker 字形，用 CompositionLocal 传递，块组件不必逐层转发。 */
 private val LocalListDepth = compositionLocalOf { 0 }
 
+/**
+ * 朗读进度高亮：把正在朗读的那一句涂上主题色背景。
+ *
+ * 一句理论上可能跨多块（排版把一句话拆进相邻块时），所以按块拆成多段 [Range]，
+ * 每个块只涂属于自己那一段，其余块读取到的仍是原文。
+ */
+@Immutable
+internal data class MarkdownSpeechHighlight(
+    val ranges: List<Range>,
+) {
+    @Immutable
+    data class Range(
+        val blockOffset: Int,
+        val start: Int,
+        val end: Int,
+    )
+
+    /** 这个块需要涂的部分；没有就是空。 */
+    fun rangesFor(blockOffset: Int): List<Range> = ranges.filter { it.blockOffset == blockOffset }
+}
+
+internal val LocalMarkdownSpeechHighlight = compositionLocalOf<MarkdownSpeechHighlight?> { null }
+
+/** 背景取主题高亮色，透明度压低到不遮住正文。 */
+private const val SPEECH_HIGHLIGHT_ALPHA = 0.4f
+
 @Composable
 private fun MarkdownBlockColumn(
     blocks: List<MarkdownBlock>,
     scope: MarkdownRenderScope,
     compact: Boolean,
     modifier: Modifier = Modifier,
+    /** 分页渲染时上一页的最后一个块：块间距按相邻块计算，跨页边界也要接上。 */
+    leadingPrevious: MarkdownBlock? = null,
+    /** 只挂给第一个文本块：它的首行决定正文停靠的落点。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     Column(modifier) {
         blocks.forEachIndexed { index, block ->
             key(block.offset) {
-                val previous = blocks.getOrNull(index - 1)
+                val previous = if (index == 0) leadingPrevious else blocks.getOrNull(index - 1)
                 val gap = if (compact) {
                     markdownCompactGap(previous, block, scope.style.tone)
                 } else {
                     markdownBlockGap(previous, block, scope.style.tone)
                 }
                 if (gap.value > 0f) Spacer(Modifier.height(with(density) { gap.toDp() }))
-                MarkdownBlockView(block, scope)
+                MarkdownBlockView(
+                    block = block,
+                    scope = scope,
+                    onFirstLineTop = onFirstLineTop.takeIf { index == 0 },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MarkdownBlockView(block: MarkdownBlock, scope: MarkdownRenderScope) {
+private fun MarkdownBlockView(
+    block: MarkdownBlock,
+    scope: MarkdownRenderScope,
+    onFirstLineTop: ((Float) -> Unit)? = null,
+) {
     when (block) {
-        is MarkdownParagraph -> MarkdownText(block, scope.style.body, scope)
+        is MarkdownParagraph -> MarkdownText(
+            block = block,
+            style = scope.style.body,
+            scope = scope,
+            onFirstLineTop = onFirstLineTop,
+        )
         is MarkdownHeading -> MarkdownText(
             block = block,
             style = scope.style.heading(block.level),
             scope = scope,
             modifier = Modifier.semantics { heading() },
+            onFirstLineTop = onFirstLineTop,
         )
         is MarkdownCode -> MarkdownCodeBlock(block, scope)
         is MarkdownQuote -> MarkdownQuoteBlock(block, scope)
         is MarkdownAlert -> MarkdownAlertBlock(block, scope)
         is MarkdownList -> MarkdownListBlock(block, scope)
         is MarkdownTable -> MarkdownTableBlock(block, scope)
-        is MarkdownTableCell -> MarkdownText(block, scope.style.table, scope)
+        is MarkdownTableCell -> MarkdownText(
+            block = block,
+            style = scope.style.table,
+            scope = scope,
+            onFirstLineTop = onFirstLineTop,
+        )
         is MarkdownRule -> Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -226,23 +310,96 @@ private fun MarkdownText(
     scope: MarkdownRenderScope,
     modifier: Modifier = Modifier,
     softWrap: Boolean = true,
+    /** 上报首行文字上沿的窗口坐标（px）：正文停靠要贴的是字形上沿，不是块顶边。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val reveal = scope.reveal
+    val text = markdownSpeechHighlighted(block.text, block.offset)
+    // 首行字顶 = 文本节点窗口 y + 首行字符框相对文本布局框的 top。
+    var textWindowTop by remember { mutableStateOf<Float?>(null) }
+    var firstLineLocalTop by remember { mutableStateOf<Float?>(null) }
+    val emitFirstLineTop: () -> Unit = {
+        val reporter = onFirstLineTop
+        val windowTop = textWindowTop
+        val localTop = firstLineLocalTop
+        if (reporter != null && windowTop != null && localTop != null) {
+            reporter(windowTop + localTop)
+        }
+    }
+    val probeModifier = if (onFirstLineTop != null) {
+        Modifier.onGloballyPositioned { coordinates ->
+            val y = coordinates.positionInWindow().y
+            val current = textWindowTop
+            // 死区取 1px：滚动和放置都是整像素的，0.5px 阈值会让同一次落位反复上报、
+            // 反复触发父级重组（停靠收口时表现为高频抽动）。
+            if (current == null || abs(current - y) > 1f) {
+                textWindowTop = y
+                emitFirstLineTop()
+            }
+        }
+    } else {
+        Modifier
+    }
+    val recordFirstLine: (TextLayoutResult) -> Unit = { layout ->
+        if (layout.lineCount > 0 && layout.layoutInput.text.isNotEmpty()) {
+            val top = layout.getBoundingBox(0).top
+            val current = firstLineLocalTop
+            if (current == null || abs(current - top) > 1f) {
+                firstLineLocalTop = top
+                emitFirstLineTop()
+            }
+        }
+    }
+    // 显现裁剪按字素边界逐帧变化，关闭像素对齐可避免裁剪边缘抖动。静态视图必须用同一
+    // 度量参数：逐字显现结束后切静态时若换回线性度量，整篇会重新折行——长正文会表现为
+    // 「往里缩一下」。两条分支共用一份 style，排版只在文本变化时重新计算。
+    val animatedStyle = remember(style) { style.copy(textMotion = TextMotion.Animated) }
     // 空单元格没有可显现的文字，也不占用显现协调器的 key。
     if (reveal == null || block.text.isEmpty()) {
-        Text(text = block.text, style = style, softWrap = softWrap, modifier = modifier)
+        Text(
+            text = text,
+            style = animatedStyle,
+            softWrap = softWrap,
+            modifier = modifier.then(probeModifier),
+            onTextLayout = recordFirstLine,
+        )
         return
     }
     val revealState = rememberSmoothTextRevealState(block.revealKey, reveal)
-    // 显现裁剪按字素边界逐帧变化，关闭像素对齐可避免裁剪边缘抖动。
-    val animatedStyle = remember(style) { style.copy(textMotion = TextMotion.Animated) }
     Text(
-        text = block.text,
+        text = text,
         style = animatedStyle,
         softWrap = softWrap,
-        modifier = modifier.smoothTextReveal(revealState),
-        onTextLayout = { layout -> revealState.onTextLayout(block.text.text, layout) },
+        modifier = modifier.then(probeModifier).smoothTextReveal(revealState),
+        onTextLayout = { layout ->
+            revealState.onTextLayout(block.text.text, layout)
+            recordFirstLine(layout)
+        },
     )
+}
+
+/**
+ * 正在朗读的那一句涂上主题高亮色背景。
+ *
+ * 只对命中的块加一层 background span，其余块原样返回，不参与重组。
+ */
+@Composable
+private fun markdownSpeechHighlighted(text: AnnotatedString, blockOffset: Int): AnnotatedString {
+    val highlight = LocalMarkdownSpeechHighlight.current ?: return text
+    val ranges = highlight.rangesFor(blockOffset)
+    if (ranges.isEmpty()) return text
+    val background = MiuixTheme.colorScheme.primary.copy(alpha = SPEECH_HIGHLIGHT_ALPHA)
+    return remember(text, ranges, background) {
+        AnnotatedString.Builder(text)
+            .apply {
+                for (range in ranges) {
+                    val start = range.start.coerceIn(0, text.length)
+                    val end = range.end.coerceIn(start, text.length)
+                    if (end > start) addStyle(SpanStyle(background = background), start, end)
+                }
+            }
+            .toAnnotatedString()
+    }
 }
 
 // ── 代码块 ──────────────────────────────────────────────────────────────

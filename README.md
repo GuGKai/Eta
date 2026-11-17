@@ -24,6 +24,8 @@ Eta 独立实现了 Agent Runtime 与 Agent Loop，统一编排模型调用、�
 
 [下载 APK](https://github.com/Mangi-11/Eta/releases) · [快速开始](#快速开始) · [为什么做 Eta](#为什么做-eta)
 
+**2026-10-09 更新**：新增 batch 顺序执行，改善虚拟屏横屏适配、无响应恢复与 10 帧按需预览。[更新内容与验证记录](docs/UPDATE_2026-10-09.md)。
+
 ## 界面预览
 
 | GUI Agent | 小布助手 BYOK |
@@ -60,6 +62,8 @@ Eta 独立实现了 Agent Runtime 与 Agent Loop，统一编排模型调用、�
 - **长期记忆**：使用本机 `MEMORY.md` 保存跨对话背景，核心内容按预算加入上下文，其余按需读取；支持编辑、清空和关闭。
 - **Subagent**：支持在独立子上下文中派发并并发运行多个 Subagent（内置 `explore`、`coder`、`plan`，支持在对话中按需拉起任意临时专职 Subagent 或保存 `agents/<name>.md` 复用模板），可单独配置轻量/高速模型（Secondary Model）并在聊天时间线中点击实时检视内部步骤。
 - **Skills**：按需加载任务方法、参考资料与脚本资源，支持公开 GitHub 仓库安装和本地 ZIP 导入；安装不会执行脚本或开启额外权限。
+- **自动任务**：AI 辅助创建一次性、间隔、每日与事件规则，支持本地匹配、冷却、次数限制、运行记录及取消。Android 后台调度可能延迟，见 [定时与事件任务](docs/AUTOMATION.md)。
+- **Root 虚拟屏（实验性）**：启用后 AI UI 工具自动路由到独立 display，可从通知打开带触控和操作指示的查看页。可另开启回退申请，只有点击通知允许后，本次任务才能改用主屏。需要 Android 14+、Root 和用户开关；熄屏执行另需许可，兼容与验证范围见 [虚拟屏](docs/VIRTUAL_SCREEN.md)。
 - **MCP**：通过 Streamable HTTP 连接远程工具，支持 Bearer Token；工具逐项启用，与本机工具共同参与任务。
 
 ### Agent Runtime
@@ -96,7 +100,11 @@ Eta 本体可以读取项目、修改代码、运行命令并验证结果。如�
 
 提供商列表还可从 [models.dev](https://models.dev/) 社区目录挑选兼容的对话服务和模型；联网时更新目录，离线时使用本地缓存或随应用打包的快照。导入后的提供商默认停用，需核对服务地址、填写该服务的 API Key 并启用；Eta 读取目录时不发送已保存的 API Key。
 
-Provider 层支持 OpenAI-compatible Chat Completions、Responses API、Anthropic Messages 和 Gemini 原生 Interactions API，包括 SSE、Tool Calling、图片输入与推理内容。你可以自定义服务地址、请求头和请求体，拉取或手动添加模型（拉取后从尚未添加的模型中勾选需要的加入），调整上下文长度与思考档位。具体能力取决于模型与接口，部分 Responses 提供商还可开启服务端网页搜索。
+Provider 层支持 OpenAI-compatible Chat Completions、Responses API 和 Anthropic Messages，包括 SSE、Tool Calling、图片输入与推理内容。你可以自定义服务地址、请求头和请求体，拉取或手动添加模型（拉取后从尚未添加的模型中勾选需要的加入），调整上下文长度与思考档位。具体能力取决于模型与接口，部分 Responses 提供商还可开启服务端网页搜索。
+
+聊天顶部菜单栏右侧用胶囊显示最近测得的上下文 token 数、模型窗口占比和最近一次成功模型请求的平均输出速度。速度采用服务商输出 token 数除以该次请求耗时，包含首字等待，排除工具执行与之前失败的重试；工具调用和上下文摘要请求也会更新统计，切换会话或重启后保留。服务商未返回对应数据时显示空缺，不按文字长度估算。
+
+首页侧栏顶部显示 Root、无障碍等当前可用模式徽标，点击进入对应设置，右上角创建会话；自动任务、角色与权限直接显示，工具能力、模型和技能收在可展开的「更多选项」中。历史会话按日期分组，底部固定搜索框与设置按钮，功能图标统一使用 Miuix。工具能力页采用自适应列数的瀑布网格，随屏幕宽度和字体大小调整布局；自动任务页展示全部已实现触发器及其当前权限状态。
 
 在设置中的模型提供商填写模型的上下文窗口大小（tokens）后才会启用自动压缩，从远端拉取时接口标注了窗口的模型会自动填好；未填写时照常对话，可手动压缩。“设置 → 上下文与扩展 → 自动压缩上下文”默认开启，修改从下一次运行生效，关闭后仍可手动压缩。自动压缩按服务商实际返回的输入用量与该窗口判断，不自动补窗或估算请求 token 数；服务商未返回输入用量时，可手动压缩。
 
@@ -192,6 +200,8 @@ Eta 先从现有 Android 上的模型、上下文与工具做起。真正落地�
 - [设备支持与权限边界](docs/ROOTLESS_SUPPORT.md)：普通设备、Root、文件工作区与后台运行。
 - [技术实现](docs/TECHNICAL.md)：设备工具、数据检索、浏览器、终端与系统集成。
 - [Agent Runtime](docs/AGENT_RUNTIME.md)：Agent Loop、Provider、steering、transcript 与结果恢复。
+- [定时与事件任务](docs/AUTOMATION.md)：模型工具、触发器、规则和调度限制。
+- [Root 虚拟屏](docs/VIRTUAL_SCREEN.md)：实验虚拟屏与通知授权流程。
 - [HyperOS 系统入口](docs/HYPEROS_SYSTEM_ENTRY.md)：电源键、一圈即搜的适配条件与验证边界。
 - [终端原生组件](docs/TERMINAL_NATIVE.md)：PTY、PRoot 及随包源码的构建方式。
 
@@ -217,6 +227,7 @@ AI 时代下，处理外部 PR 变得比以往更加困难：大量由 AI 生成
 ## 参考与致谢
 
 - [Pi Coding Agent](https://github.com/earendil-works/pi)：Eta Agent Runtime 的核心参考，包括 Agent Loop、Tool Calling、steering 与 transcript 状态管理。
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent)：后台经验复盘、技能管理与任务调度的设计参考。
 - [OmniBot](https://github.com/omnimind-ai/OmniBot)：Android AI Agent 方向的参考项目。
 - [libxposed API](https://github.com/libxposed/api)：现代 Xposed API。
 - [COUI-Kit](https://github.com/itoseo/COUI-Kit) 与 [Miuix](https://github.com/compose-miuix-ui/miuix)：UI 组件库。

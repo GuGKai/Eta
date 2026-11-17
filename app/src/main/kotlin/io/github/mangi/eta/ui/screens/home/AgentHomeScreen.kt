@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.ui.components.AgentChatBody
 import io.github.mangi.eta.ui.components.AgentConversationLoadState
+import io.github.mangi.eta.ui.components.LocalChatInputBalanceCapsule
 import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.LocalAgentBrowserSession
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
@@ -34,9 +35,14 @@ internal fun AgentHomeScreen(
     isLoadingConversation: Boolean = false,
     conversationLoadFailed: Boolean = false,
     historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
+    /** 顶栏高度：消息列表用它做顶部内容内边距，让正文能滑到顶栏毛玻璃下方。 */
+    topInset: Dp = 0.dp,
     isDrawerOpen: Boolean = false,
     isBranching: Boolean = false,
-    topInset: Dp = 0.dp,
+    focusInputRequest: Int = 0,
+    onFocusInputHandled: () -> Unit = {},
+    /** 输入栏正中的余额胶囊，由外壳注入；组件本身不感知余额状态。 */
+    balanceCapsule: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // key 内保持完整分支，避免提前返回遗留无法转换为 DEX 的编译器标记。
@@ -55,6 +61,7 @@ internal fun AgentHomeScreen(
             CompositionLocalProvider(
                 LocalRoleplayChat provides state.roleplayChatUi(),
                 LocalAgentBrowserSession provides browser,
+                LocalChatInputBalanceCapsule provides balanceCapsule,
             ) {
                 AgentChatBody(
                     messages = state.messages,
@@ -75,9 +82,9 @@ internal fun AgentHomeScreen(
                     onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
                     onCompactContext = { onAction(AgentHomeAction.CompactContext) },
                     canCompactContext = state.canCompactContext,
-                    onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
                     onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },
                     onInterruptAndSubmit = { text -> onAction(AgentHomeAction.InterruptAndSubmitMessage(text)) },
+                    onSteerSubmit = { text -> onAction(AgentHomeAction.SteerMessage(text)) },
                     onSteerQueuedMessage = { id -> onAction(AgentHomeAction.SteerQueuedMessage(id)) },
                     onRecallQueuedMessage = { id, draft -> onAction(AgentHomeAction.RecallQueuedMessage(id, draft)) },
                     onRemoveQueuedMessage = { id -> onAction(AgentHomeAction.RemoveQueuedMessage(id)) },
@@ -107,9 +114,11 @@ internal fun AgentHomeScreen(
                     onLoadEarlierMessages = { onAction(AgentHomeAction.LoadEarlierMessages) },
                     onHistoryViewportChanged = { onAction(AgentHomeAction.HistoryViewportChanged(it)) },
                     isDrawerOpen = isDrawerOpen,
+                    focusInputRequest = focusInputRequest,
+                    onFocusInputHandled = onFocusInputHandled,
                     modifier = modifier,
                 )
             }
         }
-    }
+        }
 }

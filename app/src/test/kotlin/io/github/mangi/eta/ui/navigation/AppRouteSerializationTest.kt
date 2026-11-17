@@ -30,6 +30,7 @@ class AppRouteSerializationTest {
             AppRoute.ConversationTitleSettings,
             AppRoute.AssistantOverlaySettings,
             AppRoute.Characters,
+            AppRoute.DefaultAssistantPrompt,
             AppRoute.CharacterDetail("character"),
             AppRoute.CharacterEditor(),
             AppRoute.CharacterEditor("character"),
@@ -57,7 +58,6 @@ class AppRouteSerializationTest {
             AppRoute.ModelProviderDetail("provider"),
             AppRoute.ModelProviderNew(NewProviderType.OpenAiCompatible),
             AppRoute.ModelProviderNew(NewProviderType.Anthropic),
-            AppRoute.ModelProviderNew(NewProviderType.Gemini),
         )
         val json = Json { ignoreUnknownKeys = true }
 

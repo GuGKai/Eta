@@ -29,18 +29,29 @@ require(buildMetadata == null || buildMetadata.matches(Regex("[0-9A-Za-z.-]+")))
 }
 val buildMetadataSuffix = buildMetadata?.let { "+$it" }.orEmpty()
 
+// 传入 -Peta.appIdSuffix=solo 时产出与主包完全独立的共存包：包名、数据、权限、Provider 全部分开。
+val etaAppIdSuffix = providers.gradleProperty("eta.appIdSuffix").orNull?.trim().orEmpty()
+require(etaAppIdSuffix.isEmpty() || etaAppIdSuffix.matches(Regex("[a-z0-9]+"))) {
+    "eta.appIdSuffix 只能包含小写字母和数字"
+}
+val etaIsSolo = etaAppIdSuffix.isNotEmpty()
+val etaApplicationId =
+    "io.github.mangi.eta" + if (etaIsSolo) ".$etaAppIdSuffix" else ""
+
 android {
     namespace = "io.github.mangi.eta"
     compileSdk = 37
     ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
-        applicationId = "io.github.mangi.eta"
+        applicationId = etaApplicationId
+        manifestPlaceholders["etaAppId"] = etaApplicationId
+        manifestPlaceholders["etaAppLabel"] = if (etaIsSolo) "Eta Solo" else "@string/app_name"
         minSdk = 33
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026111302
-        versionName = "3.4.4"
+        versionCode = 2026111709
+        versionName = "3.5.0"
 
         ndk {
             // 同时过滤本地与依赖 AAR 的原生库，确保 APK 仅包含 ARM64。
@@ -102,8 +113,12 @@ android {
             keepDebugSymbols += setOf("**/libproot_exec.so", "**/libproot_loader.so", "**/libeta_pty.so")
         }
         resources {
-            // 合并 Xposed 模块声明，避免 release 裁剪后模块入口失效
-            merges += "META-INF/xposed/*"
+            // 合并 Xposed 模块声明，避免 release 裁剪后模块入口失效；独立共存包不注册模块，防止 LSPosed 出现两个 Eta 模块。
+            if (etaIsSolo) {
+                excludes += "META-INF/xposed/*"
+            } else {
+                merges += "META-INF/xposed/*"
+            }
             // 仅排除会引发打包冲突的签名/版本元数据，避免误伤 Compose 资源
             excludes += "META-INF/*.kotlin_module"
             excludes += "META-INF/INDEX.LIST"
@@ -142,7 +157,9 @@ androidComponents {
     onVariants { variant ->
         // 文件名只取 versionName：构建类型标记与 CI 构建元数据都由 versionNameSuffix 带出
         variant.outputs.forEach { output ->
-            output.outputFileName.set(output.versionName.map { "Eta-v$it.apk" })
+            output.outputFileName.set(
+                output.versionName.map { "Eta-v$it" + (if (etaIsSolo) "-solo" else "") + ".apk" }
+            )
         }
     }
 }

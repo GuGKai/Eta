@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.tool
 
 import android.content.Context
 import android.graphics.Rect
+import io.github.mangi.eta.agent.automation.AgentTaskTools
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -33,6 +34,7 @@ import io.github.mangi.eta.agent.runtime.GuiControlCoordinator
 import io.github.mangi.eta.agent.virtualdisplay.CanvasRoutingPolicy
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
+import io.github.mangi.eta.agent.skill.SkillAuthoringService
 import io.github.mangi.eta.agent.skill.SkillIndexService
 import io.github.mangi.eta.agent.skill.SkillInstallErrorCode
 import io.github.mangi.eta.agent.skill.SkillInstallResult
@@ -116,6 +118,7 @@ internal class AgentLocalTools(
     private val lsposedAvailable: () -> Boolean = { EtaApp.serviceInstance != null },
     private val guiControl: GuiControlCoordinator.RunControl? = null,
     browserSession: AgentBrowserSession? = null,
+    private val skillAuthoringService: SkillAuthoringService? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -219,6 +222,9 @@ internal class AgentLocalTools(
                     ))
                 }
             }
+            if (toolCall.name in AgentTaskTools.names) {
+                if (!memoryWritable) return@runCatching textResult(errorResult("TASKS_READ_ONLY", "角色会话不能管理自动任务"))
+            }
             val preparation = if (AgentToolRequirements.hasForegroundIntentFallback(toolCall.name)) {
                 ToolExecutionDecision.Allow
             } else {
@@ -237,6 +243,7 @@ internal class AgentLocalTools(
                 }
             }
             when (toolCall.name) {
+                in AgentTaskTools.names -> AgentModelClient.ToolResult(AgentTaskTools(context).execute(toolCall.name, args), sensitive = true)
                 "get_current_context" -> textResult(DeviceContextTool.current(context))
                 "search_apps" -> textResult(searchApps(args))
                 "launch_app" -> {
@@ -299,6 +306,7 @@ internal class AgentLocalTools(
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
                 "skills_list" -> textResult(skillsList(args))
+                "skills_manage" -> textResult(skillsManage(args))
                 "skills_read" -> textResult(skillsRead(args))
                 "skills_read_resource" -> textResult(skillsReadResource(args))
                 "skills_list_curated" -> textResult(skillsListCurated())
@@ -440,6 +448,7 @@ internal class AgentLocalTools(
                 .put("revision", result.snapshot.revision)
                 .put("bytes", result.snapshot.byteSize)
                 .put("line_count", result.snapshot.lineCount)
+                .also { io.github.mangi.eta.agent.automation.AgentTaskScheduler.publish(context, "memory_updated", result.snapshot.revision) }
                 .toString()
             is AgentMemoryWriteResult.Conflict -> JSONObject()
                 .put("ok", false)
@@ -485,6 +494,9 @@ internal class AgentLocalTools(
         val id = activeDisplayId
         if (!CanvasRoutingPolicy.isVirtualDisplay(id)) return Display.DEFAULT_DISPLAY
         val vd = VirtualDisplayController.snapshots.value
+        // 全屏破壁期间任务在物理主屏：Agent 的观测与手势必须落在主屏；
+        // 这里不重置 activeDisplayId，任务搬回虚拟屏后自动恢复。
+        if (vd.externalizedToMain) return Display.DEFAULT_DISPLAY
         return if (vd.active && vd.displayId == id) {
             id
         } else {
@@ -896,7 +908,8 @@ internal class AgentLocalTools(
         ) ?: return errorResult("INVALID_ARGUMENT", "display 仅支持 auto、virtual 或 main")
 
         val app = if (packageName != null) {
-            findAppByPackage(packageName) ?: AppInfo(packageName = packageName, appName = appName ?: packageName)
+            // An exact package does not require enumerating all installed apps.
+            AppInfo(packageName = packageName, appName = appName ?: packageName)
         } else {
             if (appName == null) {
                 return errorResult("INVALID_ARGUMENT", "package_name 和 app_name 至少提供一个")
@@ -1135,9 +1148,6 @@ internal class AgentLocalTools(
             .toString()
     }
 
-    private fun findAppByPackage(packageName: String): AppInfo? =
-        installedLauncherApps().firstOrNull { it.packageName == packageName }
-
     private fun findAppsByName(query: String, includeSystem: Boolean): List<AppInfo> {
         val normalizedQuery = query.normalized()
         return installedLauncherApps()
@@ -1252,6 +1262,16 @@ internal class AgentLocalTools(
 
     // ==================== Skills tools ====================
 
+    private fun skillsManage(args: JSONObject): String {
+        if (!memoryWritable) return errorResult("SKILL_READ_ONLY", "角色会话不能改写公共技能")
+        if (skillTreeMutationUncertain.get()) return nextTurnRequired("Skill 树")
+        val service = skillAuthoringService ?: return errorResult("SKILLS_UNAVAILABLE", "技能编写服务未初始化")
+        val result = service.manage(args) { closed.get() }
+        if (result.optBoolean("ok")) mutatedSkillIds += SkillParser.normalizeSkillLookup(result.getString("skillId"))
+        if (result.optBoolean("recoveryRequired")) skillTreeMutationUncertain.set(true)
+        return result.toString()
+    }
+
     private fun skillsList(args: JSONObject): String {
         if (skillTreeMutationUncertain.get()) return nextTurnRequired("Skill 树")
         val indexService = skillIndexService
@@ -1331,6 +1351,7 @@ internal class AgentLocalTools(
             .put("references", references)
             .put("frontmatter", frontmatter)
             .put("bodyMarkdown", body)
+            .put("revision", resolved.revision)
             .toString()
     }
 

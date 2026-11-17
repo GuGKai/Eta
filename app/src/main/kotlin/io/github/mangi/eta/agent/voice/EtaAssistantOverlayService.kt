@@ -46,6 +46,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import io.github.mangi.eta.AppForegroundState
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
@@ -132,6 +133,11 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
     private var runJob: Job? = null
     private var dismissalJob: Job? = null
     private var activeRunId: String? = null
+    /**
+     * 这轮 run 已经离开入口浮窗：用户关掉浮窗。
+     * 从此任务归 Runtime 所有，浮窗销毁、新入口出现都不能再取消它。
+     */
+    private var runOutlivesEntrySurface = false
     private var entryGeneration = 0L
     private var presentedEntryGeneration = -1L
     private var entryInputPending = false
@@ -188,7 +194,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         when (intent?.action) {
             AssistantSpeechForeground.ACTION_STOP -> { speechInput.cancel(); playback.stop() }
             ACTION_SHOW -> showEntry(intent.getStringExtra(EXTRA_SCREEN_CONTEXT_ID))
-            ACTION_HANDOFF_READY -> finishHandoff()
+            ACTION_HANDOFF_READY -> if (!finishHandoff()) stopSelf()
             else -> Unit
         }
         return START_NOT_STICKY
@@ -200,8 +206,11 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         entryGeneration++
         EtaAssistantScreenContexts.release(entryScreenContext?.id)
         entryScreenContext = null
-        cancelCurrentRun()
+        // 浮窗销毁（系统会话退出、低内存回收）不等于任务结束：这轮 run 归 Runtime 所有，
+        // 只有浮窗里的停止按钮或本体里的停止才真正终止它。
+        cancelCurrentRun(abortRun = false)
         removeWindow()
+        AppForegroundState.setAssistantOverlayVisible(false)
         scope.cancel()
         cancellationExecutor.shutdown()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -220,7 +229,26 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         }
         dismissalJob?.cancel()
         dismissalJob = null
+        if (activeRunId != null && runOutlivesEntrySurface) {
+            // 上一轮还在后台跑：把窗口接回来继续看（停止按钮仍然可用），不取消也不清空这轮内容。
+            runOutlivesEntrySurface = false
+            hiddenForForegroundOperation = false
+            handoffInProgress = false
+            handoffExitRequested = false
+            if (entryScreenContext?.id != screenContextId) {
+                EtaAssistantScreenContexts.release(entryScreenContext?.id)
+                entryScreenContext = EtaAssistantScreenContexts.find(screenContextId)
+            }
+            removeWindow()
+            val generation = ++entryGeneration
+            presentedEntryGeneration = generation
+            showWindow()
+            if (windowView == null) stopSelf()
+            return
+        }
         cancelCurrentRun()
+        // 旧的后台任务归 Runtime 所有，新入口不再继承它的归属标记。
+        runOutlivesEntrySurface = false
         if (entryScreenContext?.id != screenContextId) {
             EtaAssistantScreenContexts.release(entryScreenContext?.id)
             entryScreenContext = EtaAssistantScreenContexts.find(screenContextId)
@@ -366,7 +394,6 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                                 speechState = EtaSpeechState()
                             }
                         },
-                        onSuggestionClick = ::submitPrompt,
                         onSubmit = ::submitInput,
                         onStop = ::stopCurrentRun,
                         onClose = ::dismissAndStop,
@@ -411,6 +438,8 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         windowManager = wm
         windowView = view
         windowParams = params
+        // 浮窗挂上即视作"用户看得见 Eta"：语音唤醒的回答就展示在这里，不必再弹完成通知。
+        AppForegroundState.setAssistantOverlayVisible(true)
         registerSystemBackCallback(view)
         view.requestFocus()
     }
@@ -501,7 +530,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                     runId = runId,
                     prompt = normalized,
                     assistantScreenContext = screen.text,
-                    config = config.copy(supportsSearchSuggestions = true),
+                    config = config,
                     images = runImages,
                     history = conversationHistory,
                     handoff = AgentRuntimeWire.EntryHandoff(
@@ -535,16 +564,19 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                         messages = finishRunMessages(runId, result),
                     )
                 }
-                if (!hiddenForForegroundOperation && windowView?.isShown == true && result.ok &&
+                // 窗口已经不在（GUI 操作隐藏，或用户关掉浮窗）时，
+                // 这轮结束后统一收尾；结果本身由 Runtime 归档并通知。
+                val entrySurfaceGone = hiddenForForegroundOperation || runOutlivesEntrySurface
+                if (!entrySurfaceGone && windowView?.isShown == true && result.ok &&
                     getSystemService(PowerManager::class.java).isInteractive &&
                     speechConfig?.autoSpeak == true && speechConfig.tts != TtsProvider.NONE) {
                     val messageId = uiState.messages.filterIsInstance<AgentMessageUi>().lastOrNull()?.id ?: runId
                     playback.speak(messageId, result.content, settings = speechConfig)
                 }
-                if (!hiddenForForegroundOperation) {
+                if (!entrySurfaceGone) {
                     updateSoftInput(visible = false)
                 }
-                hiddenForForegroundOperation
+                entrySurfaceGone
             }
             runtimeClient.ackResult(runId)
             if (shouldStopAfterResult) {
@@ -665,14 +697,16 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         }
     }
 
-    private fun cancelCurrentRun() {
+    private fun cancelCurrentRun(abortRun: Boolean = true) {
         playback.stop()
         speechInput.cancel()
         speechState = EtaSpeechState()
         val runId = activeRunId ?: return
         flushPendingDelta(runId)
         activeRunId = null
-        requestRuntimeCancellation(runId)
+        // 任务已经离开入口浮窗（关窗后后台续跑）时只收回浮窗这一侧，
+        // 不能把 Runtime 里还在执行的 run 一起取消。
+        if (abortRun && !runOutlivesEntrySurface) requestRuntimeCancellation(runId)
         runJob?.cancel()
         runJob = null
     }
@@ -708,6 +742,8 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         speechInput.cancel()
         speechState = EtaSpeechState()
         unregisterSystemBackCallback()
+        // 窗口正在退场：从此回答问题不再"看得见"，完成通知要恢复提醒。
+        AppForegroundState.setAssistantOverlayVisible(false)
         detachingWindowView?.let { detachingView ->
             onComplete?.let(windowDetachCallbacks::add)
             if (!detachingView.isAttachedToWindow) {
@@ -774,6 +810,20 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
 
     private fun dismissAndStop() {
         if (dismissalJob?.isActive == true) return
+        if (activeRunId != null) {
+            // 退出浮窗不再终止任务：窗口照常淡出，run 交给 Runtime 在后台跑完，
+            // 结果仍会归档，并以「回复完成」通知提醒；服务等这轮结束再自行停止。
+            runOutlivesEntrySurface = true
+            handoffExitRequested = true
+            entryGeneration++
+            EtaAssistantScreenContexts.release(entryScreenContext?.id)
+            entryScreenContext = null
+            dismissalJob = scope.launch(Dispatchers.Main.immediate) {
+                delay(HANDOFF_EXIT_DURATION_MS)
+                removeWindow()
+            }
+            return
+        }
         entryGeneration++
         EtaAssistantScreenContexts.release(entryScreenContext?.id)
         entryScreenContext = null
@@ -842,9 +892,10 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
         }
     }
 
-    private fun finishHandoff() {
-        if (!handoffInProgress) return
-        if (handoffExitRequested) return
+    /** 返回是否确实处于接管流程；否则调用方（例如通知深链拉起的新服务实例）应当自行收尾。 */
+    private fun finishHandoff(): Boolean {
+        if (!handoffInProgress) return false
+        if (handoffExitRequested) return true
         AndroidAgentLogger.info("Eta assistant handoff chat ready")
         handoffExitRequested = true
         scope.launch(Dispatchers.Main.immediate) {
@@ -853,6 +904,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
             removeWindow()
             stopSelf()
         }
+        return true
     }
 
     internal companion object {

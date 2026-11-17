@@ -96,5 +96,6 @@ internal object SpeechVoicePresets {
         TtsProvider.MIMO -> mimo
         TtsProvider.DEEPSEEK -> deepseek
         TtsProvider.NONE -> emptyList()
+        TtsProvider.SYSTEM -> emptyList()
     }
 }

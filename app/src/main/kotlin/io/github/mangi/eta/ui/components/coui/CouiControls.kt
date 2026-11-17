@@ -7,9 +7,11 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -81,6 +84,7 @@ import com.itos.coui.dialog.InputDialog
 import com.itos.coui.effect.CouiContour
 import com.itos.coui.effect.CouiContourStyle
 import com.itos.coui.effect.CouiFloatingRenderer
+import androidx.compose.ui.platform.LocalDensity
 import com.itos.coui.effect.LocalCouiContourGlowEnabled
 import com.itos.coui.effect.SpotlightPreset
 import com.itos.coui.effect.couiButtonFeedback
@@ -101,6 +105,159 @@ import com.itos.coui.text.rememberCouiTextStyle
 import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.app.LocalBlurEnabled
+
+/**
+ * COUI 圆形图标按钮：单图标的圆钮（发送、回到底部这类）。
+ *
+ * 目前固定走 CouiFlatCircleIconButton 的扁平填充 + CouiContour 边缘光。
+ * 曾试过 couiFloatingSurface + ContentLayer 录制前景的悬浮材质版本，在 RenderThread
+ * 里引发 RenderNode 递归（prepareTreeImpl 栈溢出），滑动会话与输入框出现发送钮时必崩，
+ * 已整体移除，不要再原地加回来。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun CouiCircleIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    fillColor: Color,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+    buttonSize: Dp = 32.dp,
+    iconSize: Dp = 18.dp,
+    enabled: Boolean = true,
+    primaryLike: Boolean = true,
+    /** 轮廓光（边缘高光 + 内晕）的额外倍率，1f 为原厂强度。 */
+    contourScale: Float = 1f,
+    onLongClick: (() -> Unit)? = null,
+) {
+    CouiFlatCircleIconButton(
+        icon = icon,
+        contentDescription = contentDescription,
+        onClick = onClick,
+        fillColor = fillColor,
+        iconColor = iconColor,
+        modifier = modifier,
+        buttonSize = buttonSize,
+        iconSize = iconSize,
+        enabled = enabled,
+        primaryLike = primaryLike,
+        contourScale = contourScale,
+        onLongClick = onLongClick,
+    )
+}
+
+/**
+ * 扁平兜底圆钮：只做 COUI 的填充色与 CouiContour(Button) 边缘光，不采样背景。
+ * 填充必须由调用方传入不透明的 COUI 表面色，不要用半透明色，否则轮廓光晕会透出底色。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CouiFlatCircleIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    fillColor: Color,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+    buttonSize: Dp = 32.dp,
+    iconSize: Dp = 18.dp,
+    enabled: Boolean = true,
+    primaryLike: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
+    contourScale: Float = 1f,
+) {
+    val dark = CouiTheme.isDark
+    val source = remember { MutableInteractionSource() }
+    val motion = rememberCouiTouchMotion(enabled)
+    val press = rememberCouiPressMotion()
+    val (lightInput, drawLight) = rememberCouiSpotlight(
+        interactive = enabled,
+        dark = dark,
+        preset = if (primaryLike) SpotlightPreset.OpaqueMedium1 else SpotlightPreset.OpaqueMedium2,
+        cancelOnConsumedMove = true,
+    )
+    val glow = LocalCouiContourGlowEnabled.current
+    val contour = remember(glow) {
+        if (glow && Build.VERSION.SDK_INT >= 33) CouiContour(style = CouiContourStyle.Button) else null
+    }
+    val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
+
+    Box(
+        modifier = modifier
+            .size(buttonSize)
+            .graphicsLayer {
+                scaleX = motion.scaleX.value + press.scale.value - 1f
+                scaleY = motion.scaleY.value + press.scale.value - 1f
+                translationX = motion.translationX.value
+                translationY = motion.translationY.value
+            }
+            .couiTouchMotion(motion, enabled)
+            .couiPressMotion(press, enabled, cancelOnConsumedMove = true)
+            .then(lightInput)
+            .clip(CouiCapsuleShape)
+            .drawWithContent {
+                drawContent()
+                drawLight?.invoke(this)
+            }
+            .drawWithContent {
+                drawRect(fillColor)
+                if (Build.VERSION.SDK_INT >= 33 && contour != null) {
+                    // 主色圆钮（发送）的轮廓刻意比原厂更亮：原厂 0.25 / 0.3 在小尺寸圆钮上
+                    // 几乎与填充融在一起，远看就是一块纯色，按要求把边缘拉到肉眼可辨。
+                    val alpha = if (primaryLike) {
+                        if (dark) {
+                            if (enabled) 0.55f else 0.12f
+                        } else {
+                            0.62f
+                        }
+                    } else if (dark) {
+                        if (enabled) 0.1f else 0.03f
+                    } else {
+                        if (enabled) 0.8f else 0.24f
+                    }
+                    val inner = if (primaryLike) {
+                        if (enabled) 0.18f else if (dark) 0.06f else 0.04f
+                    } else if (dark) {
+                        0.01f
+                    } else {
+                        0.05f
+                    }
+                    paint.shader = contour.shader(
+                        size = size,
+                        density = density,
+                        radiusPx = size.minDimension / 2f,
+                        cornerWeight = 2f,
+                        surfaceColor = Color.Transparent,
+                        innerGlowAlpha = (inner * contourScale).coerceIn(0f, 1f),
+                        lineAlpha = (alpha * contourScale).coerceIn(0f, 1f),
+                        effectAlpha = 1f,
+                        lineWidthPx = (if (primaryLike) 3.6f else 3.2f) * density *
+                            contourScale.coerceAtLeast(0f),
+                    )
+                    drawIntoCanvas { it.nativeCanvas.drawRect(0f, 0f, size.width, size.height, paint) }
+                }
+                drawContent()
+            }
+            .couiButtonFeedback(dark, source, enabled)
+            .combinedClickable(
+                interactionSource = source,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        CouiIcon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(iconSize),
+            tint = iconColor,
+        )
+    }
+}
 
 enum class CouiButtonRole {
     Primary,
@@ -408,6 +565,7 @@ internal fun CouiSearchBarBox(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val searchState = rememberCouiSearchBarState(expanded)
+    var hadSearchFocus by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val backdrop = rememberCouiBackdrop()
     val dark = CouiTheme.isDark
@@ -424,6 +582,14 @@ internal fun CouiSearchBarBox(
                 .background(backgroundColor),
         )
         SearchBar(
+            // 输入框失去焦点就把取消按钮收起来；已输入的关键词保留，不当作取消。
+            modifier = Modifier.onFocusChanged { focusState ->
+                val focused = focusState.hasFocus
+                if (hadSearchFocus && !focused && expanded) {
+                    expanded = false
+                }
+                hadSearchFocus = focused
+            },
             state = searchState,
             query = query,
             onQueryChange = onQueryChange,
@@ -456,6 +622,7 @@ internal fun <T : Any> CouiChipTabs(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     backgroundColor: Color = CouiPageDefaults.themeColors().background,
+    leadingAction: (@Composable () -> Unit)? = null,
 ) {
     val dark = CouiTheme.isDark
     val colors = CouiPageDefaults.themeColors(dark)
@@ -489,6 +656,7 @@ internal fun <T : Any> CouiChipTabs(
                 backdrop = backdrop,
                 dark = dark,
                 enabled = enabled,
+                leadingAction = leadingAction,
                 renderers = renderers,
             )
         }
@@ -501,6 +669,7 @@ internal fun <T : Any> CouiChipTabs(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            leadingAction?.invoke()
             items.forEach { (key, label) ->
                 val selected = key == selectedKey
                 val source = remember { MutableInteractionSource() }

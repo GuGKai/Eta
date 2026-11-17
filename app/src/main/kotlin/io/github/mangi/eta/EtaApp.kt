@@ -18,6 +18,7 @@ import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.update.LaunchUpdateNotice
 import io.github.mangi.eta.ui.app.PredictiveBackController
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
@@ -50,6 +51,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         if (!AppProcessPolicy.shouldInitializeFullRuntime(Application.getProcessName(), packageName)) {
             return
         }
+        AppForegroundState.install(this)
+        LaunchUpdateNotice.install(this)
         TerminalRuntime.initialize(this)
         RootAccess.initialize(this)
         applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
@@ -61,6 +64,13 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         AgentMemoryRepository.init(this)
         ProviderRepository.init(this)
         McpServerRepository.init(this)
+        applicationScope.launch(Dispatchers.IO) {
+            runCatching {
+                io.github.mangi.eta.data.db.EtaDatabase.get(this@EtaApp).agentTaskDao().recoverInterrupted(System.currentTimeMillis())
+                io.github.mangi.eta.agent.automation.AgentTaskScheduler.enqueueDue(this@EtaApp)
+                io.github.mangi.eta.agent.automation.AgentTaskScheduler.refresh(this@EtaApp)
+            }.onFailure { AndroidAgentLogger.warn("Automation recovery unavailable") }
+        }
         XposedServiceHelper.registerListener(this)
         applicationScope.launch {
             try {

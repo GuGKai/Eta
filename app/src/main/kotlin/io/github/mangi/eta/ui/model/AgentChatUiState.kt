@@ -40,6 +40,8 @@ internal data class AgentChatUiState(
     val hasEarlierMessages: Boolean = false,
     val conversationCharacterName: String? = null,
     val conversationCharacterAvatarPath: String? = null,
+    /** 最近一次模型请求的用量与输出速度，用于顶栏胶囊。 */
+    val lastModelUsage: TokenUsageUi? = null,
 ) {
     val canCompactContext: Boolean get() = !isStreaming && messageEdit == null && history.any {
         !it.contextSummary && (it.role == "assistant" || it.role == "tool")
@@ -69,6 +71,10 @@ data class AgentMessageUi(
     val characterEditable: Boolean = false,
     val candidateCount: Int = 1,
     val selectedCandidate: Int = 0,
+    /** 本轮消耗金额（首尾余额差）；老消息为 null，底部操作栏不显示这一项。 */
+    val roundCost: Double? = null,
+    /** 本轮用时（用户发出消息 → 整轮结束）；老消息为 null，底部操作栏不显示这一项。 */
+    val roundDurationMs: Long? = null,
     /** 仅当前内存会话展示，不进入消息存储、归档与导出。 */
     val searchSuggestionsHtml: List<String> = emptyList(),
 ) : AgentChatMessageUi
@@ -100,9 +106,12 @@ data class SystemNoticeMessageUi(
     val usage: TokenUsageUi? = null,
     val archiveId: String = "",
     val tokensBefore: Int? = null,
+    /** 这一轮从用户发出消息到中止（停止/失败）的用时；显示在停止位置。 */
+    val roundDurationMs: Long? = null,
 ) : AgentChatMessageUi
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class TokenUsageUi(
     val contextTokens: Int? = null,
     val inputTokens: Int? = null,
@@ -111,6 +120,7 @@ data class TokenUsageUi(
     val cachedTokens: Int? = null,
     val cacheWriteTokens: Int? = null,
     val requestKind: String? = null,
+    val requestDurationMs: Long? = null,
     val stepCount: Int? = null,
     val llmMs: Long? = null,
     val toolMs: Long? = null,
@@ -119,6 +129,12 @@ data class TokenUsageUi(
     val decodeMs: Long? = null,
     val decodeTokens: Int? = null,
 ) {
+    /** Request average includes time to the first token, but excludes tools and earlier retries. */
+    val averageTokensPerSecond: Double?
+        get() = outputTokens?.takeIf { it >= 0 }?.let { tokens ->
+            requestDurationMs?.takeIf { it > 0 }?.let { tokens * 1000.0 / it }
+        }
+
     val isEmpty: Boolean
         get() = contextTokens == null &&
             inputTokens == null &&

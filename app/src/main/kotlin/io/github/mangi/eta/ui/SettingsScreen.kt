@@ -78,6 +78,7 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
@@ -361,6 +362,15 @@ private fun SettingsPageContent(
             }
         }
     }
+    // 默认思考强度：不提供 OFF（由上面的「默认启用思考」开关统一关闭），
+    // 具体档位在会话创建时按模型支持的能力归一化。
+    val defaultEffortOptions = remember { ReasoningEffort.entries.filter { it != ReasoningEffort.OFF } }
+    val defaultEffortItems = remember(defaultEffortOptions) {
+        defaultEffortOptions.map { it.displayName }
+    }
+    var defaultReasoningEffort by remember(agentPrefs) {
+        mutableStateOf(Prefs.defaultReasoningEffort())
+    }
 
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
@@ -385,6 +395,41 @@ private fun SettingsPageContent(
                         key = Prefs.Keys.AGENT_THINKING_ENABLED,
                         icon = Icons.Rounded.Psychology,
                         iconTint = SettingsIconColors.Blue,
+                    )
+
+                    CouiIconDivider()
+                    CouiDropdownPreference(
+                        title = stringResource(R.string.settings_default_reasoning_effort),
+                        items = defaultEffortItems,
+                        selectedIndex = defaultEffortOptions
+                            .indexOf(defaultReasoningEffort)
+                            .coerceAtLeast(0),
+                        enabled = agentPrefs != null,
+                        icon = { CouiSettingsIcon(Icons.Rounded.Psychology, SettingsIconColors.Orange) },
+                        onSelectedIndexChange = { index ->
+                            val effort = defaultEffortOptions.getOrNull(index)
+                                ?: return@CouiDropdownPreference
+                            val targetPrefs = agentPrefs ?: return@CouiDropdownPreference
+                            if (putStringSync(
+                                    prefs = targetPrefs,
+                                    key = Prefs.Keys.AGENT_DEFAULT_REASONING_EFFORT,
+                                    value = effort.wireValue,
+                                )
+                            ) {
+                                defaultReasoningEffort = effort
+                                coroutineScope.launch {
+                                    RuntimeConfigRepository.syncToRemotePreferences(
+                                        EtaApp.serviceInstance,
+                                    )
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context.applicationContext,
+                                    context.getString(R.string.settings_write_failed),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
                     )
                 }
 
@@ -413,6 +458,12 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.Memory) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = stringResource(R.string.automation_title),
+                        icon = { CouiSettingsIcon(Icons.Rounded.FilterAlt, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.Tasks) },
                     )
                     CouiIconDivider()
                     CouiPreference(
@@ -1472,7 +1523,7 @@ private fun putBooleanSync(
     key: String,
     value: Boolean,
 ): Boolean =
-    runCatching { prefs.edit().putBoolean(key, value).commit() }.getOrDefault(false)
+    Prefs.putBooleanForUi(prefs, key, value)
 
 private fun putStringSync(
     prefs: SharedPreferences,

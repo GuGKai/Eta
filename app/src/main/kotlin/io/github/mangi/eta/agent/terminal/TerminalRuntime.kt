@@ -25,7 +25,12 @@ internal object TerminalRuntime {
         return backgroundJobs ?: BackgroundTerminalJobs(
             supervisor = DetachedTaskSupervisor(AndroidAgentLogger, DetachedTaskSupervisor.defaultRecordsFile(app)),
             logger = AndroidAgentLogger,
-            acquireLease = { onStop -> AgentExecutionService.acquire(app, "terminal-background-commands", onStop = onStop) },
+            acquireLease = { label, onStop ->
+                AgentExecutionService.acquire(app, "terminal-background-commands", label = label, onStop = onStop)
+            },
+            updateLeaseLabel = { label ->
+                AgentExecutionService.updateLeaseLabel("terminal-background-commands", label)
+            },
             releaseLease = { AgentExecutionService.release("terminal-background-commands") },
             onCompleted = { BackgroundCommandNotification.show(app, it) },
             completionNotificationsEnabled = { app.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() },

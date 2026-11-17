@@ -27,6 +27,7 @@ internal fun SpeechVoiceSection(store: SpeechSettingsStore) {
         TtsProvider.MINIMAX -> settings.minimaxTts.voice
         TtsProvider.MIMO -> settings.mimoTts.voice
         TtsProvider.DEEPSEEK -> settings.deepseekTts.voice
+        TtsProvider.SYSTEM -> settings.systemTtsVoice
     }
     val presets = SpeechVoicePresets.forProvider(settings.tts)
     val presetIndex = presets.indexOfFirst { it.id == voice }
@@ -42,13 +43,19 @@ internal fun SpeechVoiceSection(store: SpeechSettingsStore) {
                 TtsProvider.MINIMAX -> settings.copy(minimaxTts = settings.minimaxTts.copy(voice = it))
                 TtsProvider.MIMO -> settings.copy(mimoTts = settings.mimoTts.copy(voice = it))
                 TtsProvider.DEEPSEEK -> settings.copy(deepseekTts = settings.deepseekTts.copy(voice = it))
+                TtsProvider.SYSTEM -> settings.copy(systemTtsVoice = it)
             },
         )
     }
+    // 选中预设项就切过去；选中末尾的「自定义」则只打开输入框，不动已有音色。
     val onSelectIndex: (Int) -> Unit = { index ->
         val preset = presets.getOrNull(index)
-        editingCustom = preset == null
-        if (preset != null) change(preset.id) else if (!custom) change("")
+        if (preset == null) {
+            editingCustom = true
+        } else {
+            editingCustom = false
+            change(preset.id)
+        }
     }
     val customLabel = stringResource(
         if (settings.tts == TtsProvider.MIMO) R.string.speech_voice_manual else R.string.speech_voice_custom,
@@ -105,6 +112,8 @@ internal fun SpeechVoiceSection(store: SpeechSettingsStore) {
                     TtsProvider.MINIMAX -> R.string.speech_minimax_voice_note
                     TtsProvider.MIMO -> R.string.speech_mimo_voice_note
                     TtsProvider.DEEPSEEK -> R.string.speech_deepseek_voice_note
+                    // 系统语音的音色来自设备引擎，界面里另有选择器与说明。
+                    TtsProvider.SYSTEM -> R.string.speech_system_tts_note
                     TtsProvider.NONE -> error("No synthesis provider")
                 },
             ),

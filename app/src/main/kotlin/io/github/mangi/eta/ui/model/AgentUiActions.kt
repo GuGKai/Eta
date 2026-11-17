@@ -11,6 +11,7 @@ sealed interface AgentHomeAction {
     data class ModelSelected(val modelId: String) : AgentHomeAction
     data class SubmitMessage(val text: String) : AgentHomeAction
     data class InterruptAndSubmitMessage(val text: String) : AgentHomeAction
+    data class SteerMessage(val text: String) : AgentHomeAction
     data class SteerQueuedMessage(val id: String) : AgentHomeAction
     data class RecallQueuedMessage(val id: String, val currentDraftText: String) : AgentHomeAction
     data class RemoveQueuedMessage(val id: String) : AgentHomeAction
@@ -69,6 +70,8 @@ sealed interface AgentSystemEnhanceAction {
 sealed interface AgentMemoryAction {
     data object NavigateBack : AgentMemoryAction
     data class ToggleEnabled(val enabled: Boolean) : AgentMemoryAction
+    data class ToggleAutoMemory(val enabled: Boolean) : AgentMemoryAction
+    data class ToggleAutoSkills(val enabled: Boolean) : AgentMemoryAction
     data class DraftChanged(val content: String) : AgentMemoryAction
     data object Save : AgentMemoryAction
     data object Clear : AgentMemoryAction

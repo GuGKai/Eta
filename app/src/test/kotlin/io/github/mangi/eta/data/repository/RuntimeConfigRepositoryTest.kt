@@ -12,6 +12,7 @@ import io.github.mangi.eta.data.model.ProviderSourceTypes
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.provider.BuiltinProviders
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,7 +32,10 @@ class RuntimeConfigRepositoryTest {
             val restored = Json.decodeFromString<AgentModelClient.ModelConfig>(
                 RuntimeConfigRepository.runtimeConfigJson(config),
             )
-            assertEquals(prompt.orEmpty().trim(), restored.systemPrompt)
+            // 本 fork 在 Provider 未填提示词时注入 Eta 内置默认提示词，而不是留空。
+            val expected = prompt.orEmpty().trim().takeIf { it.isNotEmpty() }
+                ?: io.github.mangi.eta.data.provider.BuiltinProviders.DEFAULT_SYSTEM_PROMPT
+            assertEquals(expected, restored.systemPrompt)
         }
     }
 
@@ -67,6 +71,20 @@ class RuntimeConfigRepositoryTest {
         )
         assertEquals(ProviderAuthModes.API_KEY, restored.authMode)
         assertEquals("fixture-key", restored.apiKey)
+    }
+
+    @Test
+    fun editedDefaultAppliesToBuiltinAndEmptyPromptsButPreservesProviderOverride() {
+        val provider = OpenAiCompatibleProviderSetting(id = "p1", name = "Provider", baseUrl = "https://example.invalid")
+        val model = Model(id = "m1", modelId = "fixture", displayName = "Fixture")
+        for (prompt in listOf(null, " ", BuiltinProviders.DEFAULT_SYSTEM_PROMPT)) {
+            assertEquals("edited-default", RuntimeConfigRepository.buildRuntimeConfig(
+                provider.copy(systemPrompt = prompt), model, "  edited-default  ").systemPrompt)
+        }
+        assertEquals("provider-override", RuntimeConfigRepository.buildRuntimeConfig(
+            provider.copy(systemPrompt = "provider-override"), model, "edited-default").systemPrompt)
+        assertEquals(BuiltinProviders.DEFAULT_SYSTEM_PROMPT, RuntimeConfigRepository.buildRuntimeConfig(
+            provider, model, " ").systemPrompt)
     }
 
     @Test

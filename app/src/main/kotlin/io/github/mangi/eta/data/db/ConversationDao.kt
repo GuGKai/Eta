@@ -11,7 +11,7 @@ import androidx.room.Upsert
 @Dao
 internal interface ConversationDao : ChunkedTextDao {
     @Query(
-        "SELECT c.id, c.title, c.reasoning_effort, c.created_at, c.updated_at, c.model_id, c.is_pinned, " +
+        "SELECT c.id, c.title, c.reasoning_effort, c.created_at, c.updated_at, c.model_id, c.is_pinned, c.last_model_usage_json, " +
             "(c.roleplay_json != '') AS has_roleplay, " +
             "m.id AS message_id, m.type AS message_type, m.tool_name, " +
             "COALESCE((SELECT substr(content, 1, 256) FROM agent_text_chunks " +
@@ -31,7 +31,7 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, is_pinned " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, is_pinned, last_model_usage_json " +
             "FROM conversations WHERE id = :conversationId"
     )
     suspend fun conversationMetadataRow(conversationId: String): ConversationMetadata?
@@ -42,7 +42,7 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, is_pinned " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, is_pinned, last_model_usage_json " +
             "FROM conversations ORDER BY updated_at DESC"
     )
     suspend fun conversationMetadataRows(): List<ConversationMetadata>
@@ -52,7 +52,7 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query(
         "SELECT id, title, thinking_enabled, reasoning_effort, " +
-            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, is_pinned " +
+            "applied_runtime_run_ids_json, roleplay_json, revisions_json, created_at, updated_at, model_id, is_pinned, last_model_usage_json " +
             "FROM conversations ORDER BY updated_at DESC LIMIT :limit OFFSET :offset"
     )
     suspend fun conversationMetadataPage(limit: Int, offset: Int): List<ConversationMetadata>
@@ -205,6 +205,18 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Upsert
     suspend fun insertMessageRow(message: ConversationMessageEntity)
+
+    /**
+     * 只更新单条消息的「本轮消耗」。
+     *
+     * 记一笔金额不应该触发整个会话重写：超大会话（几百条消息）重写很慢，
+     * 进程被系统杀掉时会把这笔记录一起丢掉。
+     */
+    @Query("UPDATE conversation_messages SET round_cost = :cost WHERE conversation_id = :conversationId AND id = :messageId")
+    suspend fun updateMessageRoundCost(conversationId: String, messageId: String, cost: Double)
+
+    @Query("UPDATE conversation_messages SET round_duration_ms = :durationMs WHERE conversation_id = :conversationId AND id = :messageId")
+    suspend fun updateMessageRoundDuration(conversationId: String, messageId: String, durationMs: Long)
 
     @Transaction
     suspend fun insertMessages(messages: List<ConversationMessageEntity>) {

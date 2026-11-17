@@ -20,7 +20,7 @@ internal object AgentToolCatalog {
         localWebSearch: Boolean = true,
         disabledTools: Set<String> = emptySet(),
     ): JSONArray =
-        capabilities.project(JSONArray().also { tools ->
+        AgentBatchToolCatalog.project(capabilities.project(JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
             AgentGestureToolCatalog.appendTo(tools)
             AgentTextSystemToolCatalog.appendTo(tools)
@@ -38,8 +38,10 @@ internal object AgentToolCatalog {
                 tools,
                 githubDiscovery = skillGitHubDiscovery,
                 githubInstall = skillGitHubInstall,
+                authoring = memoryWritable,
             )
             if (memoryTools) AgentMemoryToolCatalog.appendTo(tools, writable = memoryWritable)
+            if (memoryWritable) AgentTaskToolCatalog.appendTo(tools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)
@@ -60,4 +62,5 @@ internal object AgentToolCatalog {
                 }
             }
         }
+        )
 }

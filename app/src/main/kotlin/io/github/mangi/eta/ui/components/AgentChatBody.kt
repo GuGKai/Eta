@@ -1,6 +1,9 @@
 package io.github.mangi.eta.ui.components
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -10,9 +13,11 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -24,6 +29,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,7 +45,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.RocketLaunch
@@ -61,24 +66,34 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
+import io.github.mangi.eta.ui.components.coui.CouiCircleIconButton
+import com.itos.coui.shape.CouiCapsuleShape
 import com.itos.coui.shape.CouiShape
 import com.itos.coui.text.CouiTextKind
 import com.itos.coui.text.Text as CouiText
@@ -90,6 +105,7 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.ConversationBranchBoundary
 import io.github.mangi.eta.ui.model.branchMessageOutline
 import io.github.mangi.eta.ui.app.AgentConversationRevisionReducer
+import io.github.mangi.eta.ui.app.LocalBlurEnabled
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownStateCache
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
@@ -108,11 +124,15 @@ import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.latestContextUsage
 import io.github.mangi.eta.ui.voice.SpeechAutoReadAloud
 import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.min
+import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -122,6 +142,13 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -154,9 +181,9 @@ internal fun AgentChatBody(
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
-    onModelSelected: (String) -> Unit,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit = onSubmit,
+    onSteerSubmit: (String) -> Unit = onSubmit,
     onSteerQueuedMessage: (String) -> Unit = {},
     onRecallQueuedMessage: (String, String) -> Unit = { _, _ -> },
     onRemoveQueuedMessage: (String) -> Unit = {},
@@ -182,6 +209,9 @@ internal fun AgentChatBody(
     onLoadEarlierMessages: () -> Unit = {},
     onHistoryViewportChanged: (Boolean) -> Unit = {},
     isDrawerOpen: Boolean = false,
+    focusInputRequest: Int = 0,
+    onFocusInputHandled: () -> Unit = {},
+    /** 顶栏高度：进入消息列表的顶部内容内边距，让正文能滑到顶栏毛玻璃下方。 */
     topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -246,7 +276,6 @@ internal fun AgentChatBody(
             hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
             scrollState = scrollState,
             input = input,
-            modelPickerState = modelPickerState,
             isCompacting = isCompacting,
             isBranching = isBranching,
             contextUsage = contextUsage,
@@ -259,7 +288,6 @@ internal fun AgentChatBody(
             inputSyncVersion = inputSyncVersion,
             focusInputOnSync = focusInputOnSync,
             messageEdit = messageEdit,
-            showEmptySuggestions = !isKeyboardVisible,
             keepBottomAnchored = keepBottomAnchored,
             onBottomAnchorChanged = { keepBottomAnchored = it },
             onSubmit = { text ->
@@ -274,6 +302,11 @@ internal fun AgentChatBody(
                 keepBottomAnchored = true
                 onInterruptAndSubmit(text)
             },
+            onSteerSubmit = { text ->
+                sentFromKeyboard = true
+                keepBottomAnchored = true
+                onSteerSubmit(text)
+            },
             onSteerQueuedMessage = { id ->
                 keepBottomAnchored = true
                 onSteerQueuedMessage(id)
@@ -283,7 +316,6 @@ internal fun AgentChatBody(
             onReasoningEffortChange = onReasoningEffortChange,
             onCompactContext = onCompactContext,
             canCompactContext = canCompactContext,
-            onModelSelected = onModelSelected,
             onStop = onStop,
             onAttachImage = onAttachImage,
             onRemoveImage = onRemoveImage,
@@ -306,6 +338,8 @@ internal fun AgentChatBody(
             historyLoadState = historyLoadState,
             onLoadEarlierMessages = onLoadEarlierMessages,
             onHistoryViewportChanged = onHistoryViewportChanged,
+            focusInputRequest = focusInputRequest,
+            onFocusInputHandled = onFocusInputHandled,
             topInset = topInset,
             modifier = modifier,
         )
@@ -319,7 +353,6 @@ private fun AgentChatScaffold(
     hasMessages: Boolean,
     scrollState: LazyListState,
     input: String,
-    modelPickerState: AgentModelPickerUiState,
     isCompacting: Boolean,
     isBranching: Boolean,
     contextUsage: AgentContextUsageUi,
@@ -332,18 +365,17 @@ private fun AgentChatScaffold(
     inputSyncVersion: Int,
     focusInputOnSync: Boolean,
     messageEdit: MessageEditUiState?,
-    showEmptySuggestions: Boolean,
     keepBottomAnchored: Boolean,
     onBottomAnchorChanged: (Boolean) -> Unit,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit,
+    onSteerSubmit: (String) -> Unit,
     onSteerQueuedMessage: (String) -> Unit,
     onRecallQueuedMessage: (String, String) -> Unit,
     onRemoveQueuedMessage: (String) -> Unit,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
-    onModelSelected: (String) -> Unit,
     onStop: () -> Unit,
     onAttachImage: (String) -> Unit,
     onRemoveImage: (String) -> Unit,
@@ -366,9 +398,19 @@ private fun AgentChatScaffold(
     historyLoadState: ConversationHistoryLoadState,
     onLoadEarlierMessages: () -> Unit,
     onHistoryViewportChanged: (Boolean) -> Unit,
-    topInset: Dp,
+    focusInputRequest: Int = 0,
+    onFocusInputHandled: () -> Unit = {},
+    topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
+    val surfaceColor = MiuixTheme.colorScheme.surface
+    val frostEnabled = hasMessages && LocalBlurEnabled.current && isRuntimeShaderSupported()
+    val messageBackdrop = rememberLayerBackdrop {
+        // Backdrop 必须包含不透明底色，否则文字边缘模糊到透明区域时会出现黑边。
+        drawRect(surfaceColor)
+        drawContent()
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = Color.Transparent,
@@ -380,6 +422,7 @@ private fun AgentChatScaffold(
         ),
         bottomBar = {
             AgentChatBottomBar(
+                messageBackdrop = messageBackdrop.takeIf { frostEnabled },
                 input = input,
                 isCompacting = isCompacting,
                 contextUsage = contextUsage,
@@ -395,6 +438,7 @@ private fun AgentChatScaffold(
                 messageEdit = messageEdit,
                 onSubmit = onSubmit,
                 onInterruptAndSubmit = onInterruptAndSubmit,
+                onSteerSubmit = onSteerSubmit,
                 onSteerQueuedMessage = onSteerQueuedMessage,
                 onRecallQueuedMessage = onRecallQueuedMessage,
                 onRemoveQueuedMessage = onRemoveQueuedMessage,
@@ -415,8 +459,6 @@ private fun AgentChatScaffold(
         val bottomPadding = innerPadding.calculateBottomPadding()
         if (!hasMessages) {
             EmptyChatState(
-                showSuggestions = showEmptySuggestions,
-                onSuggestionClick = onSuggestionClick,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = topInset, bottom = bottomPadding),
@@ -426,8 +468,8 @@ private fun AgentChatScaffold(
                 visibleMessages = visibleMessages,
                 scrollState = scrollState,
                 isStreaming = isStreaming,
-                topInset = topInset,
                 bottomInset = bottomPadding,
+                topInset = topInset,
                 keepBottomAnchored = keepBottomAnchored,
                 onBottomAnchorChanged = onBottomAnchorChanged,
                 onSuggestionClick = onSuggestionClick,
@@ -446,7 +488,9 @@ private fun AgentChatScaffold(
                 historyLoadState = historyLoadState,
                 onLoadEarlierMessages = onLoadEarlierMessages,
                 onHistoryViewportChanged = onHistoryViewportChanged,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (frostEnabled) Modifier.layerBackdrop(messageBackdrop) else Modifier),
             )
         }
     }
@@ -459,10 +503,10 @@ internal fun AgentConversationMessages(
     scrollState: LazyListState,
     isStreaming: Boolean,
     bottomInset: Dp,
+    topInset: Dp = 0.dp,
     keepBottomAnchored: Boolean,
     onBottomAnchorChanged: (Boolean) -> Unit,
     assistantOverlay: Boolean = false,
-    topInset: Dp = 0.dp,
     onSuggestionClick: (String) -> Unit = {},
     onRunTraceClick: () -> Unit = {},
     onOpenBrowser: () -> Unit = {},
@@ -487,6 +531,15 @@ internal fun AgentConversationMessages(
         visibleMessages.toTimelineEntries(previous = previousTimelineEntries[0])
     }
     SideEffect { previousTimelineEntries[0] = timelineEntries }
+    // 滚动条按条目 key 记录已测量高度：分页加载更早消息时所有 index 会整体前移，
+    // 按 index 缓存会把旧高度错配到别的消息上，进度和长度就会突然跳。
+    val scrollIndicatorKeys = remember(timelineEntries, hasEarlierMessages) {
+        buildList<Any> {
+            if (hasEarlierMessages) add(ChatHistoryBoundaryKey)
+            timelineEntries.forEach { add(it.key) }
+            add(ChatBottomSentinelKey)
+        }
+    }
     val activeWorkProcessKey = if (isStreaming) {
         (timelineEntries.lastOrNull() as? AgentTimelineEntry.WorkProcess)?.key
     } else {
@@ -531,7 +584,20 @@ internal fun AgentConversationMessages(
         }
     }
     val densityScale = LocalDensity.current.density
+    val density = LocalDensity.current
+    // 顶栏占据的高度（px）：正文停靠后首行要落在它下面。
+    val topInsetPx = with(density) { topInset.roundToPx() }
+    // 列表顶部内边距（顶栏之外的留白，px）：历史会话直接跳落点时要用它抵掉这段留白。
+    val chatTopPaddingPx = with(density) { ChatTopContentPadding.roundToPx() }
+    // 首行与顶栏底边之间只留这么点缝：必须远小于正文行距，看起来才是「贴着顶栏」。
+    val dockGapPx = with(density) { DockGap.roundToPx() }
+    // 守卫的提前量（px）：首行进到这个范围就冻结跟底，再交给停靠闭环慢慢收到落点。
+    val dockLookaheadPx = with(density) { DockLookahead.roundToPx() }
+    // 看门狗的偏离容差：必须远大于像素舍入与行高留白的正常波动，否则就成了逐帧微调。
+    val dockWatchdogTolerancePx = with(density) { DockWatchdogTolerance.roundToPx() }
     val coroutineScope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val imeInsets = WindowInsets.ime
 
     LaunchedEffect(
         isListMeasured,
@@ -563,8 +629,114 @@ internal fun AgentConversationMessages(
         }
     }
     var isBottomSettling by remember { mutableStateOf(isStreaming) }
+    // 键盘把输入器顶高时的一次性跟底：和 isBottomSettling 同一套跟底引擎，只是触发源不同。
+    var keyboardLiftSettling by remember { mutableStateOf(false) }
+    // 正文末尾（列表尾部哨兵）此刻是否还在视口里 —— 等价于「视口停在底部」。
+    // 键盘把输入器顶高只改变底部内容内边距，不会挪动哨兵，所以这个判断在弹起前后一致，
+    // 可以拿来区分「本来就停在底部」和「翻在历史中间」。
+    val bottomContentVisible by remember(scrollState) {
+        derivedStateOf {
+            scrollState.layoutInfo.visibleItemsInfo.lastOrNull()?.key == ChatBottomSentinelKey
+        }
+    }
 
-    LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging) {
+    // 正文停靠：本轮正式回答开始出字就先冻结跟底（不再向下滚），确认它不是过渡文本后，
+    // 再把视口收到「正文首行贴着顶栏下方」。中途冒出工具步骤说明是过渡文本，只解冻、不位移。
+    var finalAnswerAnchored by remember { mutableStateOf(false) }
+    var finalAnswerHandledId by remember { mutableStateOf<String?>(null) }
+    // 抖动熔断：本轮所有自动滚动写手全停，等用户手动一划或下一轮开始再恢复。
+    var autoScrollFrozen by remember { mutableStateOf(false) }
+    // 本轮由「流式停靠」真正落到位的回答 id：首行已经在顶栏下沿，收尾时绝不能再拿
+    // 「历史会话首帧落点」把视口按条目顶边重设一次，否则正文会整体往下掉一段。
+    var streamDockedAnswerId by remember { mutableStateOf<String?>(null) }
+    // 本轮是否正在/刚刚流式过：收尾那一刻要把最后一条回答标成「已处理」，
+    // 否则收尾会按「历史会话首帧落点」再硬跳一次（生成完突然瞬移）。
+    var hasStreamed by remember { mutableStateOf(false) }
+    // 停靠之后用户碰过屏幕：看门狗本轮彻底放手，不许再把视口拽回顶栏。
+    var dockUserInterrupted by remember { mutableStateOf(false) }
+    var wasUserDragging by remember { mutableStateOf(false) }
+    // 正文首行字顶的窗口 y（px）：停靠闭环直接拿它和顶栏底边比，不换算条目顶边。
+    var answerFirstLineWindowY by remember { mutableStateOf<Float?>(null) }
+    // 上面这个测量值属于哪一条：换轮之后旧值必须作废，否则会拿上一轮的首行位置误判。
+    var answerFirstLineOwnerKey by remember { mutableStateOf<String?>(null) }
+    val latestTimelineEntries by rememberUpdatedState(timelineEntries)
+    val latestIsStreaming by rememberUpdatedState(isStreaming)
+    val streamingAnswerId = tailMessage
+        ?.takeIf { message -> message.content.isNotBlank() }
+        ?.id
+    // 历史会话的首帧落点：在 LazyColumn 第一次测量之前就把视口请求到正文条目上。
+    // 之前只在 LaunchedEffect 里跳：首帧先按 rememberLazyListState 的初值画在列表底部，
+    // 随后再整体上移一大截——那就是用户看到的「突然向上抽动」。
+    // requestScrollToItem 会被下一次布局采用，放在布局之前，首帧画出来就已经在落点上。
+    val historyDockItemIndex = remember(
+        isStreaming,
+        streamingAnswerId,
+        streamDockedAnswerId,
+        finalAnswerAnchored,
+        finalAnswerHandledId,
+        earlierMessagesItemCount,
+        timelineEntries,
+    ) {
+        when {
+            isStreaming -> null
+            // 这条回答本轮已经处理过（停靠到位，或收尾时判定为跟底）：视口已在落点上，
+            // 这里再按条目顶边请求一次就是无动画硬跳。更关键的是，用户向下翻看时
+            // 重组会再走到这里——那正是「翻下去又被拽回停靠位」的来源。
+            finalAnswerHandledId == streamingAnswerId -> null
+            streamingAnswerId == null -> null
+            // 这一轮流式期间已经停靠到位：首行就贴着顶栏。收尾时若再按「条目顶贴顶栏」
+            // 请求一次，正文会整体下移一个条目内边距（8dp + 首行行距留白），并且因为
+            // 该回答已被标记处理过，没有任何逻辑会把它拉回落点——于是位置就永久掉下去。
+            finalAnswerAnchored -> null
+            streamDockedAnswerId == streamingAnswerId -> null
+            timelineEntries.lastOrNull()?.key != streamingAnswerId -> null
+            else -> timelineEntries.lastIndex + earlierMessagesItemCount
+        }
+    }
+    val historyDockRequested = remember { intArrayOf(-1) }
+    SideEffect {
+        val index = historyDockItemIndex
+        if (index != null && historyDockRequested[0] != index) {
+            historyDockRequested[0] = index
+            scrollState.requestScrollToItem(index, scrollOffset = chatTopPaddingPx)
+        }
+    }
+
+    LaunchedEffect(isStreaming) {
+        if (isStreaming) {
+            // 新一轮开始：清掉上一轮的停靠，恢复跟底等待这一轮的正文。
+            finalAnswerAnchored = false
+            finalAnswerHandledId = null
+            streamDockedAnswerId = null
+            hasStreamed = true
+            dockUserInterrupted = false
+            wasUserDragging = false
+            autoScrollFrozen = false
+            answerFirstLineWindowY = null
+            answerFirstLineOwnerKey = null
+        } else if (hasStreamed) {
+            // 流式收尾：把这一轮的回答标成「已处理」。视口已经由跟底或停靠带到位置，
+            // 收尾不许再请求历史落点。首次组合（isStreaming 初值 false）不在这里标记，
+            // 否则打开历史会话时会被当成已处理，直接失去停靠。
+            hasStreamed = false
+            val id = streamingAnswerId
+            if (id != null && finalAnswerHandledId == null) finalAnswerHandledId = id
+        }
+    }
+
+    LaunchedEffect(
+        isStreaming,
+        isTailRendering,
+        keepBottomAnchored,
+        isUserDragging,
+        finalAnswerAnchored,
+    ) {
+        if (finalAnswerAnchored) {
+            // 停靠闭环独占滚动：跟底收尾必须让路。否则两边交替写滚动，收口后又抽两下。
+            // 也不能让它挂着 isBottomSettling 等「滚回底部」——停靠在顶栏时永远等不到。
+            isBottomSettling = false
+            return@LaunchedEffect
+        }
         if (!keepBottomAnchored || isUserDragging) {
             isBottomSettling = false
         } else if (isStreaming || isTailRendering) {
@@ -592,6 +764,399 @@ internal fun AgentConversationMessages(
         onLoadEarlier = onLoadEarlierMessages,
         onViewportChanged = onHistoryViewportChanged,
     )
+    // 停靠落点：把正文首行的字顶压到「顶栏底边 + DockGap」。
+    // 基准是首行的窗口 y（屏幕坐标），不是条目顶边：条目内边距、列表 contentPadding、
+    // 行高留白都不参与计算，逐帧重新量一次差距闭环，不做一次性位移。
+    suspend fun dockAnswerToTop(key: String, itemIndex: Int): Boolean {
+        if (scrollState.layoutInfo.visibleItemsInfo.none { item -> item.key == key }) {
+            scrollState.animateScrollToItem(itemIndex)
+            withFrameNanos { }
+        }
+        // 这里不能再用「条目高度不足一屏」提前否决：跟底时条目底部还要让出输入器浮层与
+        // 底部内边距，首行刚够到顶栏时条目高度本来就比 viewportHeight 小一截，
+        // 拿它判断会把正常长度的正文误判成矮正文，直接放弃停靠、一路跟到底。
+        // 矮正文的分流交给守卫：它的首行永远到不了顶栏，根本走不到这里。
+        // 落点：首行字顶的窗口 y 应该正好落在顶栏底边。
+        val target = topInsetPx + dockGapPx
+        var previousFrameNanos = 0L
+        // 只统计真正推动滚动的帧：「等正文继续长高」的帧单独计，
+        // 否则等待本身就把帧预算烧光，长正文反而等不到收口。
+        var frames = 0
+        var waitedFrames = 0
+        // 进展守卫：残差连续若干帧没有变小，说明有别的写手在往反方向拉视口，
+        // 或者这个落点根本到不了。继续逐帧 scrollBy 就是屏幕上整段正文高频上下抽动。
+        var bestAbsDelta = Float.MAX_VALUE
+        var stalledFrames = 0
+        // 等待「正文继续长高把落点带下来」的帧预算只有这么点：跟底被冻结之后列表保持
+        // 首个可见条目的锚点，正文变长并不会让首行自己逼近顶栏，长时间等下去只会把画面
+        // 冻在原地（以前是 900 帧 ≈ 15 秒），等不到就交回跟底，由外层隔几帧再试一次。
+        while (frames < 900 && waitedFrames < WaitForGrowthFrameBudget) {
+            // 用户正在手动滑动，或下方又冒出工具链（这段只是过渡文本）：立刻放弃停靠，交回默认跟底。
+            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
+            val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it2 -> it2.key == key }
+            if (item == null) {
+                // 计帧：条目取不到时不能无限循环，否则每帧一次 scrollToItem 就是可见的抖动。
+                frames++
+                scrollState.scrollToItem(itemIndex)
+                withFrameNanos { }
+                continue
+            }
+            // 首块不是文本块（代码/表格/引用）时拿不到首行字顶，退化为「条目顶边贴顶栏」。
+            val delta = (answerFirstLineWindowY ?: item.offset.toFloat()) - target
+            if (abs(delta) <= DockSnapPx) {
+                // 到线就一次对齐收口：不再逐帧 ±1px 微调，也不再要求「连续 3 帧稳定」——
+                // 整像素量化让残差在 0/1px 之间反复，前一种写法表现为高频上下抽动，
+                // 后一种条件几乎永远不成立，只会把循环空转到帧预算上限。
+                if (abs(delta) >= 0.5f) {
+                    try {
+                        scrollState.scroll { scrollBy(delta) }
+                    } catch (cancelled: CancellationException) {
+                        if (!currentCoroutineContext().isActive) throw cancelled
+                        return true
+                    }
+                }
+                return true
+            }
+            // 还要往下沉却已经到底：没有可滚空间，等正文继续长高再收口，不空转报错。
+            if (delta > 0f && !scrollState.canScrollForward) {
+                waitedFrames++
+                withFrameNanos { }
+                continue
+            }
+            // 方向余量守卫：往目标方向已经没有可滚空间时，这一帧绝不发起 scroll。
+            // 内容长度刚好卡在一屏时落点在物理上就到不了，照旧每帧发一次 scrollBy 会被
+            // 夹成 0 位移，而边界上的回弹动画每帧被重启一次，屏幕上就是正文上下高频抽动。
+            // 上方也已到顶（首行越过落点）说明停靠不可达，交回跟底，别把循环空转到帧预算。
+            if (delta < 0f && !scrollState.canScrollBackward) return false
+            // 残差在变小才算推进；连续若干帧毫无进展就收手，别把循环空转到帧预算上限。
+            if (abs(delta) < bestAbsDelta - 0.5f) {
+                bestAbsDelta = abs(delta)
+                stalledFrames = 0
+            } else if (++stalledFrames >= DockStallFrameLimit) {
+                Log.w(ScrollJitterTag, "dock stalled: delta=" + delta + " frames=" + frames)
+                finalAnswerHandledId = key
+                return false
+            }
+            val frameNanos = withFrameNanos { it }
+            val elapsedSeconds = if (previousFrameNanos == 0L) {
+                1f / 60f
+            } else {
+                ((frameNanos - previousFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+            }
+            previousFrameNanos = frameNanos
+            // 指数缓出：前段快、后段慢，收口时没有可见的一跳。
+            frames++
+            var step = delta * (1f - exp(-elapsedSeconds / DockTimeConstantSeconds))
+            if (abs(step) < 1f) step = if (delta > 0f) 1f else -1f
+            if (abs(step) > abs(delta)) step = delta
+            try {
+                scrollState.scroll { scrollBy(step) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return true
+            }
+        }
+        return false
+    }
+
+    // 历史会话打开时的落点：直接把视口放到「首行贴顶栏」，不播位移曲线。
+    // 起步交给结构对齐（条目顶贴顶栏，一次到位），再按首行实测补掉条目内部的上边距。
+    suspend fun snapAnswerToTop(key: String, itemIndex: Int): Boolean {
+        val target = topInsetPx + dockGapPx
+        // 列表顶部留白（顶栏高度 + ChatTopContentPadding）正好被吃掉时，条目顶就落在顶栏底边上。
+        val structuralOffset = (chatTopPaddingPx - dockGapPx).coerceAtLeast(0)
+        // 必须用 scrollToItem：requestScrollToItem 只是登记请求，等下一次测量才采用，
+        // 中间那几帧列表还停在原处，随后再被拉正，看上去就是「往上抽一下」。
+        scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
+        // 等这一跳被布局采用、首行重新测量（测量回调比帧回调晚一帧，多等一帧更保险）。
+        repeat(2) { withFrameNanos { } }
+        var rounds = 0
+        while (rounds < 10 && currentCoroutineContext().isActive) {
+            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
+            val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { info -> info.key == key }
+            if (item == null) {
+                scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
+                rounds++
+                withFrameNanos { }
+                continue
+            }
+            // 首行字顶必须和条目实测顶边对得上，这一帧的测量才算可信。
+            val firstLineY = answerFirstLineWindowY
+                ?.takeIf { answerFirstLineOwnerKey == key }
+                ?.takeIf { y -> y - item.offset.toFloat() in -4f..FirstLineTopPlausibleSlackPx }
+            // 关键：拿不到可信的首行测量时，绝不能拿「条目顶边」当成已到位就收工。
+            // 条目顶边本来就贴着顶栏，那样会在首行真正测出来之前结束，落点比目标低一截——
+            // 低出来的正是条目内部的上边距，用户看到的就是「停靠位置往下掉了」。
+            if (firstLineY == null) {
+                rounds++
+                withFrameNanos { }
+                continue
+            }
+            val delta = firstLineY - target
+            if (abs(delta) <= 1f) return true
+            // 方向余量守卫：落点在物理上到不了时（正文长度刚好卡一屏或更短），
+            // 连续 10 轮 scrollBy 都会被夹成 0 位移，每帧重启一次边界回弹动画——
+            // 屏幕上同样是正文上下高频抽动。这里一次收手：回到底部，交回默认跟底。
+            val hasRoom = if (delta > 0f) {
+                scrollState.canScrollForward
+            } else {
+                scrollState.canScrollBackward
+            }
+            if (!hasRoom) {
+                if (delta > 0f) scrollState.scrollToItem(bottomItemIndex)
+                return false
+            }
+            rounds++
+            try {
+                // 一次挪到底：分步挪会在屏幕上留下看得见的一段上移。
+                scrollState.scroll { scrollBy(delta) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return true
+            }
+            withFrameNanos { }
+        }
+        // 到头来还是没拿到可信首行：停在「条目顶贴顶栏」这个保底位置，不要再挪。
+        return true
+    }
+
+    // 停靠守卫：跟着跟底引擎逐帧盯正文首行的窗口 y，一旦首行逼近顶栏就立刻返回 true，
+    // 让调用方马上冻结跟底、再交给 dockAnswerToTop 收口。
+    // 关键是「不许过冲」：以前要等正文长够一屏才动手，等待期间跟底一路把首行推出屏幕，
+    // 门槛满足后只能大幅回拉，看起来就是「先滚过头再突然拉回来」。
+    // 矮正文的首行永远到不了顶栏，这里就一直等到本轮结束，保持默认跟底行为。
+    suspend fun awaitAnswerReachTop(key: String): Boolean {
+        val threshold = topInsetPx + dockGapPx + dockLookaheadPx
+        while (currentCoroutineContext().isActive) {
+            if (isUserDragging) return false
+            // 下方又冒出工具链：这段只是过渡正文，交给默认跟底。
+            if (latestTimelineEntries.lastOrNull()?.key != key) return false
+            val firstLineY = answerFirstLineWindowY
+                ?.takeIf { answerFirstLineOwnerKey == key }
+            if (firstLineY != null) {
+                if (firstLineY <= threshold) return true
+            } else {
+                // 首块不是文本块（代码/表格/引用）时量不到首行字顶，退化成看条目顶边。
+                val item = scrollState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { info -> info.key == key }
+                if (item != null && item.offset <= threshold) return true
+            }
+            withFrameNanos { }
+        }
+        return false
+    }
+
+    // 正文一出现就盯住它，不等整轮结束：时间线末尾这段长正文就该顶到顶栏。
+    // 门槛只有一个：首行逼近顶栏（矮正文保持默认跟底）。
+    LaunchedEffect(streamingAnswerId, timelineEntries.lastOrNull()?.key) {
+        val answerId = streamingAnswerId ?: return@LaunchedEffect
+        if (finalAnswerHandledId == answerId) return@LaunchedEffect
+        // 历史会话没有动画可抢：用户此刻真在拖动的话，下面的 snap 自己会退出。
+        if (isStreaming && wasUserDragging) return@LaunchedEffect
+        val entries = latestTimelineEntries
+        val answerIndex = entries.indexOfLast { entry -> entry.key == answerId }
+        if (answerIndex < 0) return@LaunchedEffect
+        // 时间线最后一条不是它：下方还有工具链，交给默认跟底，等收尾正文再停。
+        if (entries.lastOrNull()?.key != answerId) return@LaunchedEffect
+        val itemIndex = answerIndex + earlierMessagesItemCount
+        if (!isStreaming) {
+            // 历史会话：打开就该停在「首行贴顶栏」的位置，不要先停在底部、再当面上移一次。
+            // 所以这里跳过守卫和缓出曲线，直接把视口跳到落点（没有可见的上移动画）。
+            // 两种情况都算处理完：true = 停靠到位并冻结跟底；false = 落点不可达/被用户打断，
+            // 视口留在跟底位置。标记成已处理，避免同一个回答反复重跳、来回抽动。
+            finalAnswerAnchored = snapAnswerToTop(key = answerId, itemIndex = itemIndex)
+            finalAnswerHandledId = answerId
+            return@LaunchedEffect
+        }
+        // 首行逼近顶栏就立刻冻结跟底（矮正文到不了顶栏，始终走默认跟底）。
+        // 一次没停成也不就此罢手：正文还在长，交回跟底、隔几帧再收一次。
+        // 只试一次的话，任何一次提前失败都会变成「一路跟到底、完全不停靠」。
+        var attempts = 0
+        while (attempts < 4 && currentCoroutineContext().isActive) {
+            attempts++
+            if (!awaitAnswerReachTop(key = answerId)) return@LaunchedEffect
+            finalAnswerAnchored = true
+            if (dockAnswerToTop(key = answerId, itemIndex = itemIndex)) {
+                // 只有真正停住了才标记已处理：矮正文、被夹住时要允许正文变长后重来。
+                finalAnswerHandledId = answerId
+                streamDockedAnswerId = answerId
+                dockUserInterrupted = false
+                return@LaunchedEffect
+            }
+            finalAnswerAnchored = false
+            repeat(6) { withFrameNanos { } }
+        }
+    }
+
+    // 停靠之后下方又冒出工具链（时间线末尾不再是这段正文）：立刻解冻，恢复流式默认滚动。
+    LaunchedEffect(timelineEntries.lastOrNull()?.key) {
+        if (autoScrollFrozen) return@LaunchedEffect
+        if (!finalAnswerAnchored) return@LaunchedEffect
+        val handled = finalAnswerHandledId ?: return@LaunchedEffect
+        if (timelineEntries.lastOrNull()?.key == handled) return@LaunchedEffect
+        // 单向让路：交还滚动权给跟底，但保持「已处理」，同一条正文不再回头重钉。
+        finalAnswerAnchored = false
+    }
+
+    // 停靠看门狗：流式结束后不再逐帧闭环，只隔一段时间量一次首行位置。
+    // 偏离超过容差才纠正一次，纠满上限或用户一碰屏幕就彻底放手，避免退化成新的抖动源。
+    LaunchedEffect(isStreaming, finalAnswerAnchored, finalAnswerHandledId, autoScrollFrozen) {
+        // 看门狗已停用：自动跟顶只负责流式这段（由 dockAnswerToTop 逐帧闭环收口），
+        // 回答结束就彻底放手。以前它流式结束后还会隔 500ms 量一次首行、偏离就滚回去，
+        // 键盘弹起把视口顶上去之后又被拽回原处，就是它干的。
+        if (!DockWatchdogEnabled) return@LaunchedEffect
+        if (isStreaming || !finalAnswerAnchored || autoScrollFrozen) return@LaunchedEffect
+        val key = finalAnswerHandledId ?: return@LaunchedEffect
+        val target = topInsetPx + dockGapPx
+        var corrections = 0
+        while (currentCoroutineContext().isActive && corrections < DockWatchdogLimit) {
+            delay(DockWatchdogIntervalMs)
+            // 用户只要碰过屏幕（或此刻正在滚），看门狗本轮就彻底放手：
+            // 否则手指刚抬起、下次检查正好落在两次滚动之间，就会把用户翻走的位置拽回顶栏。
+            if (dockUserInterrupted || isUserDragging || scrollState.isScrollInProgress) {
+                return@LaunchedEffect
+            }
+            if (autoScrollFrozen || !finalAnswerAnchored) return@LaunchedEffect
+            if (latestTimelineEntries.lastOrNull()?.key != key) return@LaunchedEffect
+            val firstLineY = answerFirstLineWindowY?.takeIf { answerFirstLineOwnerKey == key }
+                ?: continue
+            val delta = firstLineY - target
+            if (abs(delta) <= dockWatchdogTolerancePx) continue
+            val hasRoom = if (delta > 0f) scrollState.canScrollForward else scrollState.canScrollBackward
+            if (!hasRoom) return@LaunchedEffect
+            try {
+                scrollState.scroll { scrollBy(delta) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return@LaunchedEffect
+            }
+            corrections++
+            Log.d(ScrollJitterTag, "dock watchdog corrected: delta=" + delta + " count=" + corrections)
+        }
+    }
+
+    LaunchedEffect(isUserDragging, isAtBottom) {
+        if (isUserDragging) {
+            wasUserDragging = true
+            dockUserInterrupted = true
+            // 用户一动手就解除抖动熔断：视口交还给人，自动滚动不再抢。
+            autoScrollFrozen = false
+        } else if (wasUserDragging && isAtBottom) {
+            // 用户主动滑回底部：放弃本轮停靠，恢复跟底。
+            wasUserDragging = false
+            finalAnswerAnchored = false
+        }
+    }
+
+    // 在消息列表上滑动（上翻或下翻）就自动收起键盘；键盘本来没弹着时什么也不做。
+    // 用列表自己的拖动状态判断，不拦截也不消费滚动手势。
+    LaunchedEffect(isUserDragging) {
+        if (isUserDragging && imeInsets.getBottom(density) > 0) {
+            keyboard?.hide()
+        }
+    }
+
+    // 键盘弹起会把输入器连同 IME 内边距一起顶高，列表的底部内容内边距随之变大，
+    // 但 LazyColumn 会保持原来的滚动锚点，正文最后一行就留在输入器背后被盖住
+    // （流式期间一路跟底，所以看不出这个问题）。
+    // 弹起前视口确实停在底部时，交给现成的跟底引擎把正文平滑地顶上去 ——
+    // 和流式输出用的是同一套位移曲线，所以不是瞬移，也能跟着 IME 一起逐帧移动；
+    // 翻在历史中间则什么都不做，维持原来的阅读位置。
+    var previousBottomInset by remember { mutableStateOf(bottomInset) }
+    LaunchedEffect(bottomInset) {
+        val insetGrew = bottomInset > previousBottomInset
+        previousBottomInset = bottomInset
+        if (!insetGrew) return@LaunchedEffect
+        // 本轮回答已经停靠在顶栏：键盘弹起不再抢滚动。
+        // 停靠位不在列表底部，跟底收口会把视口一路拉到最底，看起来就是
+        // 「刚被键盘顶上去、又被拉回来」。这里直接交还滚动权。
+        if (finalAnswerAnchored ||
+            (streamDockedAnswerId != null && finalAnswerHandledId == streamDockedAnswerId)
+        ) {
+            finalAnswerAnchored = false
+            dockUserInterrupted = true
+            return@LaunchedEffect
+        }
+        if (isStreaming || !bottomContentVisible || !keepBottomAnchored) {
+            return@LaunchedEffect
+        }
+        keyboardLiftSettling = true
+    }
+
+    // 抬升到位就收口，别让跟底一直挂着（与流式收尾用同一套判定）。
+    LaunchedEffect(keyboardLiftSettling, keepBottomAnchored) {
+        if (!keyboardLiftSettling) return@LaunchedEffect
+        if (!keepBottomAnchored) {
+            // 用户把列表拉走了，这次抬升不再适用。
+            keyboardLiftSettling = false
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        withFrameNanos { }
+        snapshotFlow { !scrollState.canScrollForward }.first { it }
+        keyboardLiftSettling = false
+    }
+
+    // 抖动熔断：无人操作时视口被来回拉锯（两个写手互相抵消、或落点在物理上到不了），
+    // 屏幕上就是整段正文高频上下抽动。这里逐帧盯首个可见条目的偏移，方向反复翻转就停掉
+    // 本轮所有自动滚动——用户手动一划或下一轮开始再恢复。
+    //
+    // 两条硬约束（0318 的教训）：
+    // 1. 流式期间一律不判：跟底与停靠已经用 finalAnswerAnchored 互斥，同时写滚动的情况没了；
+    //    一旦把正常的流式跟底误判成拉锯，整轮画面会停在原地不动，直到收尾才猛地跳一下。
+    // 2. 位置只在「同一个首个可见条目」内部比较：首个可见条目换成上一条时索引会跳一整条，
+    //    以前用 index*1e6+offset 拼成一个数比较，索引变化就被当成一次巨大反向位移，
+    //    五次就凑满翻转计数——这是误判的直接来源。
+    // 熔断时也不再写 finalAnswerHandledId：那会把这一轮回答永久标成「已处理」，
+    // 后续再没有任何逻辑会去停靠它。
+    LaunchedEffect(scrollState) {
+        var lastIndex = -1
+        var lastOffset = Int.MIN_VALUE
+        var lastDirection = 0
+        var flips = 0
+        var framesSinceFlip = 0
+        while (currentCoroutineContext().isActive) {
+            withFrameNanos { }
+            if (isUserDragging || latestIsStreaming) {
+                lastIndex = -1
+                lastOffset = Int.MIN_VALUE
+                lastDirection = 0
+                flips = 0
+                framesSinceFlip = 0
+                continue
+            }
+            val first = scrollState.layoutInfo.visibleItemsInfo.firstOrNull() ?: continue
+            if (first.index != lastIndex) {
+                // 换了一条：位置基准重置，不参与方向翻转统计。
+                lastIndex = first.index
+                lastOffset = first.offset
+                lastDirection = 0
+                flips = 0
+                framesSinceFlip = 0
+                continue
+            }
+            val previous = lastOffset
+            lastOffset = first.offset
+            if (previous == Int.MIN_VALUE) continue
+            val delta = first.offset - previous
+            framesSinceFlip++
+            if (framesSinceFlip > ScrollJitterFlipWindowFrames) flips = 0
+            if (delta == 0) continue
+            val direction = if (delta > 0) 1 else -1
+            if (lastDirection != 0 && direction != lastDirection) {
+                flips++
+                framesSinceFlip = 0
+            }
+            lastDirection = direction
+            if (flips < ScrollJitterFlipLimit || autoScrollFrozen) continue
+            flips = 0
+            autoScrollFrozen = true
+            finalAnswerAnchored = false
+            isBottomSettling = false
+            keyboardLiftSettling = false
+            Log.w(ScrollJitterTag, "jitter guard tripped: index=" + first.index + " offset=" + first.offset)
+        }
+    }
 
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
@@ -599,8 +1164,11 @@ internal fun AgentConversationMessages(
             keepBottomAnchored = keepBottomAnchored,
             isUserDragging = isUserDragging,
             isBottomSettling = isBottomSettling,
-        )
+            keyboardLiftSettling = keyboardLiftSettling,
+        ) && (!finalAnswerAnchored || keyboardLiftSettling) && !autoScrollFrozen
     )
+    // 键盘抬升期间切到更快的位移曲线（KEYBOARD_LIFT_*）：和键盘弹起同步，而不是慢慢追。
+    val keyboardLiftActive by rememberUpdatedState(keyboardLiftSettling && !isStreaming)
     val currentBottomItemIndex by rememberUpdatedState(bottomItemIndex)
     val bottomFollowDecisions = remember(scrollState) {
         Channel<BottomFollowDecision>(Channel.CONFLATED)
@@ -611,12 +1179,14 @@ internal fun AgentConversationMessages(
         keepBottomAnchored,
         isUserDragging,
         isStreaming,
+        finalAnswerAnchored,
     ) {
+        // 停靠持有期间一律不登记跳底：任何滚动都要给它让路（手动除外）。
         if (shouldRequestInitialBottom(
                 isStreaming = isStreaming,
                 keepBottomAnchored = keepBottomAnchored,
                 isUserDragging = isUserDragging,
-            )
+            ) && !finalAnswerAnchored
         ) {
             scrollState.requestScrollToItem(bottomItemIndex)
         }
@@ -703,11 +1273,21 @@ internal fun AgentConversationMessages(
             }
             if (!shouldFollowBottom || requestIndex != null || remainingDistancePx <= 0f) continue
 
-            val step = smoothBottomFollowStep(
-                distancePx = remainingDistancePx,
-                elapsedSeconds = elapsedSeconds,
-                density = densityScale,
-            )
+            val step = if (keyboardLiftActive) {
+                smoothBottomFollowStep(
+                    distancePx = remainingDistancePx,
+                    elapsedSeconds = elapsedSeconds,
+                    density = densityScale,
+                    responseSeconds = KEYBOARD_LIFT_RESPONSE_SECONDS,
+                    maxSpeedDpPerSecond = KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND,
+                )
+            } else {
+                smoothBottomFollowStep(
+                    distancePx = remainingDistancePx,
+                    elapsedSeconds = elapsedSeconds,
+                    density = densityScale,
+                )
+            }
             var consumedStep = 0f
             try {
                 scrollState.scroll {
@@ -738,7 +1318,8 @@ internal fun AgentConversationMessages(
                 .nestedScroll(historyPaging.scrollConnection)
                 .overScrollVertical(),
             contentPadding = PaddingValues(
-                top = topInset + if (assistantOverlay) 8.dp else 10.dp,
+                // 列表视口铺满整屏，顶栏高度在这里做内边距，正文才能滑到顶栏毛玻璃下方。
+                top = topInset + ChatTopContentPadding,
                 bottom = bottomInset + 14.dp,
             ),
             overscrollEffect = null,
@@ -795,6 +1376,14 @@ internal fun AgentConversationMessages(
                             onDeleteMessage = onDeleteMessage,
                             onRegenerateMessage = onRegenerateMessage,
                             onSelectReplyCandidate = onSelectReplyCandidate,
+                            onAnswerFirstLineTop = if (entry.key == timelineEntries.lastOrNull()?.key) {
+                                { windowY ->
+                                    answerFirstLineWindowY = windowY
+                                    answerFirstLineOwnerKey = entry.key
+                                }
+                            } else {
+                                null
+                            },
                             modifier = itemModifier,
                         )
                     }
@@ -827,34 +1416,75 @@ internal fun AgentConversationMessages(
             }
         }
 
+        // 滚动条：滚动时出现，停止后渐隐；两侧圆角。
+        ChatScrollIndicator(
+            scrollState = scrollState,
+            itemKeys = scrollIndicatorKeys,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(
+                    top = topInset + ScrollIndicatorVerticalInset,
+                    bottom = bottomInset + ScrollIndicatorVerticalInset,
+                    end = ScrollIndicatorEndInset,
+                ),
+        )
+
         AnimatedVisibility(
             visible = !keepBottomAnchored && !isAtBottom,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = bottomInset + 8.dp),
-            enter = fadeIn(tween(160)) + scaleIn(tween(180), initialScale = 0.82f),
-            exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.86f),
+                .align(Alignment.BottomEnd)
+                // 与输入框发送按钮同一条中心线：外层 8dp + 输入框内边距 10dp + 发送钮 20dp，
+                // 自身也是 40dp（半径 20dp），所以右内边距等于 8 + 10。
+                .padding(
+                    end = ChatInputOuterMargin + 10.dp,
+                    // 与输入框的距离原为 12dp，按要求缩一半。
+                    bottom = bottomInset + 6.dp,
+                ),
+            // 与「输入框左侧加号」「思考强度」同一节奏：弹簧从下方托起，带一点回弹。
+            enter = fadeIn(tween(140)) + scaleIn(
+                animationSpec = spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow),
+                initialScale = 0.7f,
+            ) + slideInVertically(
+                animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
+                initialOffsetY = { it / 2 },
+            ),
+            exit = fadeOut(tween(90)) + scaleOut(tween(110), targetScale = 0.88f),
         ) {
             val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
             val couiDark = CouiTheme.isDark
-            IconButton(
-                modifier = if (isCoui) {
-                    Modifier
-                        .dropShadow(
-                            shape = CircleShape,
-                            shadow = Shadow(
-                                radius = 10.dp,
-                                color = Color.Black,
-                                alpha = if (couiDark) 0.24f else 0.08f,
-                            ),
-                        )
-                        .border(
-                            width = 0.5.dp,
-                            color = if (couiDark) Color(0x22FFFFFF) else Color(0x10000000),
-                            shape = CircleShape,
-                        )
-                } else {
-                    Modifier
+            val scrollToBottom: () -> Unit = {
+                onBottomAnchorChanged(true)
+                coroutineScope.launch {
+                    scrollState.animateScrollToItem(bottomItemIndex)
+                }
+            }
+            if (isCoui) {
+                // 纯色圆钮：去掉 COUI 的轮廓光与玻璃材质，只留一块实心底色 + 朝下的小折角箭头。
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (couiDark) Color(0xFF1E2024) else Color(0xFFF5F6F8))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClickLabel = stringResource(R.string.ui_back_to_bottom_32282e),
+                            onClick = scrollToBottom,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = ConversationPaneIcons.ChevronRight,
+                        contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .rotate(90f),
+                        tint = CouiTheme.colorSchemeFor(couiDark).onSurface,
+                    )
+                }
+            } else {
+                IconButton(
+                    modifier = Modifier
                         .dropShadow(
                             shape = CircleShape,
                             shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
@@ -863,28 +1493,21 @@ internal fun AgentConversationMessages(
                             width = 0.5.dp,
                             color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
                             cornerRadius = IconButtonDefaults.CornerRadius,
-                        )
-                },
-                onClick = {
-                    onBottomAnchorChanged(true)
-                    coroutineScope.launch {
-                        scrollState.animateScrollToItem(bottomItemIndex)
-                    }
-                },
-                backgroundColor = if (isCoui) {
-                    if (couiDark) Color(0xFF24262B) else Color.White
-                } else {
-                    MiuixTheme.colorScheme.surfaceContainerHigh
-                },
-                minWidth = 36.dp,
-                minHeight = 36.dp,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.ArrowDownward,
-                    contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
-                    modifier = Modifier.size(16.dp),
-                    tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                )
+                        ),
+                    onClick = scrollToBottom,
+                    backgroundColor = MiuixTheme.colorScheme.surfaceContainerHigh,
+                    minWidth = 40.dp,
+                    minHeight = 40.dp,
+                ) {
+                    Icon(
+                        imageVector = ConversationPaneIcons.ChevronRight,
+                        contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .rotate(90f),
+                        tint = MiuixTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
     }
@@ -925,13 +1548,15 @@ internal fun smoothBottomFollowStep(
     distancePx: Float,
     elapsedSeconds: Float,
     density: Float,
+    responseSeconds: Float = BOTTOM_FOLLOW_RESPONSE_SECONDS,
+    maxSpeedDpPerSecond: Float = BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND,
 ): Float {
     if (distancePx <= 0f || elapsedSeconds <= 0f) return 0f
     if (distancePx <= BOTTOM_FOLLOW_SNAP_DISTANCE_PX) return distancePx
 
     val frameSeconds = elapsedSeconds.coerceAtMost(BOTTOM_FOLLOW_MAX_FRAME_SECONDS)
-    val easedStep = distancePx * (1f - exp(-frameSeconds / BOTTOM_FOLLOW_RESPONSE_SECONDS))
-    val speedLimitedStep = BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND * density * frameSeconds
+    val easedStep = distancePx * (1f - exp(-frameSeconds / responseSeconds))
+    val speedLimitedStep = maxSpeedDpPerSecond * density * frameSeconds
     return min(distancePx, min(easedStep.coerceAtLeast(BOTTOM_FOLLOW_MIN_STEP_PX), speedLimitedStep))
 }
 
@@ -1026,6 +1651,7 @@ internal fun resolveFinalResultMessageIds(
 
 @Composable
 private fun AgentChatBottomBar(
+    messageBackdrop: LayerBackdrop?,
     input: String,
     isCompacting: Boolean,
     contextUsage: AgentContextUsageUi,
@@ -1041,6 +1667,7 @@ private fun AgentChatBottomBar(
     messageEdit: MessageEditUiState?,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit,
+    onSteerSubmit: (String) -> Unit,
     onSteerQueuedMessage: (String) -> Unit,
     onRecallQueuedMessage: (String, String) -> Unit,
     onRemoveQueuedMessage: (String) -> Unit,
@@ -1055,31 +1682,47 @@ private fun AgentChatBottomBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
+    focusInputRequest: Int = 0,
+    onFocusInputHandled: () -> Unit = {},
 ) {
-    val surface = MiuixTheme.colorScheme.surface
-    Box(
+    // 输入框背后的整块背景：从自身顶边透明，向下平滑升到与页面一致的实色。
+    val inputSurface = MiuixTheme.colorScheme.surface
+    val bottomFadeBrush = remember(inputSurface) {
+        val stops = 10
+        Brush.verticalGradient(
+            *Array(stops + 1) { index ->
+                val progress = index / stops.toFloat()
+                progress to inputSurface.copy(alpha = progress.pow(1.6f))
+            },
+        )
+    }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .imePadding(),
     ) {
-        // 底部以连续垂直渐隐承接悬浮输入胶囊，避免一整块不透明实心矩形把消息流生硬截断。
+        // 输入框上方原来那条「向上渐隐」的渐变条（以及它的磨砂层）整段删掉：
+        // 渐变条的实色端与胶囊圆角相差一截，圆角外就会露出横切的硬边。
+        // 现在改成把输入框自己的背景整体向上探出一段（ChatBottomFadeOverhang），
+        // 渐变由这块背景的顶边开始、到胶囊顶部正好升到实色，圆角处因此没有分界线。
         Box(
             modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.Transparent,
-                        0.26f to surface.copy(alpha = 0.86f),
-                        0.55f to surface.copy(alpha = 0.98f),
-                        1.0f to surface,
-                    ),
-                ),
+                .fillMaxWidth()
+                .height(ChatBottomFadeOverhang)
+                .background(bottomFadeBrush),
         )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // 这块实色背景紧接上方渐变的实色端，两者同色同透明度，接缝不可见；
+                // 输入框胶囊本身画在它上面，圆角外侧就是这块实色，不会再露硬边。
+                .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding()
-                .padding(top = 14.dp, start = 14.dp, end = 14.dp, bottom = 10.dp),
+                .padding(
+                    start = ChatInputOuterMargin,
+                    end = ChatInputOuterMargin,
+                    bottom = ChatInputOuterMargin,
+                ),
         ) {
             AgentChatInputBar(
                 input = input,
@@ -1099,6 +1742,7 @@ private fun AgentChatBottomBar(
                 preserveFollowingMessages = messageEdit?.preserveFollowingMessages == true,
                 onSubmit = onSubmit,
                 onInterruptAndSubmit = onInterruptAndSubmit,
+                onSteerSubmit = onSteerSubmit,
                 onSteerQueuedMessage = onSteerQueuedMessage,
                 onRecallQueuedMessage = onRecallQueuedMessage,
                 onRemoveQueuedMessage = onRemoveQueuedMessage,
@@ -1113,17 +1757,60 @@ private fun AgentChatBottomBar(
                 onAttachFilePath = onAttachFilePath,
                 onRemoveFileReference = onRemoveFileReference,
                 onCancelMessageEdit = onCancelMessageEdit,
+                focusInputRequest = focusInputRequest,
+                onFocusInputHandled = onFocusInputHandled,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
 }
 
+/** 输入框背景向上多探出的高度：渐变从这段背景的顶边开始。 */
+private val ChatBottomFadeOverhang = 32.dp
+
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f
+// 键盘抬升用更快的一套位移：系统键盘弹起约 0.25s 走完全程，正文要贴着输入框一起上去，
+// 不能沿用流式跟底那套「慢慢追持续增长文字」的曲线（原地 0.5s 左右才收口，观感迟钝）。
+internal const val KEYBOARD_LIFT_RESPONSE_SECONDS = 0.06f
+internal const val KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND = 2000f
 private const val BOTTOM_FOLLOW_MIN_STEP_PX = 0.5f
 private const val BOTTOM_FOLLOW_SNAP_DISTANCE_PX = 0.75f
+// 停靠后正文首行与顶栏底边的缝：必须远小于正文行距，看起来才是「贴着顶栏」。
+private val DockGap = 0.dp
+// 提前量：守卫比落点早这么多就冻结跟底，用来吃掉「一帧测量滞后 + 一帧跟底位移」。
+// 必须小于一个正文行高，否则矮正文会被误判成需要停靠。
+private val DockLookahead = 16.dp
+// 列表内容顶部内边距（顶栏高度之外的额外留白）。
+private val ChatTopContentPadding = 14.dp
+// 停靠位移的时间常数（秒）：逐帧指数缓出，前段快、后段收敛，避免观感生硬或像瞬移。
+private const val DockTimeConstantSeconds = 0.085f
+// 停靠收口的一次对齐阈值（px）：残差小于它就一次 scrollBy 到位，不再逐帧微调。
+// 列表滚动是整像素的，残差不到 1px 时「向上 1px / 向下 1px」会逐帧交替，
+// 看上去就是整段正文高频上下抽动。
+private const val DockSnapPx = 3f
+// 首行字顶相对条目顶边的合理上限（px）：超过说明这一帧的测量还是上一屏的旧值，不能用。
+private const val FirstLineTopPlausibleSlackPx = 200f
+// 「等正文继续长高」的帧预算：约 0.4 秒。首行在跟底冻结后不会再动，长等无意义。
+private const val WaitForGrowthFrameBudget = 24
+
+
+// 停靠看门狗：间隔、偏离容差与纠正次数上限。
+private const val DockWatchdogIntervalMs = 500L
+private val DockWatchdogTolerance = 8.dp
+private const val DockWatchdogLimit = 3
+
+/** 停靠看门狗开关：自动跟顶到流式结束为止，结束后不再自动纠正视口。 */
+private const val DockWatchdogEnabled = false
+
+// 抖动熔断：无人操作时视口方向翻转这么多次，就认定是自动滚动在拉锯。
+private const val ScrollJitterFlipLimit = 5
+// 两次翻转之间隔了这么多帧就把计数清零，正常的一次性跳转/缓慢浏览不会被误判。
+private const val ScrollJitterFlipWindowFrames = 30
+private const val ScrollJitterTag = "EtaChatScroll"
+// 停靠闭环的进展守卫：连续这么多帧残差没变小就收手（约 0.35 秒）。
+private const val DockStallFrameLimit = 20
 
 internal fun resolveKeepBottomAnchored(
     current: Boolean,
@@ -1140,7 +1827,9 @@ internal fun resolveBottomFollowEnabled(
     keepBottomAnchored: Boolean,
     isUserDragging: Boolean,
     isBottomSettling: Boolean = false,
-): Boolean = (isStreaming || isBottomSettling) && keepBottomAnchored && !isUserDragging
+    keyboardLiftSettling: Boolean = false,
+): Boolean = (isStreaming || isBottomSettling || keyboardLiftSettling) &&
+    keepBottomAnchored && !isUserDragging
 
 internal fun shouldRequestInitialBottom(
     isStreaming: Boolean,
@@ -1150,35 +1839,9 @@ internal fun shouldRequestInitialBottom(
 
 @Composable
 private fun EmptyChatState(
-    showSuggestions: Boolean,
-    onSuggestionClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val character = LocalRoleplayChat.current
-    val isCharacterConversation = character != null
-    val suggestions = listOf(
-        SuggestionItem(
-            title = stringResource(R.string.ui_analyze_current_screen_ebf08f),
-            icon = Icons.Rounded.DocumentScanner,
-            prompt = stringResource(R.string.suggestion_analyze_screen_prompt),
-        ),
-        SuggestionItem(
-            title = stringResource(R.string.ui_open_wechat_6b2c28),
-            icon = Icons.Rounded.RocketLaunch,
-            prompt = stringResource(R.string.suggestion_open_wechat_prompt),
-        ),
-        SuggestionItem(
-            title = stringResource(R.string.ui_browse_the_web_da7afb),
-            icon = Icons.Rounded.Language,
-            prompt = stringResource(R.string.suggestion_browse_web_prompt),
-        ),
-        SuggestionItem(
-            title = stringResource(R.string.ui_check_memory_pressure_2d9600),
-            icon = Icons.Rounded.Terminal,
-            prompt = stringResource(R.string.suggestion_memory_pressure_prompt),
-        ),
-    )
-
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -1206,120 +1869,199 @@ private fun EmptyChatState(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
             } else {
+                val titleStyle = MiuixTheme.textStyles.headline1
                 Text(
                     text = stringResource(R.string.ui_how_can_i_help_you_e75391),
-                    style = MiuixTheme.textStyles.title2.copy(
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.2).sp,
-                    ),
+                    style = titleStyle,
+                    fontSize = titleStyle.fontSize * EmptyGreetingFontScale,
+                    lineHeight = titleStyle.lineHeight.scaleIfSpecified(EmptyGreetingFontScale),
                     color = MiuixTheme.colorScheme.onSurface,
                 )
-            }
-
-            Spacer(modifier = Modifier.height(26.dp))
-
-            AnimatedVisibility(
-                visible = showSuggestions && !isCharacterConversation,
-                enter = fadeIn(
-                    animationSpec = tween(durationMillis = 220)
-                ) + slideInVertically(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                    initialOffsetY = { it / 3 },
-                ),
-                exit = fadeOut(
-                    animationSpec = tween(durationMillis = 130)
-                ) + slideOutVertically(
-                    animationSpec = tween(durationMillis = 180),
-                    targetOffsetY = { it / 4 },
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    suggestions.chunked(2).forEach { rowItems ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            rowItems.forEach { item ->
-                                SuggestionCard(
-                                    item = item,
-                                    onClick = { onSuggestionClick(item.prompt) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
     }
 }
 
-@Composable
-private fun SuggestionCard(
-    item: SuggestionItem,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
-    val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
-    val ink = MiuixTheme.colorScheme.onSurface.copy(alpha = 1f)
-    val fill = ink.copy(alpha = if (isDark) 0.055f else 0.028f)
-    val border = ink.copy(alpha = if (isDark) 0.10f else 0.065f)
-    val interactionSource = remember { MutableInteractionSource() }
-    val shapeModifier = if (isCoui) {
-        val shape = CouiShape(15.dp, 2.2f)
-        Modifier
-            .couiButtonFeedback(isDark, interactionSource, enabled = true)
-            .clip(shape)
-            .background(fill, shape)
-            .border(0.5.dp, border, shape)
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
-    } else {
-        Modifier
-            .squircleSurface(color = fill, cornerRadius = 15.dp)
-            .squircleBorder(width = 0.5.dp, color = border, cornerRadius = 15.dp)
-            .clickable(onClick = onClick)
-    }
-    Row(
-        modifier = modifier
-            .then(shapeModifier)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(MiuixTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.10f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = item.icon,
-                contentDescription = null,
-                modifier = Modifier.size(15.dp),
-                tint = MiuixTheme.colorScheme.primary,
-            )
+/** 空白首页问候语的放大倍数（约两档字号）。 */
+private const val EmptyGreetingFontScale = 1.3f
+
+/** TextUnit 未指定时不能参与算术，原样返回，避免行高未设置时报错。 */
+private fun TextUnit.scaleIfSpecified(factor: Float): TextUnit =
+    if (this == TextUnit.Unspecified) this else this * factor
+
+/** 滚动条宽度、与屏幕边缘的距离与上下留白。 */
+private val ScrollIndicatorWidth = 3.dp
+private val ScrollIndicatorEndInset = 2.dp
+private val ScrollIndicatorVerticalInset = 10.dp
+private val ScrollIndicatorMinThumb = 36.dp
+
+/** 完全静止后等待多久开始渐隐，避免惯性滚动尾巴让滚动条闪一下。 */
+private const val ScrollIndicatorIdleDelayMs = 550L
+
+/**
+ * 滚动条跟随采样值的平滑时长。
+ *
+ * LazyColumn 不暴露总内容高度，采样只能由「已测量过消息项的高度」累计推算；新消息项进入视口时
+ * 推算值会小幅跳变，直接绘制就是用户看到的「长度突然一变」。这里用很短的线性补间把跳变磨平，
+ * 又不足以让位置明显滞后于手指。
+ */
+private const val ScrollIndicatorFollowMs = 120
+
+/** 采样结果：滚动进度与滑块长度占比；null 表示内容不足一屏。 */
+private data class ScrollIndicatorMetrics(
+    val progress: Float,
+    val thumbFraction: Float,
+)
+
+/**
+ * 滚动条采样器：按消息项索引缓存已测量的高度。
+ *
+ * 只用「当前可见项平均高度 × 总项数」估算总高度时，可见项集合每变一次平均高度就跳一次，
+ * 滑块长度随之忽长忽短。缓存后总高度 = 已测量项之和 + 未测量项 × 平均值，随滚动单调收敛，
+ * 位置也按像素而不是按项数推进，滚动速度才均匀。
+ */
+private class ScrollIndicatorSampler {
+    /** 已测量高度，按条目 key 而不是 index 缓存。 */
+    private val heights = HashMap<Any, Int>()
+
+    /** 在底部实测到的滚动总距离（px）；0 表示还没到底过。 */
+    private var calibratedRangePx = 0f
+    private var lastTotalItems = 0
+
+    fun sample(state: LazyListState, keys: List<Any>): ScrollIndicatorMetrics? {
+        val info = state.layoutInfo
+        val totalItems = info.totalItemsCount
+        val visible = info.visibleItemsInfo
+        if (totalItems <= 0 || visible.isEmpty()) return null
+
+        // 会话切换或整体替换（项数骤减）：缓存与校准都失效，重新估算。
+        val shrank = lastTotalItems > 0 && totalItems < lastTotalItems - 20 &&
+            totalItems < lastTotalItems * 3 / 5
+        if (shrank) {
+            heights.clear()
+            calibratedRangePx = 0f
         }
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = item.title,
-            style = MiuixTheme.textStyles.body2.copy(
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Medium,
-            ),
-            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.88f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        if (heights.size > 6000) heights.clear()
+        visible.forEach { item ->
+            keys.getOrNull(item.index)?.let { key -> heights[key] = item.size }
+        }
+
+        val measuredSum = heights.values.sum().toFloat()
+        val average = (measuredSum / heights.size).coerceAtLeast(1f)
+        val viewportPx = (info.viewportEndOffset - info.viewportStartOffset)
+            .coerceAtLeast(1)
+            .toFloat()
+
+        // 分页加载更早消息后项数增加：把新增部分按平均高度并入已校准的总距离。
+        // 之前是直接丢弃校准回到推算值，分母一换滑块就会瞬移。
+        if (!shrank && calibratedRangePx > 0f && lastTotalItems > 0 && totalItems > lastTotalItems) {
+            calibratedRangePx += (totalItems - lastTotalItems) * average
+        }
+        lastTotalItems = totalItems
+
+        val first = visible.first()
+        // 视口顶部内边距（顶栏高度）不算滚动距离，减掉后滑到顶时进度才是 0。
+        val firstTopInViewport = (first.offset - info.viewportStartOffset).toFloat()
+        val insideFirst = (-firstTopInViewport).coerceIn(0f, first.size.toFloat())
+        var beforeFirst = 0f
+        for (index in 0 until first.index) {
+            beforeFirst += keys.getOrNull(index)?.let { key -> heights[key] }?.toFloat() ?: average
+        }
+        val scrolledPx = beforeFirst + insideFirst
+
+        // canScrollForward == false 表示已经真的到底：此时「已滚动距离 + 视口高度」就是真实内容高度。
+        // 用探底实测值校准，避免高度推算偏高时进度永远停在中间、滑到底也到不了 100%。
+        val atBottom = !state.canScrollForward && scrolledPx > 0f
+        if (atBottom) calibratedRangePx = scrolledPx
+        val contentPx = if (calibratedRangePx > 0f) {
+            calibratedRangePx + viewportPx
+        } else {
+            measuredSum + (totalItems - heights.size).coerceAtLeast(0) * average
+        }
+        if (contentPx <= viewportPx * 1.02f) return null
+        val maxScrollPx = (contentPx - viewportPx).coerceAtLeast(1f)
+        return ScrollIndicatorMetrics(
+            progress = if (atBottom) 1f else (scrolledPx / maxScrollPx).coerceIn(0f, 1f),
+            thumbFraction = (viewportPx / contentPx).coerceIn(0.06f, 1f),
         )
     }
 }
 
-private data class SuggestionItem(
-    val title: String,
-    val icon: ImageVector,
-    val prompt: String,
-)
+/**
+ * 会话滚动条。
+ *
+ * - 只在滚动（拖动或惯性）时显示，停止后渐隐；
+ * - 两端圆角，不是直角；
+ * - 采样与绘制分离：采样在 snapshotFlow 里做补间，绘制在 Canvas 的 draw 阶段读动画值，
+ *   不触发重组，滚动过程中每帧连续更新。
+ */
+@Composable
+private fun ChatScrollIndicator(
+    scrollState: LazyListState,
+    itemKeys: List<Any>,
+    modifier: Modifier = Modifier,
+) {
+    val sampler = remember(scrollState) { ScrollIndicatorSampler() }
+    val progress = remember { Animatable(0f) }
+    val length = remember { Animatable(0f) }
+    val visibility = remember { Animatable(0f) }
+    val thumbColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.32f)
+
+    // 采样流共享给两条补间：位置跟手（直接落位），长度做短补间磨平跳变。
+    val samples = remember(scrollState, itemKeys) {
+        snapshotFlow { sampler.sample(scrollState, itemKeys) }.distinctUntilChanged()
+    }
+    LaunchedEffect(samples) {
+        samples.collectLatest { sample ->
+            val target = sample?.progress ?: return@collectLatest
+            progress.snapTo(target)
+        }
+    }
+    LaunchedEffect(samples) {
+        samples.collectLatest { sample ->
+            val target = sample?.thumbFraction ?: return@collectLatest
+            // 差值很大说明是一次跳转（如打开长会话直接到底），直接落位，不做扫动。
+            if (abs(target - length.value) > 0.4f) {
+                length.snapTo(target)
+            } else {
+                length.animateTo(
+                    targetValue = target,
+                    animationSpec = tween(ScrollIndicatorFollowMs, easing = LinearEasing),
+                )
+            }
+        }
+    }
+
+    val isScrolling by remember(scrollState) {
+        derivedStateOf { scrollState.isScrollInProgress }
+    }
+    LaunchedEffect(isScrolling) {
+        if (isScrolling) {
+            visibility.animateTo(1f, tween(durationMillis = 110))
+        } else {
+            delay(ScrollIndicatorIdleDelayMs)
+            visibility.animateTo(0f, tween(durationMillis = 420))
+        }
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(ScrollIndicatorWidth),
+    ) {
+        val opacity = visibility.value
+        val fraction = length.value
+        if (opacity <= 0.01f || fraction <= 0f) return@Canvas
+        val track = size.height
+        if (track <= 0f) return@Canvas
+        val minThumb = ScrollIndicatorMinThumb.toPx().coerceAtMost(track)
+        val thumb = (track * fraction).coerceIn(minThumb, track)
+        val top = ((track - thumb) * progress.value).coerceIn(0f, track - thumb)
+        drawRoundRect(
+            color = thumbColor.copy(alpha = thumbColor.alpha * opacity),
+            topLeft = Offset(0f, top),
+            size = Size(size.width, thumb),
+            cornerRadius = CornerRadius(thumb / 2f),
+        )
+    }
+}

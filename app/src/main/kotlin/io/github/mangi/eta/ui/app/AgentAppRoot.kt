@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -13,6 +14,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -42,6 +46,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
+import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
 import io.github.mangi.eta.agent.device.RootAccess
@@ -67,7 +73,6 @@ import io.github.mangi.eta.ui.model.AgentToolsAction
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import io.github.mangi.eta.ui.model.LOCAL_NETWORK_PERMISSION_ITEM_ID
 import io.github.mangi.eta.ui.model.PermissionHealthAction
-import io.github.mangi.eta.ui.model.PermissionStatusUi
 import io.github.mangi.eta.ui.model.roleplayChatUi
 import io.github.mangi.eta.ui.navigation.AgentNavigator
 import io.github.mangi.eta.ui.navigation.AppRoute
@@ -76,11 +81,15 @@ import io.github.mangi.eta.ui.pages.providers.CommunityCatalogScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
 import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
+import io.github.mangi.eta.ui.screens.settings.AssistantOverlaySettingsScreen
+import io.github.mangi.eta.ui.screens.settings.ConversationTitleSettingsScreen
 import io.github.mangi.eta.ui.screens.browser.AgentBrowserActivity
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.ui.screens.characters.CharacterDetailScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
+import io.github.mangi.eta.ui.screens.characters.CharacterPersonaScreen
+import io.github.mangi.eta.ui.screens.characters.DefaultAssistantPromptScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterMemoryScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterPersonaScreen
 import io.github.mangi.eta.ui.screens.enhance.SystemEnhanceScreen
@@ -88,9 +97,8 @@ import io.github.mangi.eta.ui.screens.home.AgentHomeScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServersScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
+import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
-import io.github.mangi.eta.ui.screens.settings.AssistantOverlaySettingsScreen
-import io.github.mangi.eta.ui.screens.settings.ConversationTitleSettingsScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
 import io.github.mangi.eta.ui.screens.subagent.SubagentSettingsScreen
 import io.github.mangi.eta.ui.screens.terminal.LinuxEnvironmentScreen
@@ -125,10 +133,13 @@ fun AgentAppRoot(
     assistantConversationKey: String? = null,
     requestedConversationId: String? = null,
     onRequestedConversationOpened: () -> Unit = {},
+    interjectRequested: Boolean = false,
+    onInterjectHandled: () -> Unit = {},
     requestedArchivedConversation: ArchivedConversationRequest? = null,
     onArchivedConversationOpened: () -> Unit = {},
     sharedContent: IncomingShareRequest? = null,
     onSharedContentAccepted: () -> Unit = {},
+    assistantConversationSource: String = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
     openSpeechSettings: Boolean = false,
     openTerminal: Boolean = false,
     onTerminalOpened: () -> Unit = {},
@@ -166,11 +177,13 @@ fun AgentAppRoot(
     val skills = appViewModel.skills
     val memory = appViewModel.memory
     val permissionHealth = appViewModel.permissionHealth
+    val deepSeekBalance = appViewModel.deepSeekBalance
     val toolsState = remember { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
     val communityCatalogStore = viewModel<CommunityCatalogViewModel>().store
     val requestExecutionNotifications = rememberExecutionNotificationRequest()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest(permissionHealth::refreshPermissionHealth)
+    val requestBluetoothPermission = rememberBluetoothPermissionRequest(permissionHealth::refreshPermissionHealth)
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -241,6 +254,16 @@ fun AgentAppRoot(
         onRequestedConversationOpened()
     }
 
+    // 执行通知的「补充」：回到主聊天舞台并把输入框拉起键盘，用户直接插话；
+    // 插话走 PR 里的 steering 通道，不会打断当前正在执行的操作。
+    LaunchedEffect(interjectRequested) {
+        if (!interjectRequested) return@LaunchedEffect
+        conversationPaneOpen = false
+        navigator.popToHome()
+        agentState.requestComposerFocus()
+        onInterjectHandled()
+    }
+
     LaunchedEffect(requestedArchivedConversation) {
         val request = requestedArchivedConversation ?: return@LaunchedEffect
         // 外部入口的结果要先导入归档才有会话；找不到时停在当前界面，不切到无关的会话。
@@ -251,13 +274,16 @@ fun AgentAppRoot(
         onArchivedConversationOpened()
     }
 
-    LaunchedEffect(assistantConversationKey) {
+    LaunchedEffect(assistantConversationKey, assistantConversationSource) {
         val conversationKey = assistantConversationKey ?: return@LaunchedEffect
-        val opened = agentState.openAssistantConversation(conversationKey)
+        val opened = agentState.openAssistantConversation(conversationKey, assistantConversationSource)
         if (opened) {
             conversationPaneOpen = false
             // 接管落到主聊天舞台：与主界面同一页面、同一侧边对话列表，不再开独立对话页。
             navigator.popToHome()
+        } else if (assistantConversationSource == "automation") {
+            navigator.popToHome()
+            navigator.push(AppRoute.Tasks)
         }
         onAssistantConversationOpened(opened)
     }
@@ -309,27 +335,39 @@ fun AgentAppRoot(
         context.startActivity(AgentBrowserActivity.createIntent(context, sessionKey))
     }
 
+    fun openAccessibilitySettings() {
+        focusManager.clearFocus()
+        // Android's per-service settings action is not exposed in the public SDK.
+        val details = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+            .putExtra("android.intent.extra.COMPONENT_NAME", ComponentName(context, AgentAccessibilityService::class.java))
+        if (runCatching { context.startActivity(details) }.isFailure) {
+            runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
+    }
+
     @Composable
     fun RoutedShell(
         route: AppRoute,
-        applyShellPadding: Boolean = true,
-        content: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit,
+        content: @Composable (PaddingValues) -> Unit,
     ) {
-        val isHome = route is AppRoute.Home
-        val hasPermissionAttention = permissionHealth.permissionHealthState.items.any { item ->
-            item.id in CorePermissionAttentionIds &&
-                (item.status == PermissionStatusUi.Missing || item.status == PermissionStatusUi.Warning)
-        }
         AgentAppShell(
             currentRoute = route,
             isCurrentRoute = backStack.lastOrNull() == route,
             conversationPaneState = agentState.conversationPaneState,
             isConversationPaneOpen = conversationPaneOpen,
+            // 顶栏状态位：余额胶囊已移到输入栏正中；标题走 conversationTitle。
+            conversationStatus = {},
+            conversationTitle = agentState.topBarConversationTitle(
+                agentState.conversationPaneState.selectedConversationId,
+            ) ?: stringResource(R.string.conversation_top_bar_placeholder),
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
             onSearchConversations = { query -> agentState.updateSearchQuery(query) },
             onNewConversation = { createConversation() },
+            onNewConversationWorkspace = { workspaceId ->
+                agentState.setPendingNewConversationWorkspace(workspaceId)
+            },
             onOpenTerminal = { pushRoute(AppRoute.Terminal) },
             onLaunchKimiWeb = {
                 requestExecutionNotifications()
@@ -359,6 +397,9 @@ fun AgentAppRoot(
             onConversationRename = { conversation ->
                 conversationRenameTarget = conversation
             },
+            onConversationPinnedChange = { conversation, pinned ->
+                agentState.setConversationPinned(conversation.id, pinned)
+            },
             onConversationExport = { conversation ->
                 conversationExportTarget = conversation
                 conversationExportLauncher.launch(
@@ -371,28 +412,49 @@ fun AgentAppRoot(
             onConversationDelete = { conversation ->
                 conversationDeleteTarget = conversation
             },
+            onCreateWorkspace = { name -> agentState.createWorkspace(name) },
+            onRenameWorkspace = { workspaceId, name -> agentState.renameWorkspace(workspaceId, name) },
+            onDeleteWorkspace = { workspaceId -> agentState.deleteWorkspace(workspaceId) },
+            onWorkspaceCollapsedChange = { workspaceId, collapsed ->
+                agentState.setWorkspaceCollapsed(workspaceId, collapsed)
+            },
+            onConversationMoveToWorkspace = { conversationId, workspaceId ->
+                agentState.moveConversationToWorkspace(conversationId, workspaceId)
+            },
             onOpenTools = { pushRoute(AppRoute.Tools) },
             onOpenSkills = { pushRoute(AppRoute.Skills) },
             onOpenCharacters = { pushRoute(AppRoute.Characters) },
             onOpenPermissions = { pushRoute(AppRoute.Permissions) },
             onOpenSettings = { pushRoute(AppRoute.Settings) },
             onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
-            homeTitle = if (isHome) agentState.currentConversationTitle else null,
-            homeCharacter = if (isHome) agentState.homeState.roleplayChatUi() else null,
-            homeModelPickerState = if (isHome) agentState.modelPickerState else null,
-            isHomeStreaming = isHome && agentState.homeState.isStreaming,
-            hasPermissionAttention = isHome && hasPermissionAttention,
-            onHomeModelSelected = agentState::selectModel,
+            homeCharacter = if (route is AppRoute.Home) agentState.homeState.roleplayChatUi() else null,
             onOpenCharacter = {
                 agentState.homeState.roleplay?.let { pushRoute(AppRoute.CharacterDetail(it.characterId)) }
             },
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (applyShellPadding) Modifier.padding(padding) else Modifier)
-            ) {
-                content(padding)
+            if (route is AppRoute.Home) {
+                // 会话页（首页）：顶栏高度不当外边距，而是交给聊天列表做顶部内容内边距，
+                // 消息才能滑到顶栏毛玻璃下方，观感与设置页一致。
+                val layoutDirection = LocalLayoutDirection.current
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(
+                            start = padding.calculateStartPadding(layoutDirection),
+                            end = padding.calculateEndPadding(layoutDirection),
+                            bottom = padding.calculateBottomPadding(),
+                        ),
+                ) {
+                    content(padding)
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                ) {
+                    content(padding)
+                }
             }
         }
     }
@@ -414,13 +476,23 @@ fun AgentAppRoot(
             ),
         ) {
             entry<AppRoute.Home>(swipeDismiss = swipeDismiss) {
-                RoutedShell(route = AppRoute.Home, applyShellPadding = false) { shellPadding ->
+                RoutedShell(route = AppRoute.Home) { padding ->
                     AgentHomeScreen(
+                        topInset = padding.calculateTopPadding(),
+                        balanceCapsule = {
+                            io.github.mangi.eta.ui.components.AccountBalanceCapsules(
+                                state = deepSeekBalance.state,
+                                onRefresh = deepSeekBalance::refreshNow,
+                                onReseed = deepSeekBalance::reseed,
+                                maxWidth = 112.dp,
+                            )
+                        },
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
                         isBranching = agentState.isBranchingCurrentConversation,
                         conversationKey = agentState.conversationPaneState.selectedConversationId,
-                        topInset = shellPadding.calculateTopPadding(),
+                        focusInputRequest = agentState.composerFocusRequestId,
+                        onFocusInputHandled = { agentState.consumeComposerFocusRequest() },
                         onAction = { action ->
                             when (action) {
                                 is AgentHomeAction.ReasoningEffortChanged ->
@@ -432,6 +504,7 @@ fun AgentAppRoot(
                                 is AgentHomeAction.ModelSelected -> agentState.selectModel(action.modelId)
                                 is AgentHomeAction.SubmitMessage -> { requestExecutionNotifications(); agentState.sendCurrentMessage(action.text) }
                                 is AgentHomeAction.InterruptAndSubmitMessage -> { requestExecutionNotifications(); agentState.interruptAndSendCurrentMessage(action.text) }
+                                is AgentHomeAction.SteerMessage -> { requestExecutionNotifications(); agentState.steerCurrentMessage(action.text) }
                                 is AgentHomeAction.SteerQueuedMessage -> { requestExecutionNotifications(); agentState.steerQueuedMessage(action.id) }
                                 is AgentHomeAction.RecallQueuedMessage -> agentState.recallQueuedMessage(action.id, action.currentDraftText)
                                 is AgentHomeAction.RemoveQueuedMessage -> agentState.removeQueuedMessage(action.id)
@@ -515,12 +588,6 @@ fun AgentAppRoot(
             entry<AppRoute.Subagents>(swipeDismiss = swipeDismiss) {
                 SubagentSettingsScreen(onBack = ::popRoute)
             }
-            entry<AppRoute.ConversationTitleSettings>(swipeDismiss = swipeDismiss) {
-                ConversationTitleSettingsScreen(onBack = ::popRoute)
-            }
-            entry<AppRoute.AssistantOverlaySettings>(swipeDismiss = swipeDismiss) {
-                AssistantOverlaySettingsScreen(onBack = ::popRoute)
-            }
             entry<AppRoute.Skills>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) {
                     skills.refreshSkills()
@@ -577,6 +644,14 @@ fun AgentAppRoot(
                     if (navigator.current() == AppRoute.CharacterPersona) popRoute()
                 }
             }
+            entry<AppRoute.DefaultAssistantPrompt>(swipeDismiss = swipeDismiss) {
+                LaunchedEffect(backStack.lastOrNull() == AppRoute.DefaultAssistantPrompt) {
+                    if (backStack.lastOrNull() == AppRoute.DefaultAssistantPrompt) characterStore.loadDefaultPrompt()
+                }
+                DefaultAssistantPromptScreen(characterStore) {
+                    if (navigator.current() == AppRoute.DefaultAssistantPrompt) popRoute()
+                }
+            }
             entry<AppRoute.CharacterMemory>(swipeDismiss = swipeDismiss) { route ->
                 LaunchedEffect(route.characterId, backStack.lastOrNull() == route) {
                     if (backStack.lastOrNull() == route) characterStore.loadMemory(route.characterId)
@@ -595,6 +670,7 @@ fun AgentAppRoot(
                             is PermissionHealthAction.OpenItemAction -> {
                                 when (action.itemId) {
                                     LOCAL_NETWORK_PERMISSION_ITEM_ID -> requestLocalNetworkPermission()
+                                    "bluetooth" -> requestBluetoothPermission()
                                     "calendar" -> locationPermissionLauncher.launch(io.github.mangi.eta.agent.device.CalendarPermissions.requested)
                                     "notification_policy" -> context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
                                     "accessibility" -> {
@@ -727,6 +803,9 @@ fun AgentAppRoot(
                     onBack = ::popRoute
                 )
             }
+            entry<AppRoute.Tasks>(swipeDismiss = swipeDismiss) {
+                AgentTasksScreen(onBack = { popRoute() })
+            }
             entry<AppRoute.SpeechSettings>(swipeDismiss = swipeDismiss) {
                 SpeechSettingsScreen(
                     onBack = ::popRoute,
@@ -744,6 +823,12 @@ fun AgentAppRoot(
             }
             entry<AppRoute.SpeechOss>(swipeDismiss = swipeDismiss) {
                 SpeechOssScreen(onBack = ::popRoute)
+            }
+            entry<AppRoute.ConversationTitleSettings>(swipeDismiss = swipeDismiss) {
+                ConversationTitleSettingsScreen(onBack = ::popRoute)
+            }
+            entry<AppRoute.AssistantOverlaySettings>(swipeDismiss = swipeDismiss) {
+                AssistantOverlaySettingsScreen(onBack = ::popRoute)
             }
             entry<AppRoute.AppearanceSettings>(swipeDismiss = swipeDismiss) {
                 AppearanceSettingsScreen(onBack = ::popRoute)
@@ -766,6 +851,8 @@ fun AgentAppRoot(
                         when (action) {
                             AgentMemoryAction.NavigateBack -> popRoute()
                             is AgentMemoryAction.ToggleEnabled -> memory.setMemoryEnabled(action.enabled)
+                            is AgentMemoryAction.ToggleAutoMemory -> memory.setAutomaticReview(memory = action.enabled)
+                            is AgentMemoryAction.ToggleAutoSkills -> memory.setAutomaticReview(skills = action.enabled)
                             is AgentMemoryAction.DraftChanged -> memory.updateMemoryDraft(action.content)
                             AgentMemoryAction.Save -> memory.saveMemory()
                             AgentMemoryAction.Clear -> memory.clearMemory()
@@ -1054,13 +1141,6 @@ fun AgentAppRoot(
         }
     }
 }
-
-private val CorePermissionAttentionIds = setOf(
-    "background",
-    "overlay",
-    "accessibility",
-    "notifications",
-)
 
 private data class MessageMutationTarget(
     val messageId: String,

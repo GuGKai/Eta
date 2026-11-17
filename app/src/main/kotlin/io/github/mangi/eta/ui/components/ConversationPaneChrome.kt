@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.components
 import android.graphics.BlendMode as AndroidBlendMode
 import android.graphics.LinearGradient
 import android.graphics.RenderEffect as AndroidRenderEffect
+import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -21,6 +22,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -45,7 +47,9 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -57,8 +61,13 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.focus.FocusRequester
@@ -74,26 +83,39 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.foundation.Image
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -103,6 +125,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.itos.coui.backdrop.CouiBackdrop
@@ -116,6 +139,7 @@ import com.itos.coui.effect.LocalCouiContourGlowEnabled
 import com.itos.coui.effect.SpotlightPreset
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.effect.couiFloatingSurface
+import com.itos.coui.effect.drawCouiGradientBackdrop
 import com.itos.coui.effect.couiToolbarFeedback
 import com.itos.coui.effect.rememberCouiSpotlight
 import com.itos.coui.layout.CouiPageDefaults
@@ -123,6 +147,7 @@ import com.itos.coui.motion.couiPressMotion
 import com.itos.coui.motion.couiTouchMotion
 import com.itos.coui.motion.rememberCouiPressMotion
 import com.itos.coui.motion.rememberCouiTouchMotion
+import com.itos.coui.search.CouiSearchBarDefaults
 import com.itos.coui.search.SearchBar
 import com.itos.coui.search.rememberCouiSearchBarState
 import com.itos.coui.shape.CouiCapsuleShape
@@ -130,7 +155,9 @@ import com.itos.coui.text.CouiTextKind
 import com.itos.coui.text.Text as CouiText
 import com.itos.coui.theme.CouiTheme
 import com.itos.coui.topappbar.CouiTopAppBarButtonDefaults
+import com.itos.coui.topappbar.CouiTopAppBarDefaults
 import com.itos.coui.topappbar.TopAppBarSurface
+import com.itos.coui.topappbar.TopAppBarButtonGroup
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalBlurEnabled
@@ -146,12 +173,16 @@ import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
+import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 internal object ConversationPanelMetrics {
     val PaneHorizontalPadding = 16.dp
     val TopBarHeight = 56.dp
+
+    /** 工作区 chip 栏固定高度：顶栏材质把它一起盖住。 */
+    val WorkspaceChipsHeight = 44.dp
     val BottomDockHeight = 44.dp
     val BottomDockVerticalPadding = 10.dp
     val BottomDockGap = 8.dp
@@ -188,19 +219,6 @@ internal object ConversationPanelMetrics {
  * 深色下将侧栏稳稳抬到介于聊天黑底与前景卡片之间的层级，确保两侧界面与卡片各自独立可辨。
  */
 @Composable
-internal fun conversationPaneContainerColor(): Color {
-    if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
-        return if (CouiTheme.isDark) Color(0xFF16171B) else CouiPageDefaults.themeColors(false).background
-    }
-    val colors = MiuixTheme.colorScheme
-    return if (colors.surface.luminance() > 0.5f) {
-        colors.surface
-    } else {
-        lerp(colors.surface, colors.surfaceContainer, 0.45f)
-    }
-}
-
-@Composable
 internal fun conversationPaneCardColor(): Color {
     if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
         return if (CouiTheme.isDark) Color(0xFF212328) else Color.White
@@ -216,28 +234,55 @@ internal fun conversationPaneEdgeBorderColor(): Color {
     return MiuixTheme.colorScheme.dividerLine.copy(alpha = 0.42f)
 }
 
+/**
+ * COUI 顶栏内部的子 backdrop（`LocalCouiToolbarBackdrop` 在源码里是 internal，只能反射拿一次）。
+ *
+ * 自己搭顶栏材质后需要它来手动 provide，让 `CouiTopAppBarIconButton` 这类只认该 local 的控件
+ * 也能拿到同一层材质；取不到时按钮自动降级成实色圆钮。
+ */
+private val CouiToolbarBackdropLocal: ProvidableCompositionLocal<CouiBackdrop?>? by lazy {
+    runCatching {
+        @Suppress("UNCHECKED_CAST")
+        Class.forName("com.itos.coui.topappbar.TopAppBarSurfaceKt")
+            .getMethod("getLocalCouiToolbarBackdrop")
+            .invoke(null) as? ProvidableCompositionLocal<CouiBackdrop?>
+    }.getOrNull()
+}
+
 @Composable
 internal fun ConversationPaneTopBar(
     containerColor: Color,
     couiBackdrop: CouiBackdrop?,
     miuixBackdrop: LayerBackdrop?,
+    /** COUI 顶栏的模糊源（Miuix LayerBackdrop，内容真实写入 layer）；null 时退回渐变底色。 */
+    paneBlurBackdrop: LayerBackdrop?,
     onNewConversation: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 顶栏正下方的第二行（工作区 chip 栏）。
+     *
+     * 直接画在 TopAppBarSurface 的 content 里，整块材质是同一个超宽区域、模糊连续；
+     * 这一行里的 COUI 浮动组件必须从 `LocalCouiToolbarBackdrop` 取背景材质，
+     * 不能再自己 `rememberCouiBackdrop()`（独立采样会和顶栏互相顶掉，模糊失效）。
+     */
+    secondaryBar: (@Composable (CouiBackdrop?, LayerBackdrop?) -> Unit)? = null,
 ) {
     val barContent: @Composable () -> Unit = {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(
-                    WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
-                )
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                    )
                 .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding)
                 .height(ConversationPanelMetrics.TopBarHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PaneBrandHeader(modifier = Modifier.weight(1f))
-            PaneNewChatButton(
-                hasCouiToolbarBackdrop = LocalUiStyle.current == AppearanceUiStyle.COUI && couiBackdrop != null,
+            NewConversationIconButton(
+                hasCouiToolbarBackdrop = LocalUiStyle.current == AppearanceUiStyle.COUI &&
+                    couiBackdrop != null &&
+                    CouiToolbarBackdropLocal != null,
                 onClick = onNewConversation,
             )
         }
@@ -245,15 +290,43 @@ internal fun ConversationPaneTopBar(
 
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
-            val dark = CouiTheme.isDark
             if (couiBackdrop != null) {
+                // 材质本体直接用 COUI 的 TopAppBarSurface（TopAppBar 只是它的一层封装）：
+                // 只有拿到这个表面，才能把工作区 chip 栏塞进它的 content 里，
+                // 让模糊的下沿跟着内容一起长到 chip 底部，而不是停在标题栏下边 12dp。
+                // 标题行按紧凑栏几何手排：52dp 高、左右留白、标题占满、操作按钮靠右；
+                // 按钮材质仍由表面内部 provide 的 LocalCouiToolbarBackdrop 提供。
+                val barDark = CouiTheme.isDark
+                val barTheme = CouiPageDefaults.themeColors(barDark)
                 TopAppBarSurface(
                     modifier = modifier.fillMaxWidth(),
                     backdrop = couiBackdrop,
                     gradientColor = containerColor,
-                    dark = dark,
+                    dark = barDark,
                 ) {
-                    barContent()
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .windowInsetsPadding(CouiTopAppBarDefaults.windowInsets)
+                                .height(CouiTopAppBarDefaults.height)
+                                .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PaneBrandHeader(Modifier.weight(1f))
+                            TopAppBarButtonGroup {
+                                CouiTopAppBarIconButton(
+                                    icon = ChatActionIcons.NewChat,
+                                    contentDescription = stringResource(R.string.action_new_conversation),
+                                    onClick = onNewConversation,
+                                    dark = barDark,
+                                    colors = barTheme,
+                                    iconSize = ConversationPanelMetrics.NewChatIconSize,
+                                )
+                            }
+                        }
+                        secondaryBar?.invoke(couiBackdrop, null)
+                    }
                 }
             } else {
                 Box(
@@ -267,7 +340,10 @@ internal fun ConversationPaneTopBar(
                             ),
                         ),
                 ) {
-                    barContent()
+                    Column {
+                        barContent()
+                        secondaryBar?.invoke(null, null)
+                    }
                 }
             }
         }
@@ -299,20 +375,14 @@ private fun PaneBrandHeader(modifier: Modifier = Modifier) {
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
+        Image(
+            painter = painterResource(R.drawable.pane_brand_mark),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(ConversationPanelMetrics.BrandBadgeSize)
-                .clip(CircleShape)
-                .background(badgeBrush, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = ConversationPaneIcons.BrandEta,
-                contentDescription = null,
-                modifier = Modifier.size(ConversationPanelMetrics.BrandIconSize),
-                tint = Color.White,
-            )
-        }
+                .clip(CircleShape),
+        )
         Spacer(Modifier.width(10.dp))
         if (isCoui) {
             CouiText(
@@ -335,8 +405,9 @@ private fun PaneBrandHeader(modifier: Modifier = Modifier) {
     }
 }
 
+/** 侧栏顶栏与会话页顶栏共用的「新建会话」按钮（上游圆形气泡加号样式）。 */
 @Composable
-private fun PaneNewChatButton(
+internal fun NewConversationIconButton(
     hasCouiToolbarBackdrop: Boolean,
     onClick: () -> Unit,
 ) {
@@ -346,6 +417,7 @@ private fun PaneNewChatButton(
             val dark = CouiTheme.isDark
             val colors = CouiPageDefaults.themeColors(dark)
             if (hasCouiToolbarBackdrop) {
+                // 材质、按压、玻璃全部交给 COUI 顶栏按钮自己画（它从 LocalCouiToolbarBackdrop 采样）。
                 CouiTopAppBarIconButton(
                     icon = ChatActionIcons.NewChat,
                     contentDescription = description,
@@ -355,13 +427,21 @@ private fun PaneNewChatButton(
                     iconSize = ConversationPanelMetrics.NewChatIconSize,
                 )
             } else {
+                // 拿不到 COUI 顶栏材质的纯回退：半透明底 + 描边，绝不垫自造模糊。
                 val source = remember { MutableInteractionSource() }
                 Box(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (dark) Color(0xFF252830) else Color.White, CircleShape)
-                        .border(0.5.dp, if (dark) Color(0x1EFFFFFF) else Color(0x12000000), CircleShape)
+                        .background(
+                            if (dark) Color(0x99252830) else Color(0xB3FFFFFF),
+                            CircleShape,
+                        )
+                        .border(
+                            0.5.dp,
+                            if (dark) Color(0x1EFFFFFF) else Color(0x12000000),
+                            CircleShape,
+                        )
                         .couiButtonFeedback(dark, source, enabled = true)
                         .clickable(
                             interactionSource = source,
@@ -407,6 +487,16 @@ private fun PaneNewChatButton(
     }
 }
 
+/**
+ * 侧栏搜索框的「点外部收起」协作：
+ * dock 把搜索胶囊在窗口内的范围登记进来，Panel 在搜索框以外按下时把 dismissRequest 自增，
+ * dock 观察到变化后自己收起（COUI 原生只认「取消」和返回键，这两件事 Panel 拿不到）。
+ */
+internal object ConversationPaneSearchDock {
+    var barBoundsInWindow by mutableStateOf<Rect?>(null)
+    var dismissRequest by mutableStateOf(0)
+}
+
 @Composable
 internal fun ConversationPaneBottomDock(
     query: String,
@@ -450,54 +540,6 @@ internal fun ConversationPaneBottomDock(
         )
     }
 
-    val couiBlurModifier = if (activeCouiBackdrop != null) {
-        // 底部羽化高斯模糊：仅在独立背景层上采样 activeCouiBackdrop 并写入 couiDockBackdrop，
-        // 前景 SearchBar 与圆形按钮作为兄弟节点消费 couiDockBackdrop，避免 RenderNode 循环引用。
-        Modifier.drawCouiBackdrop(
-            backdrop = activeCouiBackdrop,
-            shape = { RectangleShape },
-            effects = {
-                if (size.width > 0f && size.height > 0f) {
-                    val blurPx = (18.dp.toPx()).coerceAtLeast(1f)
-                    padding = kotlin.math.ceil(blurPx)
-                    val blurred = AndroidRenderEffect.createBlurEffect(
-                        blurPx,
-                        blurPx,
-                        Shader.TileMode.CLAMP,
-                    )
-                    val fadeTop = padding
-                    val fadeBottom = padding + size.height * 0.55f
-                    val mask = AndroidRenderEffect.createShaderEffect(
-                        LinearGradient(
-                            0f,
-                            fadeTop,
-                            0f,
-                            fadeBottom.coerceAtLeast(fadeTop + 1f),
-                            intArrayOf(
-                                android.graphics.Color.TRANSPARENT,
-                                android.graphics.Color.argb(180, 0, 0, 0),
-                                android.graphics.Color.BLACK,
-                            ),
-                            floatArrayOf(0f, 0.45f, 1f),
-                            Shader.TileMode.CLAMP,
-                        ),
-                    )
-                    val maskedBlur = AndroidRenderEffect.createBlendModeEffect(
-                        blurred,
-                        mask,
-                        AndroidBlendMode.DST_IN,
-                    )
-                    val base = AndroidRenderEffect.createOffsetEffect(0f, 0f)
-                    renderEffect = AndroidRenderEffect
-                        .createBlendModeEffect(base, maskedBlur, AndroidBlendMode.SRC_OVER)
-                        .asComposeRenderEffect()
-                }
-            },
-        )
-    } else {
-        Modifier
-    }
-
     val miuixOrFallbackBackdropModifier = if (activeMiuixBackdrop != null) {
         Modifier
             .progressiveTextureBlur(
@@ -526,7 +568,29 @@ internal fun ConversationPaneBottomDock(
     }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     val searchState = rememberCouiSearchBarState(searchExpanded)
+    // COUI SearchBar 的材质层按矩形铺、不按胶囊裁剪，收起动画期间会在右侧按钮位置露出一块
+    // 兜底底色（fallbackBackground）。把兜底底色设成全透明，那块矩形就不再可见；
+    // 正常态胶囊由材质层自己绘制，不依赖这档颜色。
+    val searchBarColors = CouiSearchBarDefaults.colors(couiDark).copy(
+        fallbackBackground = Color.Transparent,
+    )
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // COUI 原生 SearchBar 只在「取消」按钮或返回键时收起，点别处既不丢焦点也不收。
+    // 收起的唯一入口是内部的 updateTarget（外部只有 onExpandedChange 回调，拿不到主动调用），
+    // 直接用它让 COUI 自己跑完宽度/取消态动画；expanded 变 false 后 SearchBar 内部会 releaseInput，
+    // 焦点与键盘随即释放，不需要我们在外面 clearFocus。
+    fun collapseSearch() {
+        CouiSearchBarStateBridge.collapse(searchState)
+    }
+    LaunchedEffect(ConversationPaneSearchDock.dismissRequest) {
+        if (ConversationPaneSearchDock.dismissRequest > 0 && searchExpanded) {
+            searchExpanded = false
+            onSearchChange("")
+            keyboard?.hide()
+            collapseSearch()
+        }
+    }
     LaunchedEffect(query, canUseCouiNativeSearchBar) {
         if (canUseCouiNativeSearchBar && query.isNotEmpty() && !searchExpanded) {
             searchExpanded = true
@@ -538,11 +602,6 @@ internal fun ConversationPaneBottomDock(
         keyboard?.hide()
     }
 
-    val permissionsDesc = if (hasPermissionAttention) {
-        stringResource(R.string.conversation_permission_attention)
-    } else {
-        stringResource(R.string.route_permissions)
-    }
     val settingsDesc = stringResource(R.string.route_settings)
     val searchPlaceholder = stringResource(R.string.conversation_search_hint)
     val cancelText = stringResource(R.string.action_cancel)
@@ -553,23 +612,13 @@ internal fun ConversationPaneBottomDock(
             .fillMaxWidth()
             .then(miuixOrFallbackBackdropModifier),
     ) {
-        if (activeCouiBackdrop != null) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .couiBackdrop(couiDockBackdrop),
-            ) {
-                androidx.compose.foundation.layout.Spacer(
-                    Modifier
-                        .matchParentSize()
-                        .then(couiBlurModifier),
-                )
-                androidx.compose.foundation.layout.Spacer(
-                    Modifier
-                        .matchParentSize()
-                        .background(bottomScrimBrush),
-                )
-            }
+        if (activeCouiBackdrop != null && DockBlurDebugEnabled) {
+            // 独立背景图层：只负责画底部渐变模糊，搜索框与圆形按钮在它上面。
+            CouiBottomGradientBlurLayer(
+                backdrop = activeCouiBackdrop,
+                recordBackdrop = couiDockBackdrop,
+                modifier = Modifier.matchParentSize(),
+            )
         }
         Box(
             modifier = Modifier
@@ -592,7 +641,12 @@ internal fun ConversationPaneBottomDock(
                     modifier = Modifier.fillMaxWidth(),
                     content = {
                         SearchBar(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { coordinates ->
+                                    ConversationPaneSearchDock.barBoundsInWindow =
+                                        coordinates.boundsInWindow()
+                                },
                             state = searchState,
                             query = query,
                             onQueryChange = onSearchChange,
@@ -601,35 +655,41 @@ internal fun ConversationPaneBottomDock(
                                 if (!next) onSearchChange("")
                             },
                             placeholder = searchPlaceholder,
-                            cancelText = cancelText,
+                            // COUI 的取消胶囊在收起动画里会把「取消」两字连同玻璃材质一起
+                            // 糊成一块边缘笔直的灰色矩形，一直拖到设置按钮淡入。收起过程中
+                            // 先不给文字，只让空胶囊滑走即可，展开态照常显示。
+                            cancelText = if (searchState.expanded || !searchState.active) {
+                                cancelText
+                            } else {
+                                ""
+                            },
                             clearDescription = clearDescription,
                             dark = couiDark,
                             backdrop = couiDockBackdrop,
+                            // COUI 的 SearchBar 把投影强度完全交给这个「滚动进度」：collapse 态下
+                            // drop = (widthProgress - 0.8)/0.2，而折叠时 widthProgress 恒为 0，
+                            // 于是 alphaScale 被算成 0，阴影色 alpha 也乘 0 —— 一条投影都没有。
+                            // 侧栏底部 dock 没有滚动联动，固定喂 1，让投影与旁边的设置圆钮一致。
+                            shadowProgress = 1f,
+                            colors = searchBarColors,
                             onSearch = { keyboard?.hide() },
                         )
+                        // 出现动画交给 COUI 材质本体（CouiFloatingSurface 的 alpha / scale），
+                        // 不在 Row 上再套 graphicsLayer：外层 alpha 会让这一整棵子树走离屏合成，
+                        // 节点矩形之外的投影和半影会被离屏缓冲裁成硬边方块——也就是之前
+                        // 淡入时「阴影变矩形」的来源。COUI 内部是逐层 alpha（u_alpha 与
+                        // shadowRenderer 各自的 alpha），不触发按主体尺寸的离屏，投影响应正常。
                         Row(
-                            modifier = Modifier.graphicsLayer {
-                                val p = buttonsProgress.coerceIn(0f, 1f)
-                                alpha = p
-                                val s = 0.76f + 0.24f * p
-                                scaleX = s
-                                scaleY = s
-                            },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            PaneDockCircleButton(
-                                icon = ConversationPaneIcons.Permissions,
-                                contentDescription = permissionsDesc,
-                                showBadge = hasPermissionAttention,
-                                couiBackdrop = couiDockBackdrop,
-                                onClick = { if (!searchExpanded) onOpenPermissions() },
-                            )
-                            Spacer(Modifier.width(ConversationPanelMetrics.BottomDockGap))
                             PaneDockCircleButton(
                                 icon = ConversationPaneIcons.Settings,
                                 contentDescription = settingsDesc,
                                 showBadge = false,
+                                // 恢复 COUI 材质（主题玻璃感）。材质 patch 按节点矩形铺满，
+                                // 按 COUI-Kit 规范不做裁剪，圆角由 shape 的描边与内容层决定。
                                 couiBackdrop = couiDockBackdrop,
+                                appearProgress = buttonsProgress,
                                 onClick = { if (!searchExpanded) onOpenSettings() },
                             )
                         }
@@ -658,9 +718,9 @@ internal fun ConversationPaneBottomDock(
                             y = (layoutHeight - searchPlaceable.height) / 2,
                         )
                         if (buttonsProgress > 0.01f) {
-                            val slideOffset = ((1f - buttonsProgress) * (buttonsPlaceable.width + sideMarginPx) * 0.35f).toInt()
+                            // 原位放大淡入：不给 x 加位移，动画期间这一列已经预留 48dp。
                             buttonsPlaceable.placeRelative(
-                                x = constraints.maxWidth - sideMarginPx - buttonsPlaceable.width + slideOffset,
+                                x = constraints.maxWidth - sideMarginPx - buttonsPlaceable.width,
                                 y = (layoutHeight - buttonsPlaceable.height) / 2,
                             )
                         }
@@ -677,19 +737,14 @@ internal fun ConversationPaneBottomDock(
                         query = query,
                         onSearchChange = onSearchChange,
                         couiBackdrop = effectiveCouiBackdrop,
+                        cancelText = cancelText,
                         modifier = Modifier.weight(1f),
-                    )
-                    PaneDockCircleButton(
-                        icon = ConversationPaneIcons.Permissions,
-                        contentDescription = permissionsDesc,
-                        showBadge = hasPermissionAttention,
-                        couiBackdrop = effectiveCouiBackdrop,
-                        onClick = onOpenPermissions,
                     )
                     PaneDockCircleButton(
                         icon = ConversationPaneIcons.Settings,
                         contentDescription = settingsDesc,
                         showBadge = false,
+                        // 按 COUI-Kit 的标准用法：浮层组件都吃同一份 backdrop，不做裁剪。
                         couiBackdrop = effectiveCouiBackdrop,
                         onClick = onOpenSettings,
                     )
@@ -706,6 +761,7 @@ private fun PaneSearchCapsule(
     query: String,
     onSearchChange: (String) -> Unit,
     couiBackdrop: CouiBackdrop?,
+    cancelText: String,
     modifier: Modifier = Modifier,
 ) {
     val placeholder = stringResource(R.string.conversation_search_hint)
@@ -769,6 +825,8 @@ private fun PaneSearchCapsule(
         color = activeTextColor,
     )
 
+    var dockEditing by remember { mutableStateOf(false) }
+
     val searchContent: @Composable () -> Unit = {
         Row(
             modifier = Modifier
@@ -778,6 +836,7 @@ private fun PaneSearchCapsule(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) {
+                    dockEditing = true
                     focusRequester.requestFocus()
                     keyboard?.show()
                 }
@@ -810,7 +869,10 @@ private fun PaneSearchCapsule(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester)
-                            .onFocusChanged { isFocused = it.isFocused },
+                            .onFocusChanged {
+                                isFocused = it.isFocused
+                                if (!it.isFocused) dockEditing = false
+                            },
                         lineLimits = TextFieldLineLimits.SingleLine,
                         textStyle = textStyle,
                         cursorBrush = SolidColor(accentColor),
@@ -844,6 +906,29 @@ private fun PaneSearchCapsule(
                         color = clearBgColor,
                     )
                 }
+            }
+            AnimatedVisibility(
+                visible = dockEditing,
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f),
+            ) {
+                Text(
+                    text = cancelText,
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = accentColor,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(role = Role.Button) {
+                            syncState.lastSynced = ""
+                            textFieldState.clearText()
+                            currentOnSearchChange("")
+                            dockEditing = false
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
             }
         }
     }
@@ -895,6 +980,7 @@ private fun PaneDockCircleButton(
     contentDescription: String,
     showBadge: Boolean,
     couiBackdrop: CouiBackdrop?,
+    appearProgress: Float = 1f,
     onClick: () -> Unit,
 ) {
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
@@ -924,6 +1010,7 @@ private fun PaneDockCircleButton(
                 focused = false,
                 accentColor = CouiTheme.colorSchemeFor(couiDark).accent,
                 contentDescription = contentDescription,
+                appearProgress = appearProgress,
                 onClick = onClick,
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -998,6 +1085,7 @@ private fun CouiPaneFloatingSurface(
     focused: Boolean,
     accentColor: Color,
     contentDescription: String? = null,
+    appearProgress: Float = 1f,
     onClick: (() -> Unit)?,
     content: @Composable () -> Unit,
 ) {
@@ -1026,6 +1114,7 @@ private fun CouiPaneFloatingSurface(
                 focused = focused,
                 accentColor = accentColor,
                 contentDescription = contentDescription,
+                appearProgress = appearProgress,
                 onClick = onClick,
                 content = content,
             )
@@ -1038,8 +1127,17 @@ private fun CouiPaneFloatingSurface(
             else -> Color(0x12000000)
         }
         val interactionSource = remember { MutableInteractionSource() }
+        val fallbackAppear = appearProgress.coerceIn(0f, 1f)
+        val fallbackScale = 0.76f + 0.24f * fallbackAppear
         Box(
             modifier = modifier
+                .graphicsLayer {
+                    if (fallbackAppear < 1f) {
+                        alpha = fallbackAppear
+                        scaleX = fallbackScale
+                        scaleY = fallbackScale
+                    }
+                }
                 .dropShadow(
                     shape = shape,
                     shadow = Shadow(
@@ -1091,21 +1189,40 @@ private fun CouiApi34FloatingSurface(
     focused: Boolean,
     accentColor: Color,
     contentDescription: String?,
+    appearProgress: Float = 1f,
     onClick: (() -> Unit)?,
     content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current.density
+    // 出没动画：0=完全收起，1=在位。全部通过 CouiFloatingSurface 的 alpha / scaleX / scaleY
+    // 表达——COUI 的 u_alpha 与 shadowRenderer 各自带 alpha，阴影的半影不会被按主体尺寸
+    // 离屏裁掉；放大则复用按压缩放那条路径（mapRect + ball 的 1/scale）。
+    val appear = appearProgress.coerceIn(0f, 1f)
+    val appearScale = 0.76f + 0.24f * appear
     val contour = LocalCouiContourGlowEnabled.current
-    val material = remember(dark, capsule) {
-        CouiTopAppBarButtonDefaults.systemMaterial(dark = dark, capsule = capsule)
+    // 严格对齐 COUI-Kit 规范（effect/CouiFloatingSurfaces + topappbar/TopAppBarSearchPair
+    // + search/SearchBar）：每个浮层都用 systemMaterial(dark, capsule = true)，
+    // 再 copy 三项官方参数——blurRadius（SearchBar 取 20f）、extension（统一 4dp 外扩）、
+    // themeTint（CouiTheme.materialTintFor(dark)，主题着色）。材质按节点矩形铺，不裁剪。
+    // 渲染器仍是 standalone（pair 需要两个面），只是材质参数与官方一致。
+    val materialTint = CouiTheme.materialTintFor(dark)
+    val materialExtension = with(LocalDensity.current) { 4.dp.roundToPx() }
+    val material = remember(dark, materialTint, materialExtension) {
+        CouiTopAppBarButtonDefaults
+            .systemMaterial(dark = dark, capsule = true)
+            .copy(
+                blurRadius = 20f,
+                extension = materialExtension,
+                themeTint = materialTint,
+            )
     }
-    val shadow = remember(dark, capsule, density, contour) {
+    val shadow = remember(dark, density, contour) {
         CouiTopAppBarButtonDefaults.shadow(
             dark = dark,
-            capsule = capsule,
+            capsule = true,
             density = density,
             contour = contour,
-            search = false,
+            search = true,
             alphaScale = 1f,
         )
     }
@@ -1159,9 +1276,11 @@ private fun CouiApi34FloatingSurface(
                         Offset(motion.translationX.value, motion.translationY.value),
                         Size(boundsSize.width.toFloat(), boundsSize.height.toFloat()),
                     ),
-                    scaleX = motion.scaleX.value + press.scale.value - 1f,
-                    scaleY = motion.scaleY.value + press.scale.value - 1f,
+                    scaleX = (motion.scaleX.value + press.scale.value - 1f) * appearScale,
+                    scaleY = (motion.scaleY.value + press.scale.value - 1f) * appearScale,
                     cornerWeight = if (capsule) 1f else 2f,
+                    alpha = appear,
+                    visible = appear > 0.001f,
                 )
             }
             .then(
@@ -1248,4 +1367,151 @@ private fun PaneClearGlyph(
             blendMode = BlendMode.Clear,
         )
     }
+}
+
+/*
+ * 底部 dock 的渐变模糊：完全照抄侧栏顶栏 TopAppBarSurface(SDK 33+) 那套
+ * `drawCouiGradientBackdrop` 的实现——同样的 AGSL 渐变高斯、两趟分离卷积
+ * （先水平、后垂直）、同样的 GraphicsLayer 录制 + padding 扩边，
+ * 仅仅把渐变方向反过来：
+ *   顶栏：gradientTop = 内容顶边，ratio 由顶到底衰减 → 顶边最模糊、往下渐清晰；
+ *   这里：gradientTop = 内容底边，gradientHeight 取负 → 底边最模糊、往上渐清晰。
+ */
+private const val CouiGradientSigmaScale = 0.57735f
+
+/**
+ * 侧栏底部这层渐变模糊会留下一条肉眼可见的雾块边界：保留模糊时是雾块边，
+ * 去掉模糊只留颜色遮罩时仍有一条色带边，两种形态都实测过。按用户选择整层关掉（方案 A）。
+ */
+private const val DockBlurDebugEnabled = false
+
+internal fun couiGradientGaussianShader(kernelRadius: Int): String = """
+    const int in_blurRadius = $kernelRadius;
+    const float PI = 3.1415926;
+    uniform shader child;
+    uniform float2 inputSize;
+    uniform float gradientTop;
+    uniform float gradientHeight;
+    uniform half2 in_blurOffset;
+
+    float4 sampleChild(float2 coord) {
+        return child.eval(clamp(coord, float2(0.5), inputSize - 0.5));
+    }
+
+    float getWeight(int i, int radius) {
+        float sigma = float(radius) / 3.0;
+        float value = (1.0 / sqrt(2.0 * PI * sigma * sigma))
+            * exp(float(-i * i) / (2.0 * sigma * sigma + 0.00000001));
+        return clamp(value, 0.0, 1.0);
+    }
+
+    float interleavedGradientNoise(float2 coord) {
+        const float3 magicNumbers = float3(0.06711056, 0.00583715, 52.9829189);
+        return fract(magicNumbers.z * fract(dot(coord, magicNumbers.xy)));
+    }
+
+    half4 main(float2 coord) {
+        float4 c = sampleChild(coord);
+        float position = clamp((coord.y - gradientTop) / gradientHeight, 0.0, 1.0);
+        float ratio = smoothstep(0.0, 1.0, 1.0 - position);
+        int radius = int(float(in_blurRadius) * ratio);
+        if (radius <= 1) return half4(c);
+        if (c.a == 0.0) return half4(0.0);
+        float2 offset = float2(0.0);
+        float sumWeight = 0.0;
+        float4 finalColor = float4(0.0);
+        for (int i = 1; i <= in_blurRadius; i++) {
+            if (i > radius) break;
+            float weight = getWeight(i, radius);
+            offset.x = min(in_blurOffset.x, float(radius)) * float(i);
+            offset.y = min(in_blurOffset.y, float(radius)) * float(i);
+            finalColor += sampleChild(coord - offset) * weight;
+            finalColor += sampleChild(coord + offset) * weight;
+            sumWeight += 2.0 * weight;
+        }
+        finalColor += c * (1.0 - sumWeight);
+        if (finalColor.a <= 0.0) return half4(0.0);
+        finalColor = float4(finalColor.rgb * (c.a / finalColor.a), c.a);
+        float noise = interleavedGradientNoise(coord + 0.5) - 0.5;
+        finalColor.rgb = clamp(finalColor.rgb + noise * c.a / 200.0, float3(0.0), float3(c.a));
+        return half4(finalColor);
+    }
+""".trimIndent()
+
+@Composable
+private fun CouiBottomGradientBlurLayer(
+    backdrop: CouiBackdrop,
+    modifier: Modifier = Modifier,
+    recordBackdrop: CouiBackdrop? = null,
+    fadeHeight: Dp = 96.dp,
+    blurRadius: Dp = 10.8.dp,
+) {
+    if (Build.VERSION.SDK_INT < 33) return
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val fadePx = with(density) { fadeHeight.toPx() }
+    val blurPx = with(density) { blurRadius.toPx() }
+    val kernelRadius = kotlin.math.ceil(((blurPx * CouiGradientSigmaScale) + 0.5f) * 1.5f)
+        .toInt()
+        .coerceIn(2, 48)
+    val padding = kernelRadius * 2f + 1f
+    val horizontal = remember(kernelRadius) {
+        RuntimeShader(couiGradientGaussianShader(kernelRadius)).apply {
+            setFloatUniform("in_blurOffset", 2f, 0f)
+        }
+    }
+    val vertical = remember(kernelRadius) {
+        RuntimeShader(couiGradientGaussianShader(kernelRadius)).apply {
+            setFloatUniform("in_blurOffset", 0f, 2f)
+        }
+    }
+    val passHorizontal = rememberGraphicsLayer()
+    val passVertical = rememberGraphicsLayer()
+    var coordinates by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+
+    Box(
+        modifier = modifier
+            .then(
+                if (recordBackdrop != null) Modifier.couiBackdrop(recordBackdrop) else Modifier,
+            )
+            .onGloballyPositioned { coordinates = it }
+            .drawBehind {
+                val coords = coordinates?.takeIf { it.isAttached } ?: return@drawBehind
+                if (size.width <= 2f || size.height <= 2f) return@drawBehind
+                val layerSize = IntSize(
+                    (size.width + padding * 2f).toInt().coerceAtLeast(1),
+                    (size.height + padding * 2f).toInt().coerceAtLeast(1),
+                )
+                val layerWidth = layerSize.width.toFloat()
+                val layerHeight = layerSize.height.toFloat()
+                val fade = fadePx.coerceIn(1f, size.height)
+                listOf(horizontal, vertical).forEach { shader ->
+                    shader.setFloatUniform("inputSize", layerWidth, layerHeight)
+                    // 渐变贴着内容区：底边在 layer 坐标 padding + height 处。
+                    shader.setFloatUniform("gradientTop", layerHeight - padding)
+                    shader.setFloatUniform("gradientHeight", -fade)
+                }
+                passHorizontal.compositingStrategy = androidx.compose.ui.graphics.layer.CompositingStrategy.Offscreen
+                passHorizontal.clip = true
+                passHorizontal.renderEffect = AndroidRenderEffect
+                    .createRuntimeShaderEffect(horizontal, "child")
+                    .asComposeRenderEffect()
+                passHorizontal.record(density, layoutDirection, layerSize) {
+                    translate(padding, padding) {
+                        backdrop.draw(this, coords)
+                    }
+                }
+                passVertical.compositingStrategy = androidx.compose.ui.graphics.layer.CompositingStrategy.Offscreen
+                passVertical.clip = true
+                passVertical.renderEffect = AndroidRenderEffect
+                    .createRuntimeShaderEffect(vertical, "child")
+                    .asComposeRenderEffect()
+                passVertical.record(density, layoutDirection, layerSize) {
+                    drawLayer(passHorizontal)
+                }
+                translate(-padding, -padding) {
+                    drawLayer(passVertical)
+                }
+            },
+    )
 }

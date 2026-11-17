@@ -3,13 +3,16 @@ package io.github.mangi.eta.ui.markdown
 import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import io.github.mangi.eta.core.AndroidAgentLogger
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +33,12 @@ internal fun StaticMarkdown(
     tone: MarkdownTone,
     modifier: Modifier = Modifier,
     parsed: MarkdownDocument? = null,
+    /** 朗读切句表：与朗读端同一份纯文本、同一套规则切出来的句子。 */
+    speechSentences: List<String>? = null,
+    /** 正在读第几句；null 表示这条消息没在朗读。 */
+    speechSentenceIndex: Int? = null,
+    /** 首个文本块首行字顶的窗口坐标（px）：正文停靠要贴的是首行文字。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val style = rememberMarkdownStyle(tone)
     val reusable = parsed?.takeIf { it.inlineStyle == style.inline }
@@ -45,7 +54,28 @@ internal fun StaticMarkdown(
         // 解析完成前以同字号原文占位，高度与最终排版接近，避免列表越界绘制。
         Text(text = content, style = style.body, modifier = modifier)
     } else {
-        MarkdownContent(document = document, style = style, modifier = modifier)
+        // 高亮只在换句时重新定位，同一句的其余重组直接复用。
+        val highlightCache = remember { MarkdownSpeechHighlightCache() }
+        val highlight = if (speechSentences == null || speechSentenceIndex == null) {
+            null
+        } else {
+            remember(document.blocks, speechSentences, speechSentenceIndex) {
+                highlightCache.highlight(document.blocks, speechSentences, speechSentenceIndex).also { hit ->
+                    AndroidAgentLogger.info(
+                        "Eta speech range index=$speechSentenceIndex " +
+                            "ranges=${hit?.ranges?.joinToString { "${it.blockOffset}:${it.start}..${it.end}" }}",
+                    )
+                }
+            }
+        }
+        CompositionLocalProvider(LocalMarkdownSpeechHighlight provides highlight) {
+            MarkdownContent(
+                document = document,
+                style = style,
+                modifier = modifier,
+                onFirstLineTop = onFirstLineTop,
+            )
+        }
     }
 }
 
@@ -96,6 +126,8 @@ internal fun StreamingMarkdown(
     tone: MarkdownTone,
     modifier: Modifier = Modifier,
     onRevealCompleteChange: (Boolean) -> Unit = {},
+    /** 首个文本块首行字顶的窗口坐标（px）：正文停靠要贴的是首行文字。 */
+    onFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     val style = rememberMarkdownStyle(tone)
     // 思考紧跟已收到的增量，避免高速思考先排版占位、再受正文逐字速度限制而积压。
@@ -152,6 +184,7 @@ internal fun StreamingMarkdown(
         document = parsed.document,
         style = style,
         reveal = reveal,
+        onFirstLineTop = onFirstLineTop,
         modifier = modifier.onGloballyPositioned {
             // 恢复基线对应的文档真正排版后才开放增量动画，解析耗时不受帧数限制。
             if (state.restoreState.completeLayout(

@@ -46,6 +46,9 @@ sealed interface AppRoute : NavKey {
     data object CharacterPersona : AppRoute
 
     @Serializable
+    data object DefaultAssistantPrompt : AppRoute
+
+    @Serializable
     data class CharacterMemory(val characterId: String) : AppRoute
 
     @Serializable
@@ -77,7 +80,8 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data object Memory : AppRoute
-
+    @Serializable
+    data object Tasks : AppRoute
     @Serializable
     data object LinuxEnvironment : AppRoute
 

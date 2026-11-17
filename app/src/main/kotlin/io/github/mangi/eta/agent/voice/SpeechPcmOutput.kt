@@ -5,18 +5,22 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import kotlinx.coroutines.CancellationException
 
-internal class SpeechPcmOutput : SpeechAudioOutput {
+/** 按 [sampleRate] 建流式音轨；采样率必须与写入的 PCM 一致，否则会变调变速。 */
+internal class SpeechPcmOutput(private val sampleRate: Int = DEFAULT_SAMPLE_RATE) : SpeechAudioOutput {
     private var track: AudioTrack? = AudioTrack.Builder()
-        .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+        // 用媒体通道：朗读跟随媒体音量，与系统 TTS 引擎和其他媒体应用一致。
+        .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-        .setAudioFormat(AudioFormat.Builder().setSampleRate(SAMPLE_RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+        .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-        .setBufferSizeInBytes(maxOf(SAMPLE_RATE, AudioTrack.getMinBufferSize(SAMPLE_RATE,
+        .setBufferSizeInBytes(maxOf(sampleRate, AudioTrack.getMinBufferSize(sampleRate,
             AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)))
         .setTransferMode(AudioTrack.MODE_STREAM).build()
     private var frames = 0L
     private var started = false
     private var finished = false
+
+    @Volatile private var paused = false
 
     override fun write(bytes: ByteArray) {
         var offset = 0
@@ -36,7 +40,8 @@ internal class SpeechPcmOutput : SpeechAudioOutput {
                 count
             }
             offset += written
-            if (written == 0) Thread.sleep(5)
+            // 暂停时音轨不再消费，缓冲很快写满；放慢空转，恢复后继续写入。
+            if (written == 0) Thread.sleep(if (paused) PAUSED_POLL_MS else 5)
         }
     }
 
@@ -52,17 +57,35 @@ internal class SpeechPcmOutput : SpeechAudioOutput {
         finished = true
     }
 
+    /** 已播出的帧数（相对这条音轨的起点）：界面据此把高亮跟到真正在放的那一句。 */
+    @Synchronized override fun playedFrames(): Long =
+        track?.let { it.playbackHeadPosition.toLong() and 0xffffffffL } ?: 0L
+
     @Synchronized override fun drained(): Boolean = track?.let {
         finished && (it.playbackHeadPosition.toLong() and 0xffffffffL) >= frames
     } ?: true
+
+    /** 只停在这里，不清缓冲、不释放音轨：继续时从这一帧接着放。 */
+    @Synchronized override fun pause() {
+        paused = true
+        val audio = track ?: return
+        if (started) runCatching { audio.pause() }
+    }
+
+    @Synchronized override fun resume() {
+        paused = false
+        val audio = track ?: return
+        if (started) runCatching { audio.play() }
+    }
 
     @Synchronized override fun close() {
         track?.let { it.pause(); it.flush(); it.release() }
         track = null
     }
 
-    private companion object {
-        const val SAMPLE_RATE = 24_000
+    companion object {
         const val BYTES_PER_FRAME = 2
+        private const val DEFAULT_SAMPLE_RATE = 24_000
+        private const val PAUSED_POLL_MS = 50L
     }
 }

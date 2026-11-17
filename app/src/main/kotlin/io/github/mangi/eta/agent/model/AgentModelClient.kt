@@ -14,10 +14,10 @@ import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderAuthModes
+import io.github.mangi.eta.data.provider.GeminiModelCapabilities
 import io.github.mangi.eta.data.model.ProviderTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.provider.BuiltinProviders
-import io.github.mangi.eta.data.provider.GeminiModelCapabilities
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -113,6 +113,7 @@ internal object AgentModelClient {
         toolFilter: ((JSONArray) -> JSONArray)? = null,
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
+        restrictedToolNames: Set<String>? = null,
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
@@ -166,7 +167,17 @@ internal object AgentModelClient {
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
             }
-            return toolFilter?.invoke(tools) ?: tools
+            val filtered = if (restrictedToolNames == null) tools else JSONArray().also { result ->
+                for (index in 0 until tools.length()) {
+                    val schema = tools.getJSONObject(index)
+                    if (schema.optJSONObject("function")?.optString("name") in restrictedToolNames) result.put(schema)
+                }
+            }
+            val projected = AgentBatchToolCatalog.project(
+                filtered,
+                enabled = restrictedToolNames == null || AgentBatchToolCatalog.NAME in restrictedToolNames,
+            )
+            return toolFilter?.invoke(projected) ?: projected
         }
         val tools = toolsFor(initialCapabilities)
         onEvent(
@@ -214,18 +225,28 @@ internal object AgentModelClient {
             messages = messages,
             tools = tools,
             provider = provider,
+            capabilitiesProvider = capabilitiesProvider,
             // 目录在运行内只增不减，可见不再等于可用：执行前用同一规则复核，
             // 中途失去的能力返回与目录过滤一致的错误码，而不是让底层接口给出含糊的失败。
+            // 自动复盘这类受限目录再叠一层白名单：名单外的调用直接按目录拒绝处理。
             toolExecutor = AgentModelClient.ToolExecutor { call ->
-                val unavailable = AgentToolRequirements.find(call.name)
-                    ?.let { capabilitiesProvider().unavailableCode(call.name) }
-                if (unavailable == null) {
-                    toolExecutor.execute(call)
-                } else {
+                val restricted = restrictedToolNames
+                if (restricted != null && call.name !in restricted) {
                     ToolResult(
-                        JSONObject().put("ok", false).put("code", unavailable)
-                            .put("message", "该工具当前不可用（$unavailable），本次未执行").toString(),
+                        JSONObject().put("ok", false).put("code", "REVIEW_TOOL_DENIED")
+                            .put("message", "此工具不属于自动复盘能力").toString(),
                     )
+                } else {
+                    val unavailable = AgentToolRequirements.find(call.name)
+                        ?.let { capabilitiesProvider().unavailableCode(call.name) }
+                    if (unavailable == null) {
+                        toolExecutor.execute(call)
+                    } else {
+                        ToolResult(
+                            JSONObject().put("ok", false).put("code", unavailable)
+                                .put("message", "该工具当前不可用（$unavailable），本次未执行").toString(),
+                        )
+                    }
                 }
             },
             runController = runController,
@@ -243,11 +264,7 @@ internal object AgentModelClient {
                 cause = throwable,
                 contextSnapshot = if (rewriteReply) null else loop.contextSnapshot(),
                 reasoningContent = loop.reasoningSnapshot(),
-                transcript = AgentToolBatchRecovery.completeInterrupted(AgentConversationCodec.transcript(
-                    transcript,
-                    0,
-                    loop.sensitiveToolCallIdsSnapshot(),
-                )),
+                transcript = AgentToolBatchRecovery.completeInterrupted(loop.transcriptSnapshot()),
             )
         }
         return ModelResponse.Text(
@@ -339,10 +356,12 @@ internal object AgentModelClient {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && when (providerType) {
                 ProviderTypes.OPENAI_COMPATIBLE -> openAiEndpointMode == OpenAiEndpointMode.RESPONSES
-                ProviderTypes.GEMINI -> supportsSearchSuggestions && GeminiModelCapabilities.supportsHostedSearch(model)
+                ProviderTypes.GEMINI ->
+                    supportsSearchSuggestions && GeminiModelCapabilities.supportsHostedSearch(model)
                 else -> false
             }
 
+        /** 托管网页搜索的工具名：OpenAI Responses 用 web_search，Gemini 用 google_search。 */
         val hostedWebSearchToolName: String
             get() = if (providerType == ProviderTypes.GEMINI) "google_search" else "web_search"
 
@@ -389,7 +408,13 @@ internal object AgentModelClient {
          */
         val sensitive: Boolean = false,
         val command: String? = null,
+        /** Trusted executor control, never inferred from model-visible JSON. */
+        val stop: ToolStop? = null,
+        /** Set only by the loop when a call was rejected before invoking its executor. */
+        val executionSkipped: Boolean = false,
     )
+
+    data class ToolStop(val code: String, val message: String)
 
     /** 图片引用：入口侧可为本地 URI/路径，进入模型协议前必须解析为远程 URL 或 data URL。 */
     data class ModelImage(

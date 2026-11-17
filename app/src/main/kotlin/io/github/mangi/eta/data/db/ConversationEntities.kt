@@ -20,6 +20,7 @@ internal data class ConversationEntity(
     @ColumnInfo(name = "applied_runtime_run_ids_json") val appliedRuntimeRunIdsJson: String = "[]",
     @ColumnInfo(name = "roleplay_json", defaultValue = "''") val roleplayJson: String = "",
     @ColumnInfo(name = "revisions_json", defaultValue = "''") val revisionsJson: String = "",
+    @ColumnInfo(name = "last_model_usage_json", defaultValue = "''") val lastModelUsageJson: String = "",
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     /** 会话最近使用的本地 Model.id；null 表示跟随默认模型。 */
@@ -35,6 +36,7 @@ internal data class ConversationMetadata(
     @ColumnInfo(name = "applied_runtime_run_ids_json") val appliedRuntimeRunIdsJson: String,
     @ColumnInfo(name = "roleplay_json") val roleplayJson: String = "",
     @ColumnInfo(name = "revisions_json") val revisionsJson: String = "",
+    @ColumnInfo(name = "last_model_usage_json") val lastModelUsageJson: String = "",
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     @ColumnInfo(name = "model_id") val modelId: String? = null,
@@ -55,6 +57,7 @@ internal data class ConversationIndexRow(
     @ColumnInfo(name = "tool_name") val toolName: String?,
     @ColumnInfo(name = "has_roleplay") val hasRoleplay: Boolean,
     @ColumnInfo(name = "is_pinned") val isPinned: Boolean = false,
+    @ColumnInfo(name = "last_model_usage_json") val lastModelUsageJson: String = "",
 )
 
 internal data class ConversationIdentity(
@@ -129,6 +132,7 @@ internal data class ConversationMessageEntity(
     @ColumnInfo(name = "cached_tokens") val cachedTokens: Int? = null,
     @ColumnInfo(name = "cache_write_tokens") val cacheWriteTokens: Int? = null,
     @ColumnInfo(name = "compaction_archive_id") val compactionArchiveId: String? = null,
+    @ColumnInfo(name = "request_duration_ms") val requestDurationMs: Long? = null,
     @ColumnInfo(name = "step_count") val stepCount: Int? = null,
     @ColumnInfo(name = "llm_ms") val llmMs: Long? = null,
     @ColumnInfo(name = "tool_ms") val toolMs: Long? = null,
@@ -143,4 +147,8 @@ internal data class ConversationMessageEntity(
     @ColumnInfo(name = "result_summary") val resultSummary: String? = null,
     @ColumnInfo(name = "image_count") val imageCount: Int = 0,
     @ColumnInfo(name = "tools_json") val toolsJson: String = "[]",
+    /** 本轮（整个 run）的消耗金额；老会话为 null，界面据此决定显不显示。 */
+    @ColumnInfo(name = "round_cost") val roundCost: Double? = null,
+    /** 本轮（整个 run）的总用时（毫秒）；老会话为 null，界面据此决定显不显示。 */
+    @ColumnInfo(name = "round_duration_ms") val roundDurationMs: Long? = null,
 )

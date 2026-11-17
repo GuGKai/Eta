@@ -177,10 +177,13 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
 
 private fun hasAppListAccess(context: Context): Boolean {
     return try {
-        val pm = context.packageManager
-        val packages = pm.getInstalledPackages(0)
-        packages.size > 10
-    } catch (e: Exception) {
+        // 不要再用 getInstalledPackages(0)：它会一次性反序列化全部 PackageInfo（本机 200+ 应用），
+        // 在 256MB 堆上限下抛 OutOfMemoryError；OutOfMemoryError 属于 Error，
+        // catch (Exception) 抓不住，整个进程会被系统杀掉（2026-10-14 22:23 的 dropbox 崩溃栈即此调用）。
+        // 改成逐包探测：QUERY_ALL_PACKAGES 是否生效，看能否读到系统包即可。
+        context.packageManager.getPackageInfo("com.android.settings", 0)
+        true
+    } catch (e: Throwable) {
         false
     }
 }

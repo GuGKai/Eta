@@ -12,6 +12,9 @@ internal class AgentRunTiming(
     private val responseStartedAt = mutableMapOf<Int, Long>()
     private val firstDeltaRounds = mutableSetOf<Int>()
 
+    /** 从 Runtime 接手这一轮到现在经过的毫秒数，写进结果供界面显示「本轮用时」。 */
+    fun runElapsedMs(): Long = elapsedSince(runStartedAt).coerceAtLeast(0L)
+
     fun preparationFinished(skillCount: Int) {
         logger.debug {
             "Agent runtime preparation finished: elapsed_ms=${elapsedSince(runStartedAt)}, " +

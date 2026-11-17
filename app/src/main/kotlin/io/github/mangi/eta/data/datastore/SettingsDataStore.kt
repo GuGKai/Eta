@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.mangi.eta.data.model.AppearanceAccentColor
+import io.github.mangi.eta.data.model.DEFAULT_CHAT_TEXT_SCALE
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
@@ -22,6 +23,7 @@ import io.github.mangi.eta.data.model.ConversationTitleSettings
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.data.model.SubagentSettings
 import io.github.mangi.eta.data.model.WebToolsSettings
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
 import java.io.IOException
@@ -29,6 +31,26 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+
+/**
+ * 一个工作区（会话文件夹）的持久化记录。
+ *
+ * 侧栏里工作区就是文件夹：可重命名、可删除，可展开/折叠；折叠状态一并持久化，
+ * 重启后保持用户上次的展开状态。
+ */
+@Serializable
+data class ConversationWorkspaceRecord(
+    val id: String,
+    val name: String,
+    val collapsed: Boolean = false,
+)
+
+/** 工作区列表与「会话 → 工作区」归属；一条会话最多属于一个工作区。 */
+@Serializable
+data class ConversationWorkspaceState(
+    val workspaces: List<ConversationWorkspaceRecord> = emptyList(),
+    val assignments: Map<String, String> = emptyMap(),
+)
 
 internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
@@ -97,6 +119,27 @@ internal object SettingsDataStore {
         dataStore.edit { it[SUBAGENT_SETTINGS] = speechJson.encodeToString(settings) }
     }
 
+    private val CONVERSATION_WORKSPACES = stringPreferencesKey("conversation_workspaces_v1")
+
+    private val workspaceJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /** 侧栏工作区（会话文件夹）与「会话 → 工作区」归属。 */
+    fun conversationWorkspacesFlow(): Flow<ConversationWorkspaceState> {
+        ensureInitialized()
+        return dataStore.data.map { prefs ->
+            prefs[CONVERSATION_WORKSPACES]?.let { raw ->
+                runCatching { workspaceJson.decodeFromString<ConversationWorkspaceState>(raw) }.getOrNull()
+            } ?: ConversationWorkspaceState()
+        }
+    }
+
+    suspend fun conversationWorkspaces(): ConversationWorkspaceState = conversationWorkspacesFlow().first()
+
+    suspend fun setConversationWorkspaces(state: ConversationWorkspaceState) {
+        ensureInitialized()
+        dataStore.edit { it[CONVERSATION_WORKSPACES] = workspaceJson.encodeToString(state) }
+    }
+
     fun conversationTitleSettingsFlow(): Flow<ConversationTitleSettings> {
         ensureInitialized()
         return dataStore.data
@@ -141,8 +184,12 @@ internal object SettingsDataStore {
 
     private val SELECTED_PROVIDER_ID = stringPreferencesKey("selected_provider_id")
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
+    private val DEEPSEEK_BALANCE = stringPreferencesKey("deepseek_balance_snapshot_v1")
+    private val DEFAULT_ASSISTANT_SYSTEM_PROMPT = stringPreferencesKey("default_assistant_system_prompt")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
+    private val AUTO_MEMORY_ENABLED = booleanPreferencesKey("auto_memory_enabled")
+    private val AUTO_SKILLS_ENABLED = booleanPreferencesKey("auto_skills_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
     private val APPEARANCE_UI_STYLE = stringPreferencesKey("appearance_ui_style")
     private val APPEARANCE_THEME_MODE = stringPreferencesKey("appearance_theme_mode")
@@ -157,6 +204,7 @@ internal object SettingsDataStore {
     private val APPEARANCE_PREDICTIVE_BACK_ENABLED =
         booleanPreferencesKey("appearance_predictive_back_enabled")
     private val APPEARANCE_INTERFACE_SCALE = floatPreferencesKey("appearance_interface_scale")
+    private val APPEARANCE_CHAT_TEXT_SCALE = floatPreferencesKey("appearance_chat_text_scale")
     private const val SELECTED_MODEL_BY_PROVIDER_PREFIX = "selected_model_id_by_provider."
 
     private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = STORE_NAME)
@@ -197,14 +245,31 @@ internal object SettingsDataStore {
         }
     }
 
+    /** 顶栏 DeepSeek 余额胶囊的快照（余额 + 基线 + 抓取时间）。 */
+    suspend fun deepSeekBalanceJson(): String? {
+        ensureInitialized()
+        return dataStore.data.first()[DEEPSEEK_BALANCE]
+    }
+
+    suspend fun setDeepSeekBalanceJson(value: String) {
+        ensureInitialized()
+        dataStore.edit { preferences ->
+            preferences[DEEPSEEK_BALANCE] = value
+        }
+    }
+
     suspend fun updateSettings(transform: (Settings) -> Settings) {
         ensureInitialized()
         dataStore.edit { prefs ->
             val current = prefs.toSettings()
             val updated = transform(current)
+            require(updated.defaultAssistantSystemPrompt.length <= 32_000 && '\u0000' !in updated.defaultAssistantSystemPrompt)
+            prefs.putOrRemove(DEFAULT_ASSISTANT_SYSTEM_PROMPT, updated.defaultAssistantSystemPrompt)
             prefs.putOrRemove(SELECTED_PROVIDER_ID, updated.selectedProviderId)
             prefs.putOrRemove(SELECTED_MODEL_ID, updated.selectedModelId)
             prefs[MEMORY_ENABLED] = updated.memoryEnabled
+            prefs[AUTO_MEMORY_ENABLED] = updated.autoMemoryEnabled
+            prefs[AUTO_SKILLS_ENABLED] = updated.autoSkillsEnabled
             prefs.putAppearance(updated.appearance.normalized())
         }
     }
@@ -347,7 +412,10 @@ internal object SettingsDataStore {
     private fun Preferences.toSettings(): Settings = Settings(
         selectedProviderId = this[SELECTED_PROVIDER_ID],
         selectedModelId = this[SELECTED_MODEL_ID],
+        defaultAssistantSystemPrompt = this[DEFAULT_ASSISTANT_SYSTEM_PROMPT].orEmpty(),
         memoryEnabled = this[MEMORY_ENABLED] ?: true,
+        autoMemoryEnabled = this[AUTO_MEMORY_ENABLED] ?: true,
+        autoSkillsEnabled = this[AUTO_SKILLS_ENABLED] ?: true,
         appearance = AppearanceSettings(
             uiStyle = AppearanceUiStyle.fromPersistedValue(this[APPEARANCE_UI_STYLE]),
             themeMode = AppearanceThemeMode.fromPersistedValue(this[APPEARANCE_THEME_MODE]),
@@ -362,6 +430,7 @@ internal object SettingsDataStore {
             swipeDismissEnabled = this[APPEARANCE_SWIPE_DISMISS_ENABLED] ?: true,
             predictiveBackEnabled = this[APPEARANCE_PREDICTIVE_BACK_ENABLED] ?: true,
             interfaceScale = this[APPEARANCE_INTERFACE_SCALE] ?: 1f,
+            chatTextScale = this[APPEARANCE_CHAT_TEXT_SCALE] ?: DEFAULT_CHAT_TEXT_SCALE,
         ).normalized(),
     )
 
@@ -380,5 +449,6 @@ internal object SettingsDataStore {
         this[APPEARANCE_SWIPE_DISMISS_ENABLED] = settings.swipeDismissEnabled
         this[APPEARANCE_PREDICTIVE_BACK_ENABLED] = settings.predictiveBackEnabled
         this[APPEARANCE_INTERFACE_SCALE] = settings.interfaceScale
+        this[APPEARANCE_CHAT_TEXT_SCALE] = settings.chatTextScale
     }
 }

@@ -25,9 +25,11 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceToolContract
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.overlay.StageCanvasHeight
 import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
@@ -51,8 +53,22 @@ internal object VirtualDisplayController {
     private val lock = Any()
     private val creationLock = Any()
     private val sessionState = VirtualDisplaySessionState()
+
+    /**
+     * 当前虚拟屏 displayId；无会话时为 [Display.INVALID_DISPLAY]。
+     *
+     * 本地 fork 的 activeDisplayId 迁移到上游 VirtualDisplaySessionState 之后仍保留这个读法：
+     * IME 策略下发与「接管/继续」都只针对当前这个 display，读写都必须落在同一把锁内。
+     */
+    private val activeDisplayId: Int
+        get() = synchronized(lock) { sessionState.active?.displayId ?: Display.INVALID_DISPLAY }
+
     private val mutableSnapshots = MutableStateFlow(VirtualDisplaySnapshot.Inactive)
     val snapshots: StateFlow<VirtualDisplaySnapshot> = mutableSnapshots.asStateFlow()
+
+    /** 顶部胶囊是否显示虚拟屏微缩镜/装裱视窗：由执行通知的第三个按钮开关。 */
+    private val mutableCapsuleVisible = MutableStateFlow(true)
+    val capsuleVisible: StateFlow<Boolean> = mutableCapsuleVisible.asStateFlow()
 
     private val frameSequenceGenerator = AtomicLong(0L)
     private val touchSequenceGenerator = AtomicLong(0L)
@@ -65,6 +81,29 @@ internal object VirtualDisplayController {
     private var lastUiFrameAtElapsedMs: Long = 0L
     private val mutedPackages = linkedSetOf<String>()
 
+    /** 创建虚拟屏时的应用上下文，供全屏外置后自动搬回使用。 */
+    private var activeContext: Context? = null
+
+    /** 主屏最近一次获得前台焦点的包名，由无障碍窗口事件回报。 */
+    @Volatile
+    private var lastMainDisplayForegroundPackage: String = ""
+
+    private val restoreLock = Any()
+    private var restoreWatcher: Thread? = null
+    private var restoreFailureCount: Int = 0
+
+    /** 虚拟屏 IME 策略最近一次成功下发的目标；displayId 不匹配或 policy<0 表示需要重新下发。 */
+    @Volatile private var appliedImePolicyDisplayId: Int = Display.INVALID_DISPLAY
+    @Volatile private var appliedImePolicy: Int = -1
+
+    /** 最新下发意图的代际号：排队期间被新意图取代的旧任务直接作废，避免慢路径盖掉新状态。 */
+    private val imePolicyGeneration = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 串行执行 WMS 策略调用：用户快速点「接管/继续」时不会并发乱序。 */
+    private val imePolicyExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "eta-vd-ime-policy").apply { isDaemon = true }
+    }
+
     fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
         CanvasRoutingPolicy.supportsBackgroundDisplay(Build.VERSION.SDK_INT) && (rootAvailable || lsposedAvailable)
 
@@ -72,16 +111,35 @@ internal object VirtualDisplayController {
         highFrequencyPreview = expanded
     }
 
-    fun setUserControlling(controlling: Boolean) {
-        synchronized(lock) {
+    /** 开关顶部胶囊的虚拟屏微缩镜显示；供执行通知第三个按钮调用。 */
+    fun toggleCapsuleVisible() {
+        mutableCapsuleVisible.value = !mutableCapsuleVisible.value
+    }
+
+    fun setUserControlling(
+        controlling: Boolean,
+        rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    ) {
+        val displayId = synchronized(lock) {
             val current = mutableSnapshots.value
             if (!current.active || current.userControlling == controlling) return
             mutableSnapshots.value = current.copy(userControlling = controlling)
             if (controlling) highFrequencyPreview = true
+            activeDisplayId
         }
+        // 接管：用户要亲手打字，把虚拟屏 IME 策略放回 FALLBACK，软键盘才能弹出来。
+        // 继续托管：收回键盘，避免 Agent 自己聚焦输入框时键盘反复冒到物理主屏。
+        updateVirtualDisplayImePolicy(
+            displayId = displayId,
+            hide = !controlling,
+            rootAvailable = rootAvailable,
+        )
     }
 
     fun currentDisplayId(): Int = synchronized(lock) {
+        // 全屏破壁期间任务在物理主屏：Agent 的观测与手势必须跟随主屏，
+        // 但虚拟屏仍保留，搬回后 currentDisplayId 会自动回到原 displayId。
+        if (mutableSnapshots.value.externalizedToMain) return@synchronized Display.DEFAULT_DISPLAY
         sessionState.active?.displayId ?: Display.DEFAULT_DISPLAY
     }
 
@@ -94,6 +152,11 @@ internal object VirtualDisplayController {
     ): Int? {
         if (!CanvasRoutingPolicy.supportsBackgroundDisplay(Build.VERSION.SDK_INT)) return null
         val appContext = context.applicationContext
+        activeContext = appContext
+        // 建屏前先屏蔽系统的 size-compat（letterbox）判定：
+        // 打开“强制可调整大小”后，任务迁到主屏会按目标 display 的 app bounds 直接重排，
+        // 而不是被缩放塞进 letterbox 并弹出“全屏显示”兼容提示。
+        SizeCompatBypass.ensure(appContext, rootAvailable)
         val manager = appContext.getSystemService(DisplayManager::class.java) ?: return null
         // 创建可包含 Binder 与 Root 等待；发布状态和释放不等待这把创建锁。
         synchronized(creationLock) {
@@ -102,7 +165,13 @@ internal object VirtualDisplayController {
                 val bridge = synchronized(lock) { displayResources?.bridge }
                 if ((bridge == null || bridge.isAlive) && isDisplayUsable(manager, existing.displayId)) {
                     synchronized(lock) {
-                        if (sessionState.isCurrent(existing.token)) return existing.displayId
+                        if (sessionState.isCurrent(existing.token)) {
+                            // 复用既有虚拟屏：本地 IME 策略可能已被「接管」改成 FALLBACK，托管态补回 HIDE。
+                            if (!mutableSnapshots.value.userControlling) {
+                                hideImeOnVirtualDisplay(existing.displayId, rootAvailable)
+                            }
+                            return existing.displayId
+                        }
                     }
                 }
                 releaseSession(appContext, rootAvailable, existing.token)
@@ -175,6 +244,9 @@ internal object VirtualDisplayController {
                     accepted = true
                 }
                 AndroidAgentLogger.info("Virtual display ready: displayId=$id size=${width}x$height")
+                if (rootAvailable() && !mutableSnapshots.value.userControlling) {
+                    hideImeOnVirtualDisplay(id, rootAvailable)
+                }
                 return id
             } catch (exception: Exception) {
                 AndroidAgentLogger.warn("Virtual display creation failed: type=${exception.safeLogType()}")
@@ -212,6 +284,8 @@ internal object VirtualDisplayController {
         checkCancellation: () -> Unit = {},
     ): Int? {
         checkCancellation()
+        // 若上一轮仍停留在全屏外置状态，先把原任务搬回虚拟屏，再启动新应用。
+        restoreExternalizedToVirtualDisplay(rootAvailable)
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         checkCancellation()
         val appContext = context.applicationContext
@@ -257,6 +331,7 @@ internal object VirtualDisplayController {
                     appName = appName,
                     packageName = packageName,
                     materializingToMain = false,
+                    externalizedToMain = false,
                 )
             }
         }
@@ -274,6 +349,8 @@ internal object VirtualDisplayController {
         checkCancellation: () -> Unit = {},
     ): Int? {
         checkCancellation()
+        // 若上一轮仍停留在全屏外置状态，先把原任务搬回虚拟屏，再打开新 URI。
+        restoreExternalizedToVirtualDisplay(rootAvailable)
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         checkCancellation()
         val appContext = context.applicationContext
@@ -308,6 +385,7 @@ internal object VirtualDisplayController {
                 mutableSnapshots.value = current.copy(
                     appName = targetLabel.ifBlank { current.appName },
                     materializingToMain = false,
+                    externalizedToMain = false,
                 )
             }
         }
@@ -316,7 +394,13 @@ internal object VirtualDisplayController {
 
     /**
      * 将虚拟屏中正在运行的应用无缝破壁移交到物理主屏（DEFAULT_DISPLAY）。
-     * 先触发 UI 层的 260ms 全屏放大贴合过渡，同时在底层原位迁移 RootTask。
+     *
+     * 顺序按「任何一帧都有画面盖住屏幕」排列，闪烁就出在顺序上：
+     * 1. 过渡层先用画板最后一帧、按画板原位尺寸起手，放大到物理全屏（画板消失与位图出现是同一帧，
+     *    位图全程不透明，屏幕不留空白）；
+     * 2. 整屏被同一帧盖住之后才迁移 RootTask —— 迁移瞬间虚拟屏会变空，空画面被位图挡住；
+     * 3. 等主屏应用画出首帧再淡出位图，露出来的已经是活的窗口。
+     * 过渡期间帧采集冻结，否则虚拟屏空帧会把位图替换成黑屏，那就是用户看到的「闪一下」。
      */
     fun handoffToMainDisplay(
         context: Context,
@@ -330,29 +414,243 @@ internal object VirtualDisplayController {
             mutableSnapshots.value = current.copy(
                 userControlling = false,
                 materializingToMain = true,
+                materializeFading = false,
+                materializeFrom = resolveStageBoundsPx(context, current),
+                externalizedToMain = false,
             )
-            highFrequencyPreview = true
+            // 过渡用冻结帧，不需要高频预览刷新。
+            highFrequencyPreview = false
             current
         }
 
         val appContext = context.applicationContext
+        // 迁移前确保兼容检测已关闭，否则搬过去会立刻被按 letterbox 缩放。
+        SizeCompatBypass.ensure(appContext, rootAvailable)
         restoreMutedPackages(appContext, rootAvailable)
 
-        val moved = moveVirtualTaskToMainDisplay(
+        // 1) 先把位图放大到物理全屏，屏幕全程被画面覆盖。
+        sleepQuietly(MaterializeExpandMs)
+
+        // 2) 盖满之后才搬任务：虚拟屏变空的那一帧发生在这张不透明位图底下。
+        val moved = moveVirtualTaskToDisplay(
             context = appContext,
-            displayId = snapshot.displayId,
+            sourceDisplayId = snapshot.displayId,
+            targetDisplayId = Display.DEFAULT_DISPLAY,
             packageName = snapshot.packageName,
             rootAvailable = rootAvailable,
         )
 
-        // 留出 260ms 让 VirtualDisplayMaterializeOverlay 完成从画板到物理全屏的弹簧贴合动画
+        if (!moved) {
+            // 搬运失败：撤掉过渡层并释放虚拟屏，避免留下看不见的空画布。
+            synchronized(lock) {
+                val current = mutableSnapshots.value
+                if (current.active) {
+                    mutableSnapshots.value = current.copy(
+                        materializingToMain = false,
+                        materializeFading = false,
+                        materializeFrom = null,
+                    )
+                }
+            }
+            release(appContext, rootAvailable)
+            return false
+        }
+
+        // 3) 给主屏窗口留出首帧时间，再让位图淡出：淡出是渐变，底下的真实画面接得上。
+        sleepQuietly(MaterializeMainFrameWaitMs)
+        synchronized(lock) {
+            val current = mutableSnapshots.value
+            if (!current.active) return moved
+            mutableSnapshots.value = current.copy(materializeFading = true)
+        }
+        sleepQuietly(MaterializeFadeOutMs + MaterializeFadeTailMs)
+
+        // C 方案：全屏后不销毁虚拟屏，只把任务挪到物理主屏；
+        // 用户离开该应用时由主屏窗口事件把同一个 RootTask 搬回，胶囊小窗立即恢复。
+        synchronized(lock) {
+            val current = mutableSnapshots.value
+            if (!current.active) return moved
+            mutableSnapshots.value = current.copy(
+                userControlling = false,
+                materializingToMain = false,
+                materializeFading = false,
+                materializeFrom = null,
+                externalizedToMain = true,
+            )
+            highFrequencyPreview = false
+            restoreFailureCount = 0
+        }
+        return moved
+    }
+
+    private fun sleepQuietly(millis: Long) {
         try {
-            Thread.sleep(260L)
+            Thread.sleep(millis)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         }
+    }
 
-        release(appContext, rootAvailable)
+    /**
+     * 画板（画廊装裱视窗里的画布）此刻在物理屏幕上的矩形。
+     *
+     * 装裱窗口横向居中、纵向贴着状态栏，画布又是窗口内水平居中的定高画框，
+     * 所以画布中心即屏幕横向中心，顶边 = 状态栏下沿 + 装裱内边距。
+     */
+    private fun resolveStageBoundsPx(
+        context: Context,
+        snapshot: VirtualDisplaySnapshot,
+    ): VirtualStageBounds? {
+        val density = context.resources.displayMetrics.density.takeIf { it > 0.1f } ?: return null
+        val screenWidth = runCatching {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@runCatching 0
+            wm.currentWindowMetrics.bounds.width()
+        }.getOrDefault(0)
+        if (screenWidth <= 0) return null
+        val canvasHeight = StageCanvasHeight.value * density
+        val canvasWidth = canvasHeight * snapshot.aspectRatio
+        if (canvasWidth <= 1f || canvasHeight <= 1f) return null
+        val top = statusBarInsetTopPx(context, density) + StageCanvasTopInsetDp * density
+        return VirtualStageBounds(
+            left = (screenWidth - canvasWidth) / 2f,
+            top = top,
+            width = canvasWidth,
+            height = canvasHeight,
+        )
+    }
+
+    private fun statusBarInsetTopPx(context: Context, density: Float): Float {
+        val fallback = 28f * density
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return fallback
+        return runCatching {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@runCatching fallback
+            wm.currentWindowMetrics.windowInsets
+                .getInsetsIgnoringVisibility(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.displayCutout(),
+                )
+                .top
+                .toFloat()
+                .takeIf { it > 0f } ?: fallback
+        }.getOrDefault(fallback)
+    }
+
+    /**
+     * 无障碍服务回报主屏前台包名。全屏外置期间，只要前台不再是原应用，
+     * 就把同一个 RootTask 搬回原虚拟屏，用户随时能回到胶囊小窗继续看。
+     */
+    fun onMainDisplayForegroundPackage(packageName: String) {
+        if (packageName.isBlank()) return
+        lastMainDisplayForegroundPackage = packageName
+        val snapshot = mutableSnapshots.value
+        if (!snapshot.active || !snapshot.externalizedToMain) return
+        // 系统窗口（下拉通知、锁屏、音量条）抢占焦点不代表用户离开了应用。
+        if (packageName == snapshot.packageName ||
+            packageName == "android" ||
+            packageName == "com.android.systemui"
+        ) {
+            return
+        }
+        scheduleRestoreToVirtualDisplay(packageName)
+    }
+
+    /**
+     * 手动把全屏外置的任务搬回虚拟屏（供胶囊/结果卡片等入口复用）。
+     */
+    fun restoreExternalizedToVirtualDisplay(
+        rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    ): Boolean {
+        val snapshot = mutableSnapshots.value
+        if (!snapshot.active || !snapshot.externalizedToMain) return false
+        return restoreToVirtualDisplayInternal(snapshot, rootAvailable)
+    }
+
+    private fun scheduleRestoreToVirtualDisplay(leftForPackage: String) {
+        synchronized(restoreLock) {
+            if (restoreWatcher?.isAlive == true) return
+            restoreWatcher = thread(name = "eta-vd-restore-watch", isDaemon = true) {
+                try {
+                    // 600ms 确认窗：系统弹窗、音量条等短暂抢占焦点时不要立刻搬回。
+                    try {
+                        Thread.sleep(600L)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return@thread
+                    }
+                    val snapshot = mutableSnapshots.value
+                    if (!snapshot.active || !snapshot.externalizedToMain) return@thread
+                    val foreground = lastMainDisplayForegroundPackage
+                    if (foreground.isNotBlank() && foreground == snapshot.packageName) return@thread
+                    AndroidAgentLogger.info(
+                        "Virtual display restore: $leftForPackage left foreground, " +
+                            "moving ${snapshot.packageName} back to display=${snapshot.displayId}",
+                    )
+                    val restored = restoreToVirtualDisplayInternal(
+                        snapshot = snapshot,
+                        rootAvailable = { RootAccess.isGranted },
+                    )
+                    if (!restored) {
+                        restoreFailureCount += 1
+                        AndroidAgentLogger.warn(
+                            "Virtual display restore failed: package=${snapshot.packageName} " +
+                                "attempt=$restoreFailureCount",
+                        )
+                        if (restoreFailureCount >= 3) {
+                            // 任务已被划掉或系统连续拒绝搬移：释放虚拟屏，避免留下不可见的后台画布。
+                            synchronized(lock) {
+                                if (mutableSnapshots.value.externalizedToMain) {
+                                    AndroidAgentLogger.info(
+                                        "Virtual display released after repeated restore failures",
+                                    )
+                                    releaseSession(activeContext, { RootAccess.isGranted })
+                                }
+                            }
+                            restoreFailureCount = 0
+                        }
+                    } else {
+                        restoreFailureCount = 0
+                    }
+                } finally {
+                    synchronized(restoreLock) {
+                        if (restoreWatcher === Thread.currentThread()) restoreWatcher = null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun restoreToVirtualDisplayInternal(
+        snapshot: VirtualDisplaySnapshot,
+        rootAvailable: () -> Boolean,
+    ): Boolean {
+        val appContext = activeContext ?: return false
+        val moved = moveVirtualTaskToDisplay(
+            context = appContext,
+            sourceDisplayId = Display.DEFAULT_DISPLAY,
+            targetDisplayId = snapshot.displayId,
+            packageName = snapshot.packageName,
+            rootAvailable = rootAvailable,
+        )
+        if (!moved) return false
+        synchronized(lock) {
+            val current = mutableSnapshots.value
+            if (!current.active || !current.externalizedToMain) return moved
+            mutableSnapshots.value = current.copy(
+                userControlling = false,
+                materializingToMain = false,
+                externalizedToMain = false,
+            )
+            highFrequencyPreview = false
+        }
+        AndroidAgentLogger.info(
+            "Virtual display restored: package=${snapshot.packageName} display=${snapshot.displayId}",
+        )
+        // 回到虚拟屏后按当前归属重设 IME 策略：用户控制态保持 FALLBACK，托管态恢复 HIDE。
+        updateVirtualDisplayImePolicy(
+            displayId = snapshot.displayId,
+            hide = !mutableSnapshots.value.userControlling,
+            rootAvailable = rootAvailable,
+        )
         return moved
     }
 
@@ -517,7 +815,11 @@ internal object VirtualDisplayController {
     fun release(
         context: Context? = null,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
-    ) = releaseSession(context, rootAvailable)
+    ) {
+        releaseSession(context, rootAvailable)
+        // 虚拟屏彻底销毁后把“强制可调整大小”恢复成接管前的值，避免污染全局。
+        context?.let { SizeCompatBypass.restore(it.applicationContext, rootAvailable) }
+    }
 
     private fun releaseSession(
         context: Context?,
@@ -527,6 +829,11 @@ internal object VirtualDisplayController {
         val resources = synchronized(lock) {
             if (expected != null && !sessionState.isCurrent(expected)) return
             sessionState.invalidate()
+            // 本地状态复位：会话结束后不再指代任何 display 或前台包。
+            activeContext = null
+            lastMainDisplayForegroundPackage = ""
+            appliedImePolicyDisplayId = Display.INVALID_DISPLAY
+            appliedImePolicy = -1
             highFrequencyPreview = false
             mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
             if (context != null && mutedPackages.isNotEmpty()) {
@@ -571,7 +878,9 @@ internal object VirtualDisplayController {
                     lastUiFrameAtElapsedMs = now
                     val previewBitmap = createUiPreviewBitmap(bitmap)
                     val current = mutableSnapshots.value
-                    if (current.active) {
+                    // 破壁过渡期间冻结预览帧：任务搬走后虚拟屏是空画面，若继续刷新会把过渡层
+                    // 正在放大的那张位图替换成黑屏 —— 用户看到的「切全屏闪一下」就是这么来的。
+                    if (current.active && !current.materializingToMain) {
                         mutableSnapshots.value = current.copy(
                             frame = previewBitmap.asImageBitmap(),
                             frameSequence = frameSequenceGenerator.incrementAndGet(),
@@ -661,7 +970,7 @@ internal object VirtualDisplayController {
         }
         val dm = appContext.getSystemService(DisplayManager::class.java) ?: return@runCatching null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val config = VirtualDisplayConfig.Builder(
+            val builder = VirtualDisplayConfig.Builder(
                 CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
                 width,
                 height,
@@ -669,7 +978,8 @@ internal object VirtualDisplayController {
             )
                 .setSurface(surface)
                 .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
-                .build()
+            val config = builder.build()
+            AndroidAgentLogger.info("[vd] in-process 虚拟屏创建：size=${width}x$height")
             dm.createVirtualDisplay(config)
         } else {
             dm.createVirtualDisplay(
@@ -683,9 +993,177 @@ internal object VirtualDisplayController {
         }
     }.getOrNull()
 
-    private fun moveVirtualTaskToMainDisplay(
-        context: Context,
+    /** 破壁过渡：位图放大到全屏所需时间，与 overlay 的弹簧时长同量级。 */
+    private const val MaterializeExpandMs = 260L
+
+    /** 破壁过渡：迁移任务后给主屏窗口留的首帧时间，之后才开始淡出位图。 */
+    private const val MaterializeMainFrameWaitMs = 200L
+
+    /** 破壁过渡：位图淡出时长，必须与 VirtualDisplayMaterializeOverlay 的 tween 一致。 */
+    private const val MaterializeFadeOutMs = 220L
+
+    /** 破壁过渡：淡出结束到下线的余量，避免最后一帧硬切。 */
+    private const val MaterializeFadeTailMs = 40L
+
+    /** 画布顶边相对状态栏下沿的内边距（画廊装裱 Column 的垂直 padding）。 */
+    private const val StageCanvasTopInsetDp = 4f
+
+    /** IWindowManager 事务码：本机 framework.jar 中 IWindowManager$Stub.TRANSACTION_setDisplayImePolicy。 */
+    private const val WMS_TRANSACTION_SET_DISPLAY_IME_POLICY = 108
+
+    /** IWindowManager 事务码：本机 framework.jar 中 IWindowManager$Stub.TRANSACTION_getDisplayImePolicy。 */
+    private const val WMS_TRANSACTION_GET_DISPLAY_IME_POLICY = 107
+
+    /** android.view.WindowManager.DISPLAY_IME_POLICY_FALLBACK：IME 回落到物理主屏显示。 */
+    private const val DISPLAY_IME_POLICY_FALLBACK = 1
+
+    /** android.view.WindowManager.DISPLAY_IME_POLICY_HIDE：不在该 display 上显示 IME。 */
+    private const val DISPLAY_IME_POLICY_HIDE = 2
+
+    /**
+     * 把虚拟屏的 IME 策略改成「隐藏」。
+     *
+     * 该机型的 VirtualDisplayConfig.Builder 没有 setDisplayImePolicy，只能在 display 注册进
+     * WindowManagerService 之后调用 WMS#setDisplayImePolicy(HIDE)。策略生效后
+     * InputMethodManagerService 的 computeImeDisplayIdForTargetInner 会返回 -1，虚拟屏里的
+     * 输入框不会再让软键盘冒到物理主屏。display 注册有延迟，失败时短暂重试。
+     */
+    private fun hideImeOnVirtualDisplay(displayId: Int, rootAvailable: () -> Boolean) {
+        updateVirtualDisplayImePolicy(
+            displayId = displayId,
+            hide = true,
+            rootAvailable = rootAvailable,
+        )
+    }
+
+    /**
+     * 下发虚拟屏的 IME 策略。
+     *
+     * HIDE：Agent 自动运行期间使用，虚拟屏里的输入框不会再把软键盘冒到物理主屏；
+     * FALLBACK：用户点「接管」后使用，软键盘可以正常弹出（挂在物理主屏）。
+     *
+     * 该机型的 VirtualDisplayConfig.Builder 没有 setDisplayImePolicy，只能在 display 注册进
+     * WindowManagerService 之后调用 WMS#setDisplayImePolicy。display 注册有延迟，失败时短暂重试。
+     * 策略调用串行执行，保证「接管/继续」快速切换时最终状态正确。
+     */
+    private fun updateVirtualDisplayImePolicy(
         displayId: Int,
+        hide: Boolean,
+        rootAvailable: () -> Boolean,
+    ) {
+        if (!CanvasRoutingPolicy.isVirtualDisplay(displayId)) return
+        val policy = if (hide) DISPLAY_IME_POLICY_HIDE else DISPLAY_IME_POLICY_FALLBACK
+        val generation = imePolicyGeneration.incrementAndGet()
+        imePolicyExecutor.execute {
+            // 用户连点「接管 / 继续」时队列里可能压着旧意图：只执行最新那一条。
+            if (generation != imePolicyGeneration.get()) return@execute
+            if (appliedImePolicyDisplayId == displayId && appliedImePolicy == policy) return@execute
+            // 排队期间虚拟屏可能已经换人或释放：只对当前这个 display 生效。
+            if (displayId != activeDisplayId) return@execute
+            if (!rootAvailable()) {
+                AndroidAgentLogger.warn("[vd] 无 Root，跳过虚拟屏 IME 策略 displayId=$displayId policy=$policy")
+                return@execute
+            }
+            val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
+            try {
+                // HIDE 只拦新请求，已经冒出来的软键盘要主动收掉。
+                if (hide) dismissSoftKeyboardIfVisible(exec)
+                val applied = applyDisplayImePolicy(exec, displayId, policy)
+                // 写回成功不代表真的生效：读回一次，日志里留下 WMS 的实际策略，方便对账。
+                val readBack = readDisplayImePolicy(exec, displayId)
+                if (applied && (readBack == null || readBack == policy)) {
+                    appliedImePolicyDisplayId = displayId
+                    appliedImePolicy = policy
+                    AndroidAgentLogger.info(
+                        "[vd] 虚拟屏 IME 策略已下发 displayId=$displayId policy=$policy readBack=$readBack",
+                    )
+                } else {
+                    appliedImePolicy = -1
+                    AndroidAgentLogger.warn(
+                        "[vd] 虚拟屏 IME 策略下发失败 displayId=$displayId policy=$policy " +
+                            "readBack=$readBack",
+                    )
+                }
+            } finally {
+                runCatching { exec.close() }
+            }
+        }
+    }
+
+    private fun applyDisplayImePolicy(
+        exec: BoundedRootCommandExecutor,
+        displayId: Int,
+        policy: Int,
+    ): Boolean {
+        repeat(3) { attempt ->
+            val result = runCatching {
+                exec.execute(
+                    command = "service call window $WMS_TRANSACTION_SET_DISPLAY_IME_POLICY " +
+                        "i32 $displayId i32 $policy",
+                    timeoutMillis = 3_000L,
+                )
+            }.getOrNull()
+            val applied = result != null && result.ok &&
+                result.stdout.contains("Result: Parcel") &&
+                !result.stdout.contains("Exception")
+            if (applied) return true
+            try {
+                Thread.sleep(300L * (attempt + 1))
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        return false
+    }
+
+    /**
+     * 读回 displayId 当前实际生效的 IME 策略；解析失败返回 null。
+     *
+     * 本机 service call 的输出有两种形态：`Result: Parcel(\t00000000 00000000   \'........\')`
+     * （异常码 + 返回值）与 AIDL 的 `0x00000000: 00000000 00000002 \'....\'`（列偏移 + 异常码 + 返回值）。
+     * 只有异常码为 0 时返回值才可信。
+     */
+    private fun readDisplayImePolicy(exec: BoundedRootCommandExecutor, displayId: Int): Int? {
+        val result = runCatching {
+            exec.execute(
+                command = "service call window $WMS_TRANSACTION_GET_DISPLAY_IME_POLICY i32 $displayId",
+                timeoutMillis = 3_000L,
+            )
+        }.getOrNull() ?: return null
+        if (!result.ok) return null
+        val body = result.stdout.substringAfter("Result: Parcel(", "").substringBefore("\'")
+        val words = body.split(Regex("[^0-9a-fA-F]+")).filter { it.isNotEmpty() }
+        // 带列偏移时多一个前导字，异常码与返回值整体后移一位。
+        val offset = if (body.contains(":")) 1 else 0
+        if (words.getOrNull(offset)?.toLongOrNull(16) != 0L) return null
+        return words.getOrNull(offset + 1)?.toLongOrNull(16)?.toInt()
+    }
+
+    /** 接管结束后把还留在物理主屏的软键盘收掉。 */
+    private fun dismissSoftKeyboardIfVisible(exec: BoundedRootCommandExecutor) {
+        val probe = runCatching {
+            exec.execute(
+                command = "dumpsys input_method | grep -m1 'mImeWindowVis='",
+                timeoutMillis = 2_000L,
+            )
+        }.getOrNull() ?: return
+        if (!probe.ok) return
+        val flag = probe.stdout.substringAfter("mImeWindowVis=", "").trim().take(1)
+        if (flag.isEmpty() || flag == "0") return
+        runCatching {
+            exec.execute(
+                command = "input -d ${Display.DEFAULT_DISPLAY} keyevent 111",
+                timeoutMillis = 2_000L,
+            )
+        }
+        AndroidAgentLogger.info("[vd] 收回接管期间弹出的软键盘")
+    }
+
+    private fun moveVirtualTaskToDisplay(
+        context: Context,
+        sourceDisplayId: Int,
+        targetDisplayId: Int,
         packageName: String,
         rootAvailable: () -> Boolean,
     ): Boolean {
@@ -703,25 +1181,33 @@ internal object VirtualDisplayController {
                 4 -> getTasks.invoke(service, 40, false, false, Display.INVALID_DISPLAY)
                 else -> null
             } as? List<*> ?: emptyList<Any?>()
-            var targetTaskId = -1
+            var onSourceDisplayTaskId = -1
+            var samePackageTaskId = -1
             for (item in tasks) {
                 val info = item as? android.app.TaskInfo ?: continue
                 val taskDisplay = runCatching {
                     android.app.TaskInfo::class.java.getField("displayId").getInt(info)
                 }.getOrDefault(Display.INVALID_DISPLAY)
+                // 已在目标屏的任务不需要再搬，避免把主屏复用任务误判为本次搬运对象。
+                if (taskDisplay == targetDisplayId) continue
                 val topPkg = info.topActivity?.packageName ?: info.baseActivity?.packageName
-                if (taskDisplay == displayId || (packageName.isNotEmpty() && topPkg == packageName)) {
-                    targetTaskId = info.taskId
-                    if (taskDisplay == displayId) break
+                val packageMatches = packageName.isEmpty() || topPkg == packageName
+                if (taskDisplay == sourceDisplayId && packageMatches) {
+                    onSourceDisplayTaskId = info.taskId
+                    break
+                }
+                if (packageName.isNotEmpty() && topPkg == packageName && samePackageTaskId <= 0) {
+                    samePackageTaskId = info.taskId
                 }
             }
+            val targetTaskId = if (onSourceDisplayTaskId > 0) onSourceDisplayTaskId else samePackageTaskId
             if (targetTaskId > 0) {
                 val moveMethod = service.javaClass.getMethod(
                     "moveRootTaskToDisplay",
                     Int::class.javaPrimitiveType,
                     Int::class.javaPrimitiveType,
                 )
-                moveMethod.invoke(service, targetTaskId, Display.DEFAULT_DISPLAY)
+                moveMethod.invoke(service, targetTaskId, targetDisplayId)
                 true
             } else {
                 false
@@ -736,8 +1222,9 @@ internal object VirtualDisplayController {
             val cmd = "CLASSPATH=${DeviceToolContract.quote(apkPath)} app_process /system/bin " +
                 "io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayCommandMain"
             val req = JSONObject()
-                .put("action", "move_to_main")
-                .put("display_id", displayId)
+                .put("action", "move_to_display")
+                .put("display_id", sourceDisplayId)
+                .put("target_display_id", targetDisplayId)
                 .put("package_name", packageName)
                 .toString() + "\n"
             val supervisor = ShellProcessSupervisor(rootAvailable = rootAvailable)
@@ -761,13 +1248,13 @@ internal object VirtualDisplayController {
             }
         }
 
-        // 3. 兜底：以 SINGLE_TOP + NEW_TASK 在 DEFAULT_DISPLAY 唤起该应用
+        // 3. 兜底：以 SINGLE_TOP + NEW_TASK 在目标显示上唤起该应用
         if (packageName.isNotBlank()) {
             return runCatching {
                 val intent = context.packageManager.getLaunchIntentForPackage(packageName)
                     ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     ?: return@runCatching false
-                val options = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY)
+                val options = ActivityOptions.makeBasic().setLaunchDisplayId(targetDisplayId)
                 context.startActivity(intent, options.toBundle())
                 true
             }.getOrDefault(false)
@@ -827,21 +1314,100 @@ internal object VirtualDisplayController {
         }
     }
 
+    /**
+     * 虚拟屏尺寸必须与主屏「应用可布局区域」完全一致，并且取默认显示屏（主屏）的真实尺寸。
+     *
+     * 网易云这类 resizeMode=unresizable 的应用被 moveRootTaskToDisplay 搬回主屏时，
+     * 系统不会重新计算它的 activity 配置，只能沿用虚拟屏上的 mBounds：
+     * - 虚拟屏比主屏小 → size-compat 缩放/letterbox，出现左右黑边与「需要重新打开才能全屏」；
+     * - 虚拟屏只差一条 inset（本机 1440x3008 vs 主屏 1440x3168）→ 窗口铺到全屏，
+     *   但应用内容仍按 3008 排版，底部空出一条 160px。
+     * 本机主屏 mAppBounds 本身就是 1440x3168（状态栏/挖孔区域允许应用铺满），
+     * 所以这里直接取默认显示屏的真实尺寸，不再扣减 system bar insets。
+     */
+    @Suppress("DEPRECATION")
     private fun resolvePhysicalDisplayMetrics(context: Context): Triple<Int, Int, Int> {
         val dm = context.resources.displayMetrics
         var width = dm.widthPixels.coerceAtLeast(720)
         var height = dm.heightPixels.coerceAtLeast(1280)
         val density = dm.densityDpi.coerceIn(160, 640)
         runCatching {
-            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-            val point = Point()
-            @Suppress("DEPRECATION")
-            wm?.defaultDisplay?.getRealSize(point)
-            if (point.x > 0 && point.y > 0) {
-                width = point.x
-                height = point.y
+            val displayManager = context.getSystemService(DisplayManager::class.java)
+            val display = displayManager?.getDisplay(Display.DEFAULT_DISPLAY)
+                ?: (context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.defaultDisplay
+            if (display != null) {
+                val point = Point()
+                display.getRealSize(point)
+                if (point.x > 0 && point.y > 0) {
+                    width = point.x
+                    height = point.y
+                }
             }
+            AndroidAgentLogger.info("Virtual display metrics: main display=" + width + "x" + height)
         }
         return Triple(width, height, density)
+    }
+}
+
+/**
+ * 屏蔽系统的 size-compat（letterbox）判定。
+ *
+ * 网易云这类 targetSdk 较低、声明不可缩放的应用，在虚拟屏（1440x3168）里是满屏的；
+ * 一旦把任务搬到主屏，系统会按主屏 app bounds（扣掉 160 挖孔）重新判定尺寸，
+ * 判定失败即进入 size-compat：窗口被 scaleFactor 缩放、左右出现 Letterbox 黑边，
+ * 并弹出“全屏显示”兼容提示。
+ *
+ * 打开 Settings.Global.force_resizable_activities 后，系统不再把这些应用当作
+ * “不可缩放”，迁移时直接按目标 display 的 app bounds 重排，从源头避免缩放和黑边。
+ * 原值记录在 SharedPreferences，虚拟屏销毁时恢复，避免永久污染全局设置。
+ */
+internal object SizeCompatBypass {
+    private const val PREFS = "eta_size_compat_bypass"
+    private const val KEY_ORIGINAL = "original"
+    private const val KEY_APPLIED = "applied"
+    private const val SETTING = "force_resizable_activities"
+
+    fun ensure(context: Context, rootAvailable: () -> Boolean): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_APPLIED, false)) return true
+        if (!rootAvailable()) return false
+        return runCatching {
+            BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable).use { exec ->
+                val current = exec.execute("settings get global $SETTING", timeoutMillis = 4_000L)
+                val original = current.stdout.trim().ifBlank { "null" }
+                if (original == "1") {
+                    // 用户本来就开着（开发者选项），不需要接管，也不要在销毁时改回去。
+                    AndroidAgentLogger.info("Size compat bypass already enabled by user")
+                    return true
+                }
+                val put = exec.execute("settings put global $SETTING 1", timeoutMillis = 4_000L)
+                if (put.exitCode == 0) {
+                    prefs.edit()
+                        .putString(KEY_ORIGINAL, original)
+                        .putBoolean(KEY_APPLIED, true)
+                        .apply()
+                    AndroidAgentLogger.info("Size compat bypass enabled original=$original")
+                    true
+                } else {
+                    AndroidAgentLogger.warn("Size compat bypass enable failed exit=${put.exitCode}")
+                    false
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    fun restore(context: Context, rootAvailable: () -> Boolean) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_APPLIED, false)) return
+        val original = prefs.getString(KEY_ORIGINAL, "null") ?: "null"
+        val target = if (original == "1") "1" else "0"
+        prefs.edit().putBoolean(KEY_APPLIED, false).apply()
+        if (!rootAvailable()) return
+        runCatching {
+            BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable).use { exec ->
+                val put = exec.execute("settings put global $SETTING $target", timeoutMillis = 4_000L)
+                AndroidAgentLogger.info("Size compat bypass restored target=$target exit=${put.exitCode}")
+            }
+        }
     }
 }

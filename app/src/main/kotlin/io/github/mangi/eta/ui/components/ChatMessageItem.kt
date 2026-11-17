@@ -1,8 +1,12 @@
 package io.github.mangi.eta.ui.components
 
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.horizontalScroll
 import android.graphics.BitmapFactory
 import android.util.Base64
-import android.util.LruCache
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -20,7 +24,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +42,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -56,6 +58,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,10 +69,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -81,8 +85,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -92,7 +94,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.itos.coui.dialog.CouiDialogDefaults
@@ -110,12 +111,13 @@ import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.markdown.EditorialLineHeightStyle
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.markdown.MarkdownTone
 import io.github.mangi.eta.ui.markdown.StaticMarkdown
 import io.github.mangi.eta.ui.markdown.StreamingMarkdown
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownState
 import io.github.mangi.eta.ui.markdown.THINKING_LINE_HEIGHT_SP
+import io.github.mangi.eta.ui.markdown.scaleChatText
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.RunTraceMessageUi
@@ -126,7 +128,9 @@ import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.ui.voice.LocalSpeechPlayback
 import io.github.mangi.eta.ui.voice.SpeechReadAloudButton
+import io.github.mangi.eta.ui.voice.rememberSpeechSentences
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -140,15 +144,9 @@ import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-private val chatImageBitmapCache = object : LruCache<String, ImageBitmap>(48 * 1024 * 1024) {
-    override fun sizeOf(key: String, value: ImageBitmap): Int =
-        (value.width * value.height * 4).coerceAtLeast(1)
-}
-
 @Composable
-internal fun rememberDataUrlBitmap(dataUrl: String): ImageBitmap? = remember(dataUrl) {
-    chatImageBitmapCache.get(dataUrl)
-        ?: decodeDataUrlBitmap(dataUrl)?.also { chatImageBitmapCache.put(dataUrl, it) }
+internal fun rememberDataUrlBitmap(dataUrl: String) = remember(dataUrl) {
+    decodeDataUrlBitmap(dataUrl)
 }
 
 internal fun decodeDataUrlBitmap(dataUrl: String): ImageBitmap? {
@@ -236,6 +234,8 @@ internal fun ChatMessageItem(
     onRegenerateMessage: (String) -> Unit = {},
     onBranchMessage: (String) -> Unit = {},
     onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
+    /** 正文首行字顶相对本条消息顶边的偏移（px）：只有最后一条消息需要，用于正文停靠。 */
+    onAnswerFirstLineTop: ((Float) -> Unit)? = null,
 ) {
     when (message) {
         is UserMessageUi -> UserMessageBubble(
@@ -261,6 +261,7 @@ internal fun ChatMessageItem(
             onRegenerate = { onRegenerateMessage(message.id) },
             onEdit = { onEditMessage(message.id) },
             onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
+            onAnswerFirstLineTop = onAnswerFirstLineTop,
             modifier = modifier,
         )
         is SystemNoticeMessageUi -> if (message.code == SystemNoticeCode.ContextCompaction) {
@@ -288,6 +289,7 @@ internal fun ChatMessageItem(
                         }
                     },
                     renderMarkdown = false,
+                    roundDurationMs = message.roundDurationMs,
                 ),
                 assistantOverlay = false,
                 retainedStreamingState = null,
@@ -351,18 +353,31 @@ private fun UserMessageBubble(
     val visiblePrompt = remember(message.content) {
         AgentFileReferencePromptCodec.parse(message.content)
     }
-    val isDark = MiuixTheme.colorScheme.background.luminance() < 0.5f
-    val uiStyle = LocalUiStyle.current
-    val overlayBubbleColor = when {
-        uiStyle == AppearanceUiStyle.COUI && isDark -> Color(0xFF21293A)
-        uiStyle == AppearanceUiStyle.COUI -> Color(0xFFEAF0FC)
-        isDark -> Color(0xFF37393D)
-        else -> Color(0xFFE5E7EA)
+    // 会话正文字号倍率：我发出的消息与助手回答共用「外观和主题」里的同一个设置。
+    val chatTextScale = LocalAppearanceSettings.current.chatTextScale
+    val overlayBubbleColor = if (MiuixTheme.colorScheme.background.luminance() < 0.5f) {
+        Color(0xFF37393D)
+    } else {
+        Color(0xFFE5E7EA)
     }
-    val imagePreviewer = LocalChatImagePreviewer.current
-    val hasTextBubble = visiblePrompt.references.isNotEmpty() || visiblePrompt.request.isNotBlank()
-    val canCopy = message.content.isNotBlank()
+    val uiStyle = LocalUiStyle.current
     val bubbleContent: @Composable () -> Unit = {
+        if (message.images.isNotEmpty()) {
+            // 与上游一致：单图按原图比例自适应，多图紧凑成组，点击进入原位全屏预览。
+            Box(modifier = Modifier.padding(bottom = 8.dp)) {
+                UserMessageImages(
+                    messageId = message.id,
+                    images = message.images,
+                    assistantOverlay = false,
+                    isCoui = uiStyle == AppearanceUiStyle.COUI,
+                    couiDark = MiuixTheme.colorScheme.background.luminance() < 0.5f,
+                    highlightBorder = false,
+                    highlightColor = MiuixTheme.colorScheme.primary,
+                    previewer = LocalChatImagePreviewer.current,
+                    onLongClick = null,
+                )
+            }
+        }
         if (visiblePrompt.references.isNotEmpty()) {
             SentFileReferenceFlow(
                 references = visiblePrompt.references,
@@ -376,8 +391,8 @@ private fun UserMessageBubble(
                 Text(
                     text = visiblePrompt.request,
                     style = MiuixTheme.textStyles.body1.copy(
-                        lineHeight = 23.sp,
-                        lineHeightStyle = EditorialLineHeightStyle,
+                        fontSize = 16.sp * chatTextScale,
+                        lineHeight = 25.sp * chatTextScale,
                     ),
                     color = MiuixTheme.colorScheme.onSurface,
                 )
@@ -397,95 +412,63 @@ private fun UserMessageBubble(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                start = if (assistantOverlay) 16.dp else 20.dp,
-                end = if (assistantOverlay) 16.dp else 20.dp,
-                top = if (assistantOverlay) 4.dp else 16.dp,
-                bottom = if (assistantOverlay) 4.dp else 6.dp,
+                horizontal = if (assistantOverlay) 16.dp else 20.dp,
+                vertical = if (assistantOverlay) 4.dp else 8.dp,
             ),
         horizontalArrangement = Arrangement.End,
     ) {
         if (uiStyle == AppearanceUiStyle.COUI && !assistantOverlay) {
             val couiDark = CouiTheme.isDark
-            val couiBubbleBg = if (couiDark) Color(0xFF202634) else Color(0xFFEEF2FA)
             val couiColors = CouiPageDefaults.themeColors(couiDark)
             val destructiveColor = CouiDialogDefaults.themeColors(couiDark).destructive
+            val couiBubbleShape = UserBubbleShape
+            val couiBubbleBg = if (couiDark) Color(0xFF1F2D3E) else Color(0xFFEBF4FF)
             val copyText = stringResource(R.string.ui_copy_4edd1d)
             val editText = stringResource(R.string.ui_edit_a7f814)
             val deleteText = stringResource(R.string.ui_delete_3755f5)
-            val menuItems = remember(canCopy, copyText, editText, deleteText, destructiveColor) {
-                buildList {
-                    if (canCopy) {
-                        add(CouiMenuItem(value = 0, text = copyText, icon = Icons.Rounded.ContentCopy))
-                    }
-                    add(CouiMenuItem(value = 1, text = editText, icon = Icons.Rounded.Edit))
-                    add(
-                        CouiMenuItem(
-                            value = 2,
-                            text = deleteText,
-                            icon = Icons.Rounded.Delete,
-                            iconTint = destructiveColor,
-                            dividerBefore = true,
-                        ),
-                    )
-                }
-            }
-            val openCouiMenu: (() -> Unit)? = if (actionsEnabled) {
-                {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    couiAnchor.open { showCouiMenu = true }
-                }
-            } else {
-                null
+            val menuItems = remember(copyText, editText, deleteText, destructiveColor) {
+                listOf(
+                    CouiMenuItem(value = 0, text = copyText, icon = Icons.Rounded.ContentCopy),
+                    CouiMenuItem(value = 1, text = editText, icon = Icons.Rounded.Edit),
+                    CouiMenuItem(
+                        value = 2,
+                        text = deleteText,
+                        icon = Icons.Rounded.Delete,
+                        iconTint = destructiveColor,
+                        dividerBefore = true,
+                    ),
+                )
             }
             Box {
                 Column(
-                    modifier = Modifier.couiMenuAnchor(couiAnchor),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .widthIn(max = 320.dp)
+                        .couiMenuAnchor(couiAnchor)
+                        .clip(couiBubbleShape)
+                        .background(couiBubbleBg, couiBubbleShape)
+                        .then(
+                            if (isEditing) {
+                                Modifier.border(1.dp, couiColors.accent, couiBubbleShape)
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                            onLongClick = if (actionsEnabled) {
+                                {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    couiAnchor.open { showCouiMenu = true }
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    if (message.images.isNotEmpty()) {
-                        UserMessageImages(
-                            messageId = message.id,
-                            images = message.images,
-                            assistantOverlay = false,
-                            isCoui = true,
-                            couiDark = couiDark,
-                            highlightBorder = isEditing && !hasTextBubble,
-                            highlightColor = couiColors.accent,
-                            previewer = imagePreviewer,
-                            onLongClick = openCouiMenu,
-                        )
-                    }
-                    if (hasTextBubble) {
-                        Column(
-                            modifier = Modifier
-                                .widthIn(max = 316.dp)
-                                .clip(UserBubbleShape)
-                                .background(couiBubbleBg, UserBubbleShape)
-                                .then(
-                                    if (isEditing) {
-                                        Modifier.border(1.dp, couiColors.accent, UserBubbleShape)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                .combinedClickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = {},
-                                    onLongClick = openCouiMenu,
-                                )
-                                .padding(horizontal = 16.dp, vertical = 10.5.dp),
-                        ) {
-                            bubbleContent()
-                        }
-                    } else if (message.isEdited) {
-                        Text(
-                            text = stringResource(R.string.ui_edited_c36776),
-                            style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
+                    bubbleContent()
                 }
                 Menu(
                     expanded = showCouiMenu && actionsEnabled,
@@ -514,18 +497,16 @@ private fun UserMessageBubble(
                 tooltip = {
                     RichTooltip(insideMargin = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            if (canCopy) {
-                                MessageTooltipAction(
-                                    icon = Icons.Rounded.ContentCopy,
-                                    label = stringResource(R.string.ui_copy_4edd1d),
-                                    onClick = {
-                                        @Suppress("DEPRECATION")
-                                        clipboardManager.setText(AnnotatedString(message.content))
-                                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                        tooltipState.dismiss()
-                                    },
-                                )
-                            }
+                            MessageTooltipAction(
+                                icon = Icons.Rounded.ContentCopy,
+                                label = stringResource(R.string.ui_copy_4edd1d),
+                                onClick = {
+                                    @Suppress("DEPRECATION")
+                                    clipboardManager.setText(AnnotatedString(message.content))
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    tooltipState.dismiss()
+                                },
+                            )
                             MessageTooltipAction(
                                 icon = Icons.Rounded.Edit,
                                 label = stringResource(R.string.ui_edit_a7f814),
@@ -550,303 +531,40 @@ private fun UserMessageBubble(
                 enableUserInput = actionsEnabled,
             ) {
                 Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .widthIn(max = 320.dp)
+                        .then(
+                            if (assistantOverlay) {
+                                Modifier.background(overlayBubbleColor, RoundedCornerShape(10.dp))
+                            } else {
+                                Modifier.squircleSurface(
+                                    color = MiuixTheme.colorScheme.surfaceContainerHigh,
+                                    topStart = 20.dp,
+                                    topEnd = 20.dp,
+                                    bottomEnd = if (isEditing) 20.dp else 6.dp,
+                                    bottomStart = 20.dp,
+                                )
+                            },
+                        )
+                        .then(
+                            if (isEditing) {
+                                Modifier.squircleBorder(
+                                    width = 1.dp,
+                                    color = MiuixTheme.colorScheme.primary,
+                                    cornerRadius = 20.dp,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .padding(
+                            horizontal = if (assistantOverlay) 12.dp else 16.dp,
+                            vertical = if (assistantOverlay) 8.dp else 12.dp,
+                        ),
                 ) {
-                    if (message.images.isNotEmpty()) {
-                        UserMessageImages(
-                            messageId = message.id,
-                            images = message.images,
-                            assistantOverlay = assistantOverlay,
-                            isCoui = false,
-                            couiDark = false,
-                            highlightBorder = isEditing && !hasTextBubble,
-                            highlightColor = MiuixTheme.colorScheme.primary,
-                            previewer = imagePreviewer.takeUnless { assistantOverlay },
-                            onLongClick = null,
-                        )
-                    }
-                    if (hasTextBubble) {
-                        val bubbleShape = when {
-                            assistantOverlay && uiStyle == AppearanceUiStyle.COUI -> OverlayCouiUserBubbleShape
-                            assistantOverlay -> OverlayUserBubbleShape
-                            else -> UserBubbleShape
-                        }
-                        Column(
-                            modifier = Modifier
-                                .widthIn(max = 316.dp)
-                                .clip(bubbleShape)
-                                .background(
-                                    color = if (assistantOverlay) {
-                                        overlayBubbleColor
-                                    } else {
-                                        MiuixTheme.colorScheme.surfaceContainerHigh
-                                    },
-                                    shape = bubbleShape,
-                                )
-                                .then(
-                                    if (isEditing) {
-                                        Modifier.border(
-                                            width = 1.dp,
-                                            color = MiuixTheme.colorScheme.primary,
-                                            shape = bubbleShape,
-                                        )
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                .padding(
-                                    horizontal = if (assistantOverlay) 14.dp else 16.dp,
-                                    vertical = if (assistantOverlay) 9.dp else 10.5.dp,
-                                ),
-                        ) {
-                            bubbleContent()
-                        }
-                    } else if (message.isEdited) {
-                        Text(
-                            text = stringResource(R.string.ui_edited_c36776),
-                            style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
+                    bubbleContent()
                 }
             }
-        }
-    }
-}
-
-/** 单行时左侧呈完整半胶囊弧度，右下角保留利落的 4dp 对话收角。 */
-private val UserBubbleShape = RoundedCornerShape(
-    topStart = 22.dp,
-    topEnd = 22.dp,
-    bottomEnd = 4.dp,
-    bottomStart = 22.dp,
-)
-
-private val OverlayUserBubbleShape = RoundedCornerShape(
-    topStart = 14.dp,
-    topEnd = 14.dp,
-    bottomEnd = 4.dp,
-    bottomStart = 14.dp,
-)
-
-private val OverlayCouiUserBubbleShape = RoundedCornerShape(
-    topStart = 20.dp,
-    topEnd = 20.dp,
-    bottomEnd = 5.dp,
-    bottomStart = 20.dp,
-)
-
-/**
- * 用户消息的图片附件独立于文字气泡右对齐排布，避免单张缩略图撑在宽文字气泡左上角留出大片空白。
- * 单图按原图比例自适应尺寸，多图采用紧凑圆角图组，点击进入全屏预览。
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun UserMessageImages(
-    messageId: String,
-    images: List<String>,
-    assistantOverlay: Boolean,
-    isCoui: Boolean,
-    couiDark: Boolean,
-    highlightBorder: Boolean,
-    highlightColor: Color,
-    previewer: ChatImagePreviewer?,
-    onLongClick: (() -> Unit)?,
-) {
-    val outlineColor = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f)
-    val borderWidth = if (highlightBorder) 1.dp else 0.5.dp
-    val borderColor = if (highlightBorder) highlightColor else outlineColor
-    val single = images.size == 1
-    val cornerRadius = when {
-        assistantOverlay -> 10.dp
-        single -> 16.dp
-        else -> 14.dp
-    }
-    // 普通 HashMap 只在点击瞬间或飞行绘制时读取，列表滚动更新坐标不触发任何组合状态写入。
-    val itemBounds = remember(messageId) { HashMap<Int, Rect>() }
-
-    if (single) {
-        val bitmap = rememberDataUrlBitmap(images[0]) ?: return
-        val rawRatio = bitmap.width.toFloat() / bitmap.height.toFloat().coerceAtLeast(1f)
-        val ratio = rawRatio.coerceIn(0.54f, 1.85f)
-        val maxW = when {
-            assistantOverlay -> 152.dp
-            ratio > 1.15f -> 204.dp
-            else -> 176.dp
-        }
-        val maxH = if (assistantOverlay) 176.dp else 216.dp
-        val (cardW, cardH) = if (maxW / ratio <= maxH) {
-            maxW to (maxW / ratio)
-        } else {
-            (maxH * ratio) to maxH
-        }
-        UserMessageImageCard(
-            bitmap = bitmap,
-            width = cardW,
-            height = cardH,
-            cornerRadius = cornerRadius,
-            assistantOverlay = assistantOverlay,
-            isCoui = isCoui,
-            couiDark = couiDark,
-            borderWidth = borderWidth,
-            borderColor = borderColor,
-            isHiddenInViewer = { previewer?.isPresenting(messageId, 0) == true },
-            onBoundsChanged = { itemBounds[0] = it },
-            onClick = previewer?.let { viewer ->
-                {
-                    viewer.open(
-                        images = images,
-                        initialIndex = 0,
-                        groupKey = messageId,
-                        sourceBoundsProvider = { itemBounds[it] },
-                        sourceCornerRadius = cornerRadius,
-                    )
-                }
-            },
-            onLongClick = onLongClick,
-        )
-        return
-    }
-
-    val twoUp = images.size == 2
-    val cardW = when {
-        assistantOverlay && twoUp -> 94.dp
-        assistantOverlay -> 80.dp
-        twoUp -> 118.dp
-        else -> 98.dp
-    }
-    val cardH = when {
-        assistantOverlay && twoUp -> 118.dp
-        assistantOverlay -> 100.dp
-        twoUp -> 148.dp
-        else -> 124.dp
-    }
-    val rowModifier = if (images.size > 2) {
-        Modifier
-            .widthIn(max = if (assistantOverlay) 248.dp else 316.dp)
-            .horizontalScroll(rememberScrollState())
-    } else {
-        Modifier
-    }
-    Row(
-        modifier = rowModifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        images.forEachIndexed { index, dataUrl ->
-            val bitmap = rememberDataUrlBitmap(dataUrl) ?: return@forEachIndexed
-            UserMessageImageCard(
-                bitmap = bitmap,
-                width = cardW,
-                height = cardH,
-                cornerRadius = cornerRadius,
-                assistantOverlay = assistantOverlay,
-                isCoui = isCoui,
-                couiDark = couiDark,
-                borderWidth = borderWidth,
-                borderColor = borderColor,
-                isHiddenInViewer = { previewer?.isPresenting(messageId, index) == true },
-                onBoundsChanged = { itemBounds[index] = it },
-                onClick = previewer?.let { viewer ->
-                    {
-                        viewer.open(
-                            images = images,
-                            initialIndex = index,
-                            groupKey = messageId,
-                            sourceBoundsProvider = { itemBounds[it] },
-                            sourceCornerRadius = cornerRadius,
-                        )
-                    }
-                },
-                onLongClick = onLongClick,
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun UserMessageImageCard(
-    bitmap: ImageBitmap,
-    width: Dp,
-    height: Dp,
-    cornerRadius: Dp,
-    assistantOverlay: Boolean,
-    isCoui: Boolean,
-    couiDark: Boolean,
-    borderWidth: Dp,
-    borderColor: Color,
-    isHiddenInViewer: () -> Boolean,
-    onBoundsChanged: (Rect) -> Unit,
-    onClick: (() -> Unit)?,
-    onLongClick: (() -> Unit)?,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val clickModifier = when {
-        onLongClick != null || (isCoui && onClick != null) -> Modifier.combinedClickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = { onClick?.invoke() },
-            onLongClick = onLongClick,
-        )
-        onClick != null -> Modifier.clickable(onClick = onClick)
-        else -> Modifier
-    }
-    Box(
-        modifier = Modifier
-            .size(width = width, height = height)
-            .onGloballyPositioned { coords ->
-                if (coords.isAttached) onBoundsChanged(coords.boundsInWindow())
-            }
-            .graphicsLayer {
-                alpha = if (isHiddenInViewer()) 0f else 1f
-            }
-            .then(
-                when {
-                    assistantOverlay -> {
-                        val shape = RoundedCornerShape(cornerRadius)
-                        Modifier
-                            .clip(shape)
-                            .background(MiuixTheme.colorScheme.surfaceContainer, shape)
-                            .border(borderWidth, borderColor, shape)
-                    }
-                    isCoui -> {
-                        val shape = CouiShape(cornerRadius, 2.2f)
-                        Modifier
-                            .then(
-                                if (onClick != null) {
-                                    Modifier.couiButtonFeedback(couiDark, interactionSource, enabled = true)
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            .clip(shape)
-                            .background(MiuixTheme.colorScheme.surfaceContainer, shape)
-                            .border(borderWidth, borderColor, shape)
-                    }
-                    else -> Modifier.squircleSurface(
-                        color = MiuixTheme.colorScheme.surfaceContainer,
-                        cornerRadius = cornerRadius,
-                    )
-                },
-            )
-            .then(clickModifier),
-    ) {
-        Image(
-            bitmap = bitmap,
-            contentDescription = stringResource(
-                if (onClick != null) R.string.chat_view_image else R.string.chat_image_attachment,
-            ),
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize(),
-        )
-        if (!assistantOverlay && !isCoui) {
-            // squircleBorder 在 onDrawBehind 中绘制，置于前景层才能叠在位图之上收边。
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .squircleBorder(width = borderWidth, color = borderColor, cornerRadius = cornerRadius),
-            )
         }
     }
 }
@@ -952,11 +670,9 @@ private fun AgentMessageBlock(
     onEdit: () -> Unit = {},
     onSelectCandidate: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
+    /** 正文首行字顶相对本条消息顶边的偏移（px）：正文停靠要贴的是首行文字，不是条目顶边。 */
+    onAnswerFirstLineTop: ((Float) -> Unit)? = null,
 ) {
-    @Suppress("DEPRECATION")
-    val clipboardManager = LocalClipboardManager.current
-    val haptic = LocalHapticFeedback.current
-    var copied by remember(message.id) { mutableStateOf(false) }
     val keepStreamingMarkdown = remember(message.id) { message.isStreaming }
     DisposableEffect(retainedStreamingState) {
         retainedStreamingState?.attachContent()
@@ -979,23 +695,29 @@ private fun AgentMessageBlock(
     LaunchedEffect(retainedStreamingState, revealComplete, message.content) {
         retainedStreamingState?.revealedContent = message.content.takeIf { revealComplete }
     }
-    LaunchedEffect(copied) {
-        if (copied) {
-            kotlinx.coroutines.delay(1_400)
-            copied = false
-        }
+
+    // 只对正在朗读的这条消息订阅句级进度，其余消息保持不重组。
+    val speechState = LocalSpeechPlayback.current?.state?.collectAsState()?.value
+    val speakingIndex = speechState
+        ?.takeIf { it.messageId == message.id && it.sentenceIndex >= 0 }
+        ?.sentenceIndex
+    val speechSentences = if (speakingIndex != null && message.renderMarkdown) {
+        rememberSpeechSentences(message.content)
+    } else {
+        null
     }
 
     val character = LocalRoleplayChat.current.takeUnless { assistantOverlay }
     val isGreeting = character != null && message.id.startsWith(GreetingMessagePrefix)
+    // 停靠基准：直接把正文首行字顶的窗口 y 上报给列表层，列表层用
+    // 「首行窗口 y − 顶栏底边」闭环滚动；不经过条目顶边换算，内边距与行高留白都不参与。
+    val bodyFirstLineReporter: ((Float) -> Unit)? = onAnswerFirstLineTop
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                start = if (assistantOverlay) 16.dp else 20.dp,
-                end = if (assistantOverlay) 16.dp else 20.dp,
-                top = 4.dp,
-                bottom = 6.dp,
+                horizontal = if (assistantOverlay) 16.dp else 20.dp,
+                vertical = 8.dp,
             ),
     ) {
         if (character != null) {
@@ -1007,7 +729,8 @@ private fun AgentMessageBlock(
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
-            streamingState != null && !revealComplete -> {
+            // 正在朗读时直接走静态渲染：等显现动画收尾会错过第一句的高亮。
+            streamingState != null && !revealComplete && speakingIndex == null -> {
                 StreamingMarkdown(
                     state = streamingState,
                     content = message.content,
@@ -1015,6 +738,7 @@ private fun AgentMessageBlock(
                     tone = MarkdownTone.Answer,
                     onRevealCompleteChange = { streamingRevealComplete = it },
                     modifier = Modifier.fillMaxWidth(),
+                    onFirstLineTop = bodyFirstLineReporter,
                 )
             }
             message.renderMarkdown -> {
@@ -1024,16 +748,21 @@ private fun AgentMessageBlock(
                         tone = MarkdownTone.Answer,
                         parsed = completedDocument,
                         modifier = Modifier.fillMaxWidth(),
+                        speechSentences = speechSentences,
+                        speechSentenceIndex = speakingIndex,
+                        onFirstLineTop = bodyFirstLineReporter,
                     )
                 }
             }
             message.content.isNotBlank() -> {
+                // 不走 Markdown 的纯文本回答同样跟随「会话文字大小」，与正文保持同一倍率。
+                val fallbackTextScale = LocalAppearanceSettings.current.chatTextScale
                 SelectionContainer {
                     Text(
                         text = message.content,
                         style = MiuixTheme.textStyles.body1.copy(
-                            lineHeight = 25.sp,
-                            lineHeightStyle = EditorialLineHeightStyle,
+                            fontSize = 16.sp * fallbackTextScale,
+                            lineHeight = 25.sp * fallbackTextScale,
                         ),
                         color = MiuixTheme.colorScheme.onSurface,
                     )
@@ -1061,21 +790,8 @@ private fun AgentMessageBlock(
                     .offset(x = -AnswerActionCenterOffset)
                     .padding(top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(AnswerActionSpacing),
             ) {
-                AnswerActionButton(
-                    icon = if (copied) ChatActionIcons.Check else ChatActionIcons.Copy,
-                    contentDescription = stringResource(
-                        if (copied) R.string.copy_copied else R.string.copy_answer,
-                    ),
-                    onClick = {
-                        @Suppress("DEPRECATION")
-                        clipboardManager.setText(AnnotatedString(message.content))
-                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                        copied = true
-                    },
-                    tint = if (copied) MiuixTheme.colorScheme.primary else null,
-                )
                 if (allowSpeech) SpeechReadAloudButton(message.id, message.content)
                 if (showMessageActions) {
                     if (message.characterEditable) {
@@ -1083,14 +799,6 @@ private fun AgentMessageBlock(
                             icon = ChatActionIcons.Edit,
                             contentDescription = stringResource(R.string.chat_edit_character_reply),
                             onClick = onEdit,
-                            enabled = messageActionsEnabled,
-                        )
-                    }
-                    TooltipBox(text = stringResource(R.string.ui_regenerate_2e1905), enabled = messageActionsEnabled) {
-                        AnswerActionButton(
-                            icon = ChatActionIcons.Refresh,
-                            contentDescription = stringResource(R.string.ui_regenerate_reply_84a7d9),
-                            onClick = onRegenerate,
                             enabled = messageActionsEnabled,
                         )
                     }
@@ -1112,10 +820,26 @@ private fun AgentMessageBlock(
                             )
                         }
                     }
-                    if (!assistantOverlay && message.usage != null && message.usage.hasPerformanceStats) {
+                    // 只有真实用时（老消息没有性能统计）时也要显示胶囊。
+                    val statsUsage = message.usage
+                    if (!assistantOverlay && statsUsage != null &&
+                        (statsUsage.hasPerformanceStats || message.roundDurationMs != null)
+                    ) {
                         TurnStatsPill(
-                            usage = message.usage,
+                            usage = statsUsage,
                             modifier = Modifier.padding(start = 4.dp),
+                            roundDurationMs = message.roundDurationMs,
+                        )
+                    }
+                    // 本轮消耗：整轮完整结束后写入；作为动作组的固定尾项，始终排在统计胶囊之后。
+                    // 颜色与动作按钮图标统一（同一 onSurfaceVariantSummary，同样的 0.75 透明度）。
+                    message.roundCost?.let { cost ->
+                        Text(
+                            text = stringResource(R.string.chat_round_cost, plainCost(cost)),
+                            modifier = Modifier.padding(start = AnswerTextGap),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
+                            style = MiuixTheme.textStyles.footnote1,
+                            maxLines = 1,
                         )
                     }
                     if (message.characterEditable && message.candidateCount > 1) {
@@ -1135,6 +859,12 @@ private fun AgentMessageBlock(
 
 /** 开场白消息由开始对话时写入，标识前缀与写入方保持一致。 */
 private const val GreetingMessagePrefix = "greeting-"
+
+/** 消耗金额按分显示，去掉多余的 0（0.10 → 0.1）。 */
+private fun plainCost(value: Double): String = java.math.BigDecimal(value)
+    .setScale(2, java.math.RoundingMode.HALF_UP)
+    .stripTrailingZeros()
+    .toPlainString()
 
 /**
  * 角色回复的署名行：小头像加角色名，开场白额外标注“故事开始”。
@@ -1181,11 +911,28 @@ private fun CharacterReplyHeader(character: RoleplayChatUi, isGreeting: Boolean)
 private val ChatCardCorner = 12.dp
 private const val ChatCardOutlineAlpha = 0.5f
 
-/** 回答操作按钮的紧凑触控尺寸（28.dp 盒 + 16.dp 图标）；行整体左移 6.dp 对齐正文左边缘。 */
-internal val AnswerActionSize = 28.dp
-private val AnswerActionCenterOffset = 6.dp
+/**
+ * 回答操作按钮的触控尺寸；行整体左移半个尺寸减去图标半宽，使图标落在工作过程图标的中心线上。
+ * 36dp 盒 + 2dp 间隔时图标间视觉间距为 22dp，按要求缩减 30%：盒改 30dp（内边距 7dp/侧）+ 1.4dp 间隔 = 15.4dp。
+ */
+internal val AnswerActionSize = 30.dp
 
-/** 回答下方的轻量操作：图标显式着色，因此禁用态需要自己换成禁用色，否则看起来仍可点。 */
+/** 操作行各项之间的视觉间距：图标按钮 30dp 里含 16dp 图标，相邻图标之间正好留下这一空隙。 */
+private val AnswerActionGap = AnswerActionSize - 16.dp
+
+/** 文字项自身没有按钮留白，只需补上图标右侧那半个空隙。 */
+private val AnswerTextGap = AnswerActionGap - (AnswerActionSize - 16.dp) / 2
+private val AnswerActionCenterOffset = 8.dp
+
+/** 动作按钮之间的布局间距；与 30dp 盒内 7dp/侧留白相加，图标间视觉间距 15.4dp（原 22dp 的 70%）。 */
+private val AnswerActionSpacing = 1.4.dp
+
+/**
+ * 回答下方的轻量操作：图标显式着色，因此禁用态需要自己换成更淡的同色，否则看起来仍可点。
+ *
+ * 禁用态**不能**用 disabledOnSurface：它是不透明的实色，亮色下近黑、暗色下近白，
+ * 比旁边的朗读、金额、用时重得多（旋转重建等时机按钮会短暂进入禁用态，一眼就看得出来）。
+ */
 @Composable
 internal fun AnswerActionButton(
     icon: ImageVector,
@@ -1221,9 +968,9 @@ internal fun AnswerActionButton(
             contentDescription = contentDescription,
             modifier = Modifier.size(16.dp),
             tint = when {
-                !enabled -> MiuixTheme.colorScheme.disabledOnSurface
                 tint != null -> tint
-                else -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.72f)
+                !enabled -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.38f)
+                else -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f)
             },
         )
     }
@@ -1365,12 +1112,11 @@ internal fun ThinkingRow(
                         )
                     } ?: stringResource(R.string.reasoning_completed)
                 },
-                style = MiuixTheme.textStyles.body2.copy(fontSize = 13.5.sp),
+                style = MiuixTheme.textStyles.body2,
                 color = if (message.isStreaming) {
                     MiuixTheme.colorScheme.onSurface
                 } else {
-                    val dark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
-                    MiuixTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.56f else 0.52f)
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
                 },
                 modifier = Modifier.weight(1f, fill = !compact),
             )
@@ -1379,7 +1125,7 @@ internal fun ThinkingRow(
                 contentDescription = stringResource(
                     if (expanded) R.string.reasoning_collapse else R.string.reasoning_expand,
                 ),
-                modifier = Modifier.padding(start = 4.dp, end = if (compact) 4.dp else 0.dp),
+                modifier = Modifier.padding(start = 4.dp, end = if (compact) 8.dp else 0.dp),
             )
         }
 
@@ -1398,9 +1144,9 @@ internal fun ThinkingRow(
                     .fillMaxWidth()
                     .padding(
                         start = if (compact) 0.dp else 12.dp,
-                        end = if (compact) 4.dp else 12.dp,
-                        top = if (compact) 3.dp else 8.dp,
-                        bottom = if (compact) 10.dp else 12.dp,
+                        end = if (compact) 8.dp else 12.dp,
+                        top = if (compact) 0.dp else 8.dp,
+                        bottom = if (compact) 8.dp else 12.dp,
                     )
                 if (streamingState != null &&
                     (message.isStreaming || completedDocument == null || tailWindow)
@@ -1610,6 +1356,238 @@ private fun SuggestionChipsRow(
                     color = MiuixTheme.colorScheme.onSurface,
                 )
             }
+        }
+    }
+}
+
+/** 单行时呈完整半胶囊弧度，右下角保留利落的 4dp 对话收角。 */
+private val UserBubbleShape = RoundedCornerShape(
+    topStart = 22.dp,
+    topEnd = 22.dp,
+    bottomEnd = 4.dp,
+    bottomStart = 22.dp,
+)
+
+private val OverlayUserBubbleShape = RoundedCornerShape(
+    topStart = 14.dp,
+    topEnd = 14.dp,
+    bottomEnd = 4.dp,
+    bottomStart = 14.dp,
+)
+
+private val OverlayCouiUserBubbleShape = RoundedCornerShape(
+    topStart = 20.dp,
+    topEnd = 20.dp,
+    bottomEnd = 5.dp,
+    bottomStart = 20.dp,
+)
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun UserMessageImages(
+    messageId: String,
+    images: List<String>,
+    assistantOverlay: Boolean,
+    isCoui: Boolean,
+    couiDark: Boolean,
+    highlightBorder: Boolean,
+    highlightColor: Color,
+    previewer: ChatImagePreviewer?,
+    onLongClick: (() -> Unit)?,
+) {
+    val outlineColor = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f)
+    val borderWidth = if (highlightBorder) 1.dp else 0.5.dp
+    val borderColor = if (highlightBorder) highlightColor else outlineColor
+    val single = images.size == 1
+    val cornerRadius = when {
+        assistantOverlay -> 10.dp
+        single -> 16.dp
+        else -> 14.dp
+    }
+    // 普通 HashMap 只在点击瞬间或飞行绘制时读取，列表滚动更新坐标不触发任何组合状态写入。
+    val itemBounds = remember(messageId) { HashMap<Int, Rect>() }
+
+    if (single) {
+        val bitmap = rememberDataUrlBitmap(images[0]) ?: return
+        val rawRatio = bitmap.width.toFloat() / bitmap.height.toFloat().coerceAtLeast(1f)
+        val ratio = rawRatio.coerceIn(0.54f, 1.85f)
+        val maxW = when {
+            assistantOverlay -> 152.dp
+            ratio > 1.15f -> 204.dp
+            else -> 176.dp
+        }
+        val maxH = if (assistantOverlay) 176.dp else 216.dp
+        val (cardW, cardH) = if (maxW / ratio <= maxH) {
+            maxW to (maxW / ratio)
+        } else {
+            (maxH * ratio) to maxH
+        }
+        UserMessageImageCard(
+            bitmap = bitmap,
+            width = cardW,
+            height = cardH,
+            cornerRadius = cornerRadius,
+            assistantOverlay = assistantOverlay,
+            isCoui = isCoui,
+            couiDark = couiDark,
+            borderWidth = borderWidth,
+            borderColor = borderColor,
+            isHiddenInViewer = { previewer?.isPresenting(messageId, 0) == true },
+            onBoundsChanged = { itemBounds[0] = it },
+            onClick = previewer?.let { viewer ->
+                {
+                    viewer.open(
+                        images = images,
+                        initialIndex = 0,
+                        groupKey = messageId,
+                        sourceBoundsProvider = { itemBounds[it] },
+                        sourceCornerRadius = cornerRadius,
+                    )
+                }
+            },
+            onLongClick = onLongClick,
+        )
+        return
+    }
+
+    val twoUp = images.size == 2
+    val cardW = when {
+        assistantOverlay && twoUp -> 94.dp
+        assistantOverlay -> 80.dp
+        twoUp -> 118.dp
+        else -> 98.dp
+    }
+    val cardH = when {
+        assistantOverlay && twoUp -> 118.dp
+        assistantOverlay -> 100.dp
+        twoUp -> 148.dp
+        else -> 124.dp
+    }
+    val rowModifier = if (images.size > 2) {
+        Modifier
+            .widthIn(max = if (assistantOverlay) 248.dp else 316.dp)
+            .horizontalScroll(rememberScrollState())
+    } else {
+        Modifier
+    }
+    Row(
+        modifier = rowModifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        images.forEachIndexed { index, dataUrl ->
+            val bitmap = rememberDataUrlBitmap(dataUrl) ?: return@forEachIndexed
+            UserMessageImageCard(
+                bitmap = bitmap,
+                width = cardW,
+                height = cardH,
+                cornerRadius = cornerRadius,
+                assistantOverlay = assistantOverlay,
+                isCoui = isCoui,
+                couiDark = couiDark,
+                borderWidth = borderWidth,
+                borderColor = borderColor,
+                isHiddenInViewer = { previewer?.isPresenting(messageId, index) == true },
+                onBoundsChanged = { itemBounds[index] = it },
+                onClick = previewer?.let { viewer ->
+                    {
+                        viewer.open(
+                            images = images,
+                            initialIndex = index,
+                            groupKey = messageId,
+                            sourceBoundsProvider = { itemBounds[it] },
+                            sourceCornerRadius = cornerRadius,
+                        )
+                    }
+                },
+                onLongClick = onLongClick,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun UserMessageImageCard(
+    bitmap: ImageBitmap,
+    width: Dp,
+    height: Dp,
+    cornerRadius: Dp,
+    assistantOverlay: Boolean,
+    isCoui: Boolean,
+    couiDark: Boolean,
+    borderWidth: Dp,
+    borderColor: Color,
+    isHiddenInViewer: () -> Boolean,
+    onBoundsChanged: (Rect) -> Unit,
+    onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)?,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val clickModifier = when {
+        onLongClick != null || (isCoui && onClick != null) -> Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = { onClick?.invoke() },
+            onLongClick = onLongClick,
+        )
+        onClick != null -> Modifier.clickable(onClick = onClick)
+        else -> Modifier
+    }
+    Box(
+        modifier = Modifier
+            .size(width = width, height = height)
+            .onGloballyPositioned { coords ->
+                if (coords.isAttached) onBoundsChanged(coords.boundsInWindow())
+            }
+            .graphicsLayer {
+                alpha = if (isHiddenInViewer()) 0f else 1f
+            }
+            .then(
+                when {
+                    assistantOverlay -> {
+                        val shape = RoundedCornerShape(cornerRadius)
+                        Modifier
+                            .clip(shape)
+                            .background(MiuixTheme.colorScheme.surfaceContainer, shape)
+                            .border(borderWidth, borderColor, shape)
+                    }
+                    isCoui -> {
+                        val shape = CouiShape(cornerRadius, 2.2f)
+                        Modifier
+                            .then(
+                                if (onClick != null) {
+                                    Modifier.couiButtonFeedback(couiDark, interactionSource, enabled = true)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .clip(shape)
+                            .background(MiuixTheme.colorScheme.surfaceContainer, shape)
+                            .border(borderWidth, borderColor, shape)
+                    }
+                    else -> Modifier.squircleSurface(
+                        color = MiuixTheme.colorScheme.surfaceContainer,
+                        cornerRadius = cornerRadius,
+                    )
+                },
+            )
+            .then(clickModifier),
+    ) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = stringResource(
+                if (onClick != null) R.string.chat_view_image else R.string.chat_image_attachment,
+            ),
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+        )
+        if (!assistantOverlay && !isCoui) {
+            // squircleBorder 在 onDrawBehind 中绘制，置于前景层才能叠在位图之上收边。
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .squircleBorder(width = borderWidth, color = borderColor, cornerRadius = cornerRadius),
+            )
         }
     }
 }

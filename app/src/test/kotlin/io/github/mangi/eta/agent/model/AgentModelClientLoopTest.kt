@@ -19,6 +19,32 @@ import org.junit.Test
 
 class AgentModelClientLoopTest {
     @Test
+    fun backgroundReviewWhitelistRestrictsSchemasAndRejectsInventedToolsAtDispatch() {
+        val publishedTools = mutableListOf<List<String>>()
+        fun record(request: ProviderRequest) {
+            publishedTools += (0 until request.tools.length()).map { request.tools.getJSONObject(it).getJSONObject("function").getString("name") }
+        }
+        val provider = ScriptedProvider(listOf(
+            { request, _ -> record(request); assistant(finishReason = "tool_calls", toolCalls = listOf(
+                toolCall("deny", "terminal", "{}"),
+                toolCall("allow", "skills_list", "{}"),
+            )) },
+            { request, _ -> record(request); assistant(content = "复盘完成", finishReason = "stop") },
+        ))
+        val executed = mutableListOf<String>()
+        AgentModelClient.complete(
+            config = modelConfig().copy(terminalTools = true), prompt = "复盘", provider = provider,
+            restrictedToolNames = setOf("skills_list"),
+            toolExecutor = AgentModelClient.ToolExecutor { call -> executed += call.name; AgentModelClient.ToolResult("{\"ok\":true}") },
+        )
+        assertEquals(listOf("skills_list"), executed)
+        assertEquals(listOf(listOf("skills_list"), listOf("skills_list")), publishedTools)
+        val result = provider.requests.last().toString()
+        // 白名单外的工具现在按「本轮能力目录里没有」拒绝，返回 TOOL_NOT_AVAILABLE。
+        assertTrue(result.contains("TOOL_NOT_AVAILABLE"))
+    }
+
+    @Test
     fun rootProbeStatesKeepThePrefixStableUntilGrantActuallyChanges() {
         var root = RootAccessState(isChecking = true)
         val calls = mutableListOf<String>()
@@ -124,6 +150,7 @@ class AgentModelClientLoopTest {
         assertEquals(listOf("ctx"), executed)
         assertTrue(results.single().contains("NOTIFICATION_ACCESS_REQUIRED"))
     }
+
 
     @Test
     fun hostedSearchReplacesOnlyTheLocalSearchInSupportedConfigurations() {
@@ -331,7 +358,7 @@ class AgentModelClientLoopTest {
     }
 
     @Test
-    fun steeringWaitsForWholeToolBatchWithoutCancellingResources() {
+    fun steeringSkipsUnstartedCallsAndPreservesCompletedToolsWithoutCancellingResources() {
         val controller = AgentRunController()
         val cancelledResources = AtomicInteger(0)
         controller.register { cancelledResources.incrementAndGet() }
@@ -359,10 +386,11 @@ class AgentModelClientLoopTest {
             runController = controller,
         )
 
-        assertEquals(listOf("call-1", "call-2"), executed)
+        assertEquals(listOf("call-1"), executed)
         assertEquals(0, cancelledResources.get())
         assertFalse(controller.hasPendingSteering)
         assertEquals("已按补充完成", result.content)
+        assertTrue(provider.requests[1].getJSONObjectFromEnd(2).getString("content").contains("USER_SUPPLEMENT_RECEIVED"))
         assertEquals(
             listOf("assistant", "tool", "tool", "user"),
             provider.requests[1].roleSuffix(4),

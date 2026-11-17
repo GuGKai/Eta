@@ -11,6 +11,8 @@ import android.os.ParcelFileDescriptor
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.config.Prefs
+
+import io.github.mangi.eta.BuildConfig
 import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
@@ -33,6 +35,14 @@ import kotlinx.serialization.json.Json
  */
 internal object AgentRuntimeWire {
     const val MSG_READ_CONTEXT_RESULT = 15
+    const val MSG_STEER_RUN = 16
+    const val MSG_STEER_RESPONSE = 17
+
+    fun steerBundle(runId: String, text: String): Bundle {
+        require(runId.isNotBlank() && runId.length <= 256)
+        require(text.isNotBlank() && text.length <= 8_000 && '\u0000' !in text)
+        return ackBundle(runId).apply { putString("supplement_text", text) }
+    }
     const val OP_CHAT = "chat"
     const val OP_COMPACT = "compact"
     const val OP_REWRITE_REPLY = "rewrite_reply"
@@ -40,12 +50,18 @@ internal object AgentRuntimeWire {
     const val AGENT_UI_HANDOFF_SOURCE = "agent_ui"
     const val ETA_VOICE_HANDOFF_SOURCE = "eta_voice"
 
+    /**
+     * 客户端「等待被中断」的结果标记：界面走了，但任务没有被取消，runtime 侧仍在继续，
+     * 结果由下次进入界面的恢复流程接管，不能按失败/已停止处理。
+     */
+    const val ERROR_RUN_DETACHED = "RUN_DETACHED"
+
     internal class PayloadTooLargeException(sizeBytes: Int) : IllegalArgumentException(
         "Agent Runtime 请求元数据过大（$sizeBytes bytes）；请缩短输入或会话历史后重试"
     )
 
     /** bind 获取服务端 Messenger 的 Intent action。 */
-    const val ACTION_BIND = "io.github.mangi.eta.agent.runtime.BIND"
+    val ACTION_BIND = BuildConfig.APPLICATION_ID + ".agent.runtime.BIND"
 
     // Messenger.what
     /** client -> service：开始一次 Agent 运行，[Message.replyTo] 携带 client Messenger。 */
@@ -90,7 +106,7 @@ internal object AgentRuntimeWire {
     /** service -> client：返回各运行的会话归属与当前阶段。 */
     const val MSG_QUERY_ACTIVE_RUNS_RESPONSE = 17
 
-    private const val MODULE_PACKAGE = "io.github.mangi.eta"
+    private val MODULE_PACKAGE = BuildConfig.APPLICATION_ID
     private const val SERVICE_CLASS = "io.github.mangi.eta.agent.runtime.AgentRuntimeService"
 
     private const val KEY_TYPE = "type"
@@ -155,6 +171,7 @@ internal object AgentRuntimeWire {
         "handoff_dismiss_entry_surface_on_foreground_operation"
     private const val LEGACY_BREENO_HANDOFF_SOURCE = "breeno"
     private const val KEY_CREATED_AT = "created_at"
+    private const val KEY_ELAPSED_MS = "elapsed_ms"
     private const val KEY_RESULTS = "results"
     private const val MAX_RESULT_CONTENT_CHARS = 64_000
     private const val MAX_RESULT_REASONING_CHARS = 32_000
@@ -252,6 +269,9 @@ internal object AgentRuntimeWire {
         val contextSnapshotRef: String = "",
         val operation: String = OP_CHAT,
         val rewriteTargetMessageId: String? = null,
+        val errorCode: String = "",
+        /** 这一轮从 Runtime 收到请求到结束的实际耗时（毫秒）；浮窗等外部入口的会话计时靠它。 */
+        val elapsedMs: Long = 0,
     )
 
     data class EntryHandoff(
@@ -581,6 +601,8 @@ internal object AgentRuntimeWire {
             ),
         )
         putString(KEY_ERROR, error?.boundedText(MAX_DRAIN_CONTENT_CHARS))
+        putString("error_code", errorCode)
+        putLong(KEY_ELAPSED_MS, elapsedMs)
         putString(
             KEY_TRANSCRIPT_JSON,
             if (compactForDrain) {
@@ -601,6 +623,8 @@ internal object AgentRuntimeWire {
             ok = bundle.getBoolean(KEY_OK),
             content = bundle.getString(KEY_CONTENT).orEmpty(),
             error = bundle.getString(KEY_ERROR),
+            errorCode = bundle.getString("error_code").orEmpty(),
+            elapsedMs = bundle.getLong(KEY_ELAPSED_MS),
             reasoningContent = bundle.getString(KEY_REASONING_CONTENT).orEmpty(),
             transcript = AgentConversationCodec.decodeTranscript(bundle.getString(KEY_TRANSCRIPT_JSON)),
         )
@@ -686,7 +710,7 @@ internal object AgentRuntimeWire {
         }
     }
 
-    /** 将 [AgentEvent] 打包为可跨进程传递的 [Bundle]。 */
+    /** 将 [AgentEvent] 和可选的执行位置打包为可跨进程传递的 [Bundle]。 */
     fun eventToBundle(event: AgentEvent): Bundle = Bundle().apply {
         when (event) {
             is AgentEvent.GuiControlChanged -> {
@@ -725,6 +749,11 @@ internal object AgentRuntimeWire {
                 putInt("max_attempts", event.maxAttempts)
                 putInt("delay_ms", event.delayMs)
                 putString("reason_code", event.reasonCode)
+            }
+
+            is AgentEvent.ModelRequestInterrupted -> {
+                putString(KEY_TYPE, "model_request_interrupted")
+                putInt("round", event.round)
             }
 
             is AgentEvent.ProviderRequestStarted -> {
@@ -903,6 +932,8 @@ internal object AgentRuntimeWire {
             httpCode = bundle.getInt("http_code"),
         )
 
+        "model_request_interrupted" -> AgentEvent.ModelRequestInterrupted(bundle.getInt("round"))
+
         "assistant_block_start" -> AgentEvent.AssistantBlockStart(
             round = bundle.getInt("round"),
             kind = AgentEvent.AssistantBlockKind.valueOf(
@@ -1043,6 +1074,7 @@ internal object AgentRuntimeWire {
         usage.cachedTokens?.let { putInt("${prefix}cache", it) }
         usage.cacheWriteTokens?.let { putInt("${prefix}cache_write", it) }
         usage.requestKind?.takeIf { it.isNotBlank() }?.let { putString("${prefix}request_kind", it) }
+        usage.requestDurationMs?.let { putLong("${prefix}duration_ms", it) }
         usage.stepCount?.let { putInt("${prefix}steps", it) }
         usage.llmMs?.let { putLong("${prefix}llm_ms", it) }
         usage.toolMs?.let { putLong("${prefix}tool_ms", it) }
@@ -1061,6 +1093,7 @@ internal object AgentRuntimeWire {
             cachedTokens = optionalInt("${prefix}cache"),
             cacheWriteTokens = optionalInt("${prefix}cache_write"),
             requestKind = getString("${prefix}request_kind")?.takeIf { it.isNotBlank() },
+            requestDurationMs = (get("${prefix}duration_ms") as? Number)?.toLong()?.takeIf { it > 0 },
             stepCount = optionalInt("${prefix}steps"),
             llmMs = optionalLong("${prefix}llm_ms"),
             toolMs = optionalLong("${prefix}tool_ms"),

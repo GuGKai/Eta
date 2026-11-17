@@ -1,6 +1,5 @@
 package io.github.mangi.eta.ui.components
 
-import io.github.mangi.eta.ui.voice.SpeechDictationButton
 import io.github.mangi.eta.ui.voice.SpeechInputFeedback
 import io.github.mangi.eta.ui.voice.rememberSpeechInput
 import androidx.compose.ui.text.TextRange
@@ -25,7 +24,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,15 +33,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,17 +56,22 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -80,23 +84,28 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.itos.coui.effect.couiButtonFeedback
+import io.github.mangi.eta.ui.components.coui.CouiCircleIconButton
 import com.itos.coui.menu.CouiMenuItem
 import com.itos.coui.menu.Menu
+import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.menu.couiMenuAnchor
 import com.itos.coui.menu.rememberCouiMenuAnchor
 import com.itos.coui.shape.CouiShape
@@ -107,6 +116,7 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.markdown.EditorialLineHeightStyle
+import io.github.mangi.eta.ui.app.composerFocusRequests
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
@@ -129,6 +139,9 @@ private val SendButtonVisualSize = ChatInputActionIconSize
 private val SendIconSize = 16.dp
 private val StopIconSize = 10.dp
 private val ThinkingIconSize = 21.dp
+/** 输入栏正中的余额胶囊：由外壳页面注入，避免把余额状态一路透传进输入栏。 */
+internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+
 private val InputContainerShape = RoundedCornerShape(20.dp)
 
 /**
@@ -157,6 +170,7 @@ internal fun AgentChatInputBar(
     canCompactContext: Boolean,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit = onSubmit,
+    onSteerSubmit: (String) -> Unit = onSubmit,
     onSteerQueuedMessage: (String) -> Unit = {},
     onRecallQueuedMessage: (String, String) -> Unit = { _, _ -> },
     onRemoveQueuedMessage: (String) -> Unit = {},
@@ -168,6 +182,9 @@ internal fun AgentChatInputBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
+    /** 新建对话后的一次性聚焦信号。 */
+    focusInputRequest: Int = 0,
+    onFocusInputHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -210,6 +227,50 @@ internal fun AgentChatInputBar(
         }
         wasEditingMessage = isEditingMessage
         syncedVersion = inputSyncVersion
+    }
+
+    // 用「请求序号」而不是一次性布尔：新建对话会连带重建输入栏，
+    // 布尔信号容易被即将销毁的旧实例吞掉，导致新会话不弹键盘。
+    var handledFocusRequestId by remember { mutableIntStateOf(0) }
+    var inputFocused by remember { mutableStateOf(false) }
+    var pendingFocusRequest by remember { mutableStateOf(false) }
+    var inputPlaced by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val busFocusRequest by composerFocusRequests.collectAsState()
+    val effectiveFocusRequest = if (busFocusRequest > 0) busFocusRequest else focusInputRequest
+    LaunchedEffect(effectiveFocusRequest) {
+        if (effectiveFocusRequest <= 0 || effectiveFocusRequest == handledFocusRequestId) return@LaunchedEffect
+        handledFocusRequestId = effectiveFocusRequest
+        pendingFocusRequest = true
+        withFrameNanos { }
+        // 只有已经完成过布局的输入框（复用场景）才在这里请求；新建会话交给 onPlaced，
+        // 否则会抢在 attach 之前 requestFocus，抛异常后把 pending 标记清掉，onPlaced 就不重试了。
+        if (inputPlaced && pendingFocusRequest) {
+            pendingFocusRequest = false
+            runCatching { focusRequester.requestFocus() }
+        }
+        // 等焦点真正落到输入框（最多 1.5 秒），再拉起键盘；IME 需要有效的输入连接。
+        withTimeoutOrNull(1500) { snapshotFlow { inputFocused }.first { it } }
+        withFrameNanos { }
+        keyboard?.show()
+        onFocusInputHandled()
+        // 处理完把通道值复位，避免 Activity 重建时重复聚焦拉起键盘。
+        delay(600)
+        composerFocusRequests.compareAndSet(effectiveFocusRequest, 0)
+    }
+
+    // 退到后台时清掉输入焦点：回到前台时不再自动弹键盘。
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                pendingFocusRequest = false
+                focusManager.clearFocus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(
@@ -381,7 +442,8 @@ internal fun AgentChatInputBar(
                         lineHeightStyle = EditorialLineHeightStyle,
                     )
                     val character = LocalRoleplayChat.current
-                    if (textFieldState.text.isBlank()) {
+                    // 纯空格也算已输入：占位文字必须让位，否则光标前会一直挂着提示语。
+                    if (textFieldState.text.isEmpty()) {
                         Text(
                             text = when {
                                 // 角色对话的占位文字跟随角色，避免“交给 Eta”打断沉浸感。
@@ -399,7 +461,16 @@ internal fun AgentChatInputBar(
                         state = textFieldState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .focusRequester(focusRequester),
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { inputFocused = it.isFocused }
+                            .onPlaced {
+                                // 节点完成布局才可能真正拿到焦点，这里是新建会话的主要触发点。
+                                inputPlaced = true
+                                if (pendingFocusRequest) {
+                                    pendingFocusRequest = false
+                                    runCatching { focusRequester.requestFocus() }
+                                }
+                            },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                         textStyle = inputTextStyle.copy(color = MiuixTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
@@ -410,6 +481,7 @@ internal fun AgentChatInputBar(
                     )
                 }
 
+                Box(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -453,19 +525,12 @@ internal fun AgentChatInputBar(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        if (showContextUsage && contextUsage.contextTokens != null) {
-                            AgentContextUsageButton(
-                                usage = contextUsage,
-                                onCompact = onCompactContext,
-                                canCompact = canCompactContext && !isStreaming,
-                            )
+                        if (showContextUsage) {
+                            AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
+
                             Spacer(modifier = Modifier.width(2.dp))
                         }
 
-                        if (recognitionEnabled) {
-                            SpeechDictationButton(dictation, enabled = !isCompacting)
-                            Spacer(modifier = Modifier.width(2.dp))
-                        }
 
                         val showStreamingSend = isStreaming && !isCompacting && canSend
                         val submitCurrentDraft: (Boolean) -> Unit = { interrupt ->
@@ -474,65 +539,41 @@ internal fun AgentChatInputBar(
                                 val submittedText = textFieldState.text.toString()
                                 textFieldState.clearText()
                                 if (interrupt) {
-                                    onInterruptAndSubmit(submittedText)
+                                    onSteerSubmit(submittedText)
                                 } else {
                                     onSubmit(submittedText)
                                 }
                             }
                         }
 
-                        AnimatedVisibility(
-                            visible = showStreamingSend,
-                            enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = 0.78f) + expandHorizontally(tween(160)),
-                            exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.78f) + shrinkHorizontally(tween(140)),
-                        ) {
-                            IconButton(
-                                onClick = onStop,
-                                minWidth = ChatInputActionSize,
-                                minHeight = ChatInputActionSize,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(SendButtonVisualSize)
-                                        .clip(CircleShape)
-                                        .background(MiuixTheme.colorScheme.surfaceContainerHigh),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Stop,
-                                        contentDescription = stringResource(R.string.chat_stop),
-                                        modifier = Modifier.size(StopIconSize),
-                                        tint = MiuixTheme.colorScheme.onSurface,
-                                    )
-                                }
-                            }
-                        }
-
                         val showPrimaryStop = isStreaming && !showStreamingSend
-                        val sendCircleSize = 32.dp
-                        val ink = MiuixTheme.colorScheme.onSurface.copy(alpha = 1f)
+                        val sendCircleSize = if (isCoui) 32.dp else SendButtonVisualSize
                         val sendButtonColor by animateColorAsState(
                             targetValue = when {
                                 showPrimaryStop -> MiuixTheme.colorScheme.onSurface
                                 canSend -> MiuixTheme.colorScheme.primary
-                                else -> ink.copy(alpha = if (isDark) 0.08f else 0.06f)
+                                isCoui -> if (couiDark) Color(0xFF2E3136) else Color(0xFFE1E4E9)
+                                else -> MiuixTheme.colorScheme.surfaceContainerHigh
                             },
                             animationSpec = tween(durationMillis = 160),
                             label = "send_button_color",
                         )
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .combinedClickable(
-                                    enabled = isStreaming || canSend,
-                                    onClick = {
-                                        if (showPrimaryStop) {
-                                            onStop()
-                                        } else {
-                                            submitCurrentDraft(false)
-                                        }
-                                    },
+                        val sendIconLabel = if (isEditingMessage && preserveFollowingMessages) {
+                            stringResource(R.string.chat_save_message)
+                        } else {
+                            stringResource(R.string.chat_send)
+                        }
+                        if (isCoui && canSend) {
+                            // 只有「可发送」的蓝底状态走 COUI 圆形图标按钮（轮廓光晕 + 触摸位移 + 压感 + 高光）；
+                            // 灰色不可发送与终止态保持原有样式。
+                            Box(
+                                modifier = Modifier.size(ChatInputActionSize),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CouiCircleIconButton(
+                                    icon = Icons.Rounded.ArrowUpward,
+                                    contentDescription = sendIconLabel,
+                                    onClick = { submitCurrentDraft(false) },
                                     onLongClick = if (showStreamingSend) {
                                         {
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -541,48 +582,84 @@ internal fun AgentChatInputBar(
                                     } else {
                                         null
                                     },
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
+                                    fillColor = CouiTheme.colorSchemeFor(couiDark).accent,
+                                    iconColor = Color.White,
+                                    buttonSize = sendCircleSize,
+                                    iconSize = 18.dp,
+                                )
+                            }
+                        } else {
                             Box(
                                 modifier = Modifier
-                                    .size(sendCircleSize)
+                                    .size(ChatInputActionSize)
                                     .clip(CircleShape)
-                                    .background(sendButtonColor),
+                                    .combinedClickable(
+                                        enabled = isStreaming || canSend,
+                                        onClick = {
+                                            if (showPrimaryStop) {
+                                                onStop()
+                                            } else {
+                                                submitCurrentDraft(false)
+                                            }
+                                        },
+                                        onLongClick = if (showStreamingSend) {
+                                            {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                submitCurrentDraft(true)
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                    ),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                AnimatedContent(
-                                    targetState = showPrimaryStop,
-                                    transitionSpec = {
-                                        (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
-                                            .togetherWith(
-                                                fadeOut(tween(90)) +
-                                                    scaleOut(tween(110), targetScale = 0.72f)
-                                            )
-                                    },
-                                    label = "send_stop_icon",
-                                ) { stopIcon ->
-                                    Icon(
-                                        imageVector = if (stopIcon) {
-                                            Icons.Rounded.Stop
-                                        } else {
-                                            Icons.Rounded.ArrowUpward
+                                Box(
+                                    modifier = Modifier
+                                        .size(sendCircleSize)
+                                        .clip(CircleShape)
+                                        .background(sendButtonColor),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    AnimatedContent(
+                                        targetState = showPrimaryStop,
+                                        transitionSpec = {
+                                            (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
+                                                .togetherWith(
+                                                    fadeOut(tween(90)) +
+                                                        scaleOut(tween(110), targetScale = 0.72f)
+                                                )
                                         },
-                                        contentDescription = when {
-                                            stopIcon -> stringResource(R.string.chat_stop)
-                                            isEditingMessage && preserveFollowingMessages -> stringResource(R.string.chat_save_message)
-                                            else -> stringResource(R.string.chat_send)
-                                        },
-                                        modifier = Modifier.size(if (stopIcon) 12.dp else 17.dp),
-                                        tint = when {
-                                            stopIcon -> MiuixTheme.colorScheme.surface
-                                            canSend -> MiuixTheme.colorScheme.onPrimary
-                                            else -> ink.copy(alpha = if (isDark) 0.28f else 0.24f)
-                                        },
-                                    )
+                                        label = "send_stop_icon",
+                                    ) { stopIcon ->
+                                        Icon(
+                                            imageVector = if (stopIcon) {
+                                                Icons.Rounded.Stop
+                                            } else {
+                                                Icons.Rounded.ArrowUpward
+                                            },
+                                            contentDescription = when {
+                                                stopIcon -> stringResource(R.string.chat_stop)
+                                                isEditingMessage && preserveFollowingMessages -> stringResource(R.string.chat_save_message)
+                                                else -> stringResource(R.string.chat_send)
+                                            },
+                                            modifier = Modifier.size(
+                                                if (stopIcon) StopIconSize else if (isCoui) 18.dp else SendIconSize,
+                                            ),
+                                            tint = when {
+                                                stopIcon -> MiuixTheme.colorScheme.surface
+                                                canSend -> MiuixTheme.colorScheme.onPrimary
+                                                else -> MiuixTheme.colorScheme.onSurfaceVariantActions
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
+                }
+                // 余额胶囊相对整行绝对居中：变长时向两侧对称延伸，不会把右侧按钮挤偏。
+                LocalChatInputBalanceCapsule.current?.let { capsule ->
+                    Box(modifier = Modifier.align(Alignment.Center)) { capsule() }
+                }
                 }
             }
         }
@@ -590,9 +667,7 @@ internal fun AgentChatInputBar(
 
 }
 
-/**
- * 思考强度胶囊：仅含开关两态时单击直接切换，支持多档强度时展开菜单并在胶囊上直接标明英文档位。
- */
+/** 思考强度选择保持为单一图标，当前状态仅通过图标颜色表达。 */
 @Composable
 private fun ThinkingEffortChip(
     effort: ReasoningEffort,
@@ -605,161 +680,81 @@ private fun ThinkingEffortChip(
 ) {
     var showPopup by remember { mutableStateOf(false) }
     val active = effort != ReasoningEffort.OFF
-    val interactive = enabled && options.size > 1
-    val binaryToggleTarget = remember(options, effort) {
-        if (options.size == 2 && ReasoningEffort.OFF in options) {
-            options.firstOrNull { it != effort }
-        } else {
-            null
-        }
-    }
+    val menuEnabled = enabled && options.size > 1
     val anchor = rememberCouiMenuAnchor()
-    val haptic = LocalHapticFeedback.current
-    LaunchedEffect(interactive) {
-        if (!interactive) showPopup = false
+    LaunchedEffect(menuEnabled) {
+        if (!menuEnabled) showPopup = false
     }
     val popupPositionProvider = remember(popupAnchorTopPx) {
         InputPopupPositionProvider(popupAnchorTopPx)
     }
-
-    val colors = MiuixTheme.colorScheme
-    val isDark = colors.surface.luminance() < 0.5f
-    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
-    val ink = colors.onSurface.copy(alpha = 1f)
     val contentColor by animateColorAsState(
         targetValue = if (active) {
-            colors.primary
+            MiuixTheme.colorScheme.primary
         } else {
-            ink.copy(alpha = if (isDark) 0.58f else 0.54f)
+            MiuixTheme.colorScheme.onSurfaceVariantSummary
         },
         animationSpec = tween(durationMillis = 160),
         label = "thinking_content",
     )
-    val bgColor by animateColorAsState(
-        targetValue = if (active) {
-            colors.primary.copy(alpha = if (isDark) 0.18f else 0.10f)
-        } else {
-            ink.copy(alpha = if (isDark) 0.06f else 0.038f)
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "thinking_bg",
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (active) {
-            colors.primary.copy(alpha = if (isDark) 0.30f else 0.22f)
-        } else {
-            ink.copy(alpha = if (isDark) 0.10f else 0.065f)
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "thinking_border",
-    )
-
-    val chipLabel = when (effort) {
-        ReasoningEffort.OFF -> stringResource(R.string.reasoning_chip_off)
-        ReasoningEffort.DEFAULT -> stringResource(R.string.reasoning_chip_default)
-        else -> effort.displayName
-    }
-    val accessibilityLabel = stringResource(R.string.chat_reasoning_effort, effort.displayName)
-    val interactionSource = remember { MutableInteractionSource() }
-
     Box(modifier = modifier) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .couiMenuAnchor(anchor)
-                .heightIn(min = 30.dp)
-                .clip(CircleShape)
-                .background(bgColor, CircleShape)
-                .border(0.5.dp, borderColor, CircleShape)
-                .then(
-                    if (isCoui) {
-                        Modifier.couiButtonFeedback(isDark, interactionSource, enabled = interactive)
-                    } else {
-                        Modifier
-                    },
-                )
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    enabled = interactive,
-                    role = Role.Button,
-                    onClick = {
-                        if (binaryToggleTarget != null) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onEffortChange(binaryToggleTarget)
-                        } else {
-                            anchor.open { showPopup = true }
-                        }
-                    },
-                )
-                .semantics {
-                    contentDescription = accessibilityLabel
-                }
-                .padding(horizontal = 10.dp, vertical = 5.dp),
+        IconButton(
+            onClick = { anchor.open { showPopup = true } },
+            enabled = menuEnabled,
+            minWidth = ChatInputActionSize,
+            minHeight = ChatInputActionSize,
+            modifier = Modifier.couiMenuAnchor(anchor),
         ) {
             Icon(
                 imageVector = ImageVector.vectorResource(R.drawable.ic_atom),
-                contentDescription = null,
-                modifier = Modifier.size(14.5.dp),
+                contentDescription = stringResource(R.string.chat_reasoning_effort, effort.displayName),
+                modifier = Modifier.size(ThinkingIconSize),
                 tint = contentColor,
             )
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(
-                text = chipLabel,
-                style = MiuixTheme.textStyles.footnote1.copy(
-                    fontSize = 12.5.sp,
-                    lineHeight = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                ),
-                color = contentColor,
-                maxLines = 1,
-            )
         }
-        if (binaryToggleTarget == null) {
-            when (LocalUiStyle.current) {
-                AppearanceUiStyle.COUI -> {
-                    val menuItems = remember(options, effort) {
-                        options.map { option ->
-                            CouiMenuItem(
-                                value = option,
-                                text = option.displayName,
-                                selected = option == effort,
-                            )
-                        }
+        when (LocalUiStyle.current) {
+            AppearanceUiStyle.COUI -> {
+                val menuItems = remember(options, effort) {
+                    options.map { option ->
+                        CouiMenuItem(
+                            value = option,
+                            text = option.displayName,
+                            selected = option == effort,
+                        )
                     }
-                    Menu(
-                        expanded = showPopup && interactive,
-                        onDismissRequest = { showPopup = false },
-                        items = menuItems,
-                        onItemClick = { item ->
-                            showPopup = false
-                            onEffortChange(item.value)
-                        },
-                        anchor = anchor,
-                    )
                 }
-                AppearanceUiStyle.MIUIX -> {
-                    WindowListPopup(
-                        show = showPopup && interactive && popupAnchorTopPx > 0,
-                        popupPositionProvider = popupPositionProvider,
-                        alignment = PopupPositionProvider.Align.TopStart,
-                        onDismissRequest = { showPopup = false },
-                        maxHeight = popupMaxHeight,
-                    ) {
-                        val dismiss = LocalDismissState.current
-                        ListPopupColumn {
-                            options.forEachIndexed { index, option ->
-                                DropdownImpl(
-                                    text = option.displayName,
-                                    optionSize = options.size,
-                                    isSelected = option == effort,
-                                    index = index,
-                                    onSelectedIndexChange = {
-                                        onEffortChange(option)
-                                        dismiss?.invoke()
-                                    },
-                                )
-                            }
+                Menu(
+                    expanded = showPopup && menuEnabled,
+                    onDismissRequest = { showPopup = false },
+                    items = menuItems,
+                    onItemClick = { item ->
+                        showPopup = false
+                        onEffortChange(item.value)
+                    },
+                    anchor = anchor,
+                )
+            }
+            AppearanceUiStyle.MIUIX -> {
+                WindowListPopup(
+                    show = showPopup && menuEnabled && popupAnchorTopPx > 0,
+                    popupPositionProvider = popupPositionProvider,
+                    alignment = PopupPositionProvider.Align.TopStart,
+                    onDismissRequest = { showPopup = false },
+                    maxHeight = popupMaxHeight,
+                ) {
+                    val dismiss = LocalDismissState.current
+                    ListPopupColumn {
+                        options.forEachIndexed { index, option ->
+                            DropdownImpl(
+                                text = option.displayName,
+                                optionSize = options.size,
+                                isSelected = option == effort,
+                                index = index,
+                                onSelectedIndexChange = {
+                                    onEffortChange(option)
+                                    dismiss?.invoke()
+                                },
+                            )
                         }
                     }
                 }

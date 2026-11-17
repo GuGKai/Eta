@@ -32,8 +32,11 @@ import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.data.model.MAX_CHAT_TEXT_SCALE
 import io.github.mangi.eta.data.model.MAX_INTERFACE_SCALE
+import io.github.mangi.eta.data.model.MIN_CHAT_TEXT_SCALE
 import io.github.mangi.eta.data.model.MIN_INTERFACE_SCALE
+import io.github.mangi.eta.data.model.normalizeChatTextScale
 import io.github.mangi.eta.data.model.normalizeInterfaceScale
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.ui.app.LocalAppearanceSettings
@@ -65,6 +68,9 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
     var scaleDraft by remember(appearance.interfaceScale) {
         mutableFloatStateOf(appearance.interfaceScale * 100f)
     }
+    var chatTextScaleDraft by remember(appearance.chatTextScale) {
+        mutableFloatStateOf(appearance.chatTextScale * 100f)
+    }
     var showScaleDialog by remember { mutableStateOf(false) }
     var scaleInput by remember { mutableStateOf("") }
     val blurSupported = isRuntimeShaderSupported()
@@ -85,6 +91,12 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
         val scale = normalizeInterfaceScale(percent.roundToInt() / 100f)
         scaleDraft = scale * 100f
         update { current -> current.copy(interfaceScale = scale) }
+    }
+
+    fun commitChatTextScale(percent: Float) {
+        val scale = normalizeChatTextScale(percent.roundToInt() / 100f)
+        chatTextScaleDraft = scale * 100f
+        update { current -> current.copy(chatTextScale = scale) }
     }
 
     val uiStyles = AppearanceUiStyle.entries
@@ -197,6 +209,21 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                             scaleInput = scaleDraft.roundToInt().toString()
                             showScaleDialog = true
                         },
+                    )
+                    Divider()
+                    CouiSliderPreference(
+                        title = stringResource(R.string.appearance_chat_text_scale),
+                        summary = stringResource(R.string.appearance_chat_text_scale_summary),
+                        value = chatTextScaleDraft.coerceIn(
+                            MIN_CHAT_TEXT_SCALE * 100f,
+                            MAX_CHAT_TEXT_SCALE * 100f,
+                        ),
+                        onValueChange = { chatTextScaleDraft = it },
+                        valueRange = (MIN_CHAT_TEXT_SCALE * 100f)..(MAX_CHAT_TEXT_SCALE * 100f),
+                        steps = 5,
+                        showTickMarks = true,
+                        onValueChangeFinished = { commitChatTextScale(chatTextScaleDraft) },
+                        valueText = "${chatTextScaleDraft.roundToInt()}%",
                     )
                 }
 
@@ -366,6 +393,22 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                                 showScaleDialog = true
                             },
                             holdDownState = showScaleDialog,
+                        )
+                        SliderPreference(
+                            title = stringResource(R.string.appearance_chat_text_scale),
+                            summary = stringResource(R.string.appearance_chat_text_scale_summary),
+                            value = chatTextScaleDraft.coerceIn(
+                                MIN_CHAT_TEXT_SCALE * 100f,
+                                MAX_CHAT_TEXT_SCALE * 100f,
+                            ),
+                            onValueChange = { chatTextScaleDraft = it },
+                            valueRange = (MIN_CHAT_TEXT_SCALE * 100f)..(MAX_CHAT_TEXT_SCALE * 100f),
+                            onValueChangeFinished = { commitChatTextScale(chatTextScaleDraft) },
+                            valueText = "${chatTextScaleDraft.roundToInt()}%",
+                            showKeyPoints = true,
+                            keyPoints = listOf(90f, 100f, 110f, 120f, 130f),
+                            magnetThreshold = 0.01f,
+                            hapticEffect = SliderDefaults.SliderHapticEffect.Step,
                         )
                     }
                 }

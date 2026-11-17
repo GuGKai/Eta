@@ -26,6 +26,6 @@ internal object GeminiCitationFormatter {
             val end = offset("end_index")
             CitationAnnotation(start, end, annotation.optString("url"), annotation.optString("title"))
         }
-        return CitationFormatter.apply(text, citations)
+        return ResponsesCitationFormatter.apply(text, citations)
     }
 }

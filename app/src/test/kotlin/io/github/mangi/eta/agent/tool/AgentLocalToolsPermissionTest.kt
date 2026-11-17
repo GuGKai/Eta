@@ -206,6 +206,20 @@ class AgentLocalToolsPermissionTest {
     }
 
     @Test
+    fun memoryAndSkillWriteBoundariesHoldForDirectWrites() {
+        tools(memoryEnabled = { false }).use { local ->
+            assertEquals("MEMORY_DISABLED", JSONObject(local.execute(
+                AgentModelClient.ToolCall("write", "memory_write", "{}")).content).getString("code"))
+        }
+        tools(memoryEnabled = { true }, memoryWritable = false).use { local ->
+            assertEquals("REAL_MEMORY_READ_ONLY", JSONObject(local.execute(
+                AgentModelClient.ToolCall("write", "memory_write", "{}")).content).getString("code"))
+            assertEquals("SKILL_READ_ONLY", JSONObject(local.execute(
+                AgentModelClient.ToolCall("skill", "skills_manage", "{}")).content).getString("code"))
+        }
+    }
+
+    @Test
     fun roleplayCannotWriteRealMemoryEvenWithAStaleToolDeclaration() {
         val tools = tools(memoryEnabled = { true }, memoryWritable = false)
         try {

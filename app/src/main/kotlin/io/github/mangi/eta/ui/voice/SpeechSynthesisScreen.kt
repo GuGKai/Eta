@@ -61,8 +61,12 @@ internal fun SpeechSynthesisScreen(onBack: () -> Unit) {
                     )
                 }
                 if (settings.tts != TtsProvider.NONE) {
-                    SpeechConnectionSection(store, synthesis = true)
-                    SpeechVoiceSection(store)
+                    if (settings.tts == TtsProvider.SYSTEM) {
+                        SpeechSystemTtsSection(store)
+                    } else {
+                        SpeechConnectionSection(store, synthesis = true)
+                        SpeechVoiceSection(store)
+                    }
                     SpeechPreviewSection(store)
                 }
                 SpeechSaveBlock(store) {
@@ -101,11 +105,17 @@ internal fun SpeechSynthesisScreen(onBack: () -> Unit) {
                     }
                 }
                 if (settings.tts != TtsProvider.NONE) {
-                    item(key = "connection") {
-                        SpeechConnectionSection(store, synthesis = true)
-                    }
-                    item(key = "voice") {
-                        SpeechVoiceSection(store)
+                    if (settings.tts == TtsProvider.SYSTEM) {
+                        item(key = "system_tts") {
+                            SpeechSystemTtsSection(store)
+                        }
+                    } else {
+                        item(key = "connection") {
+                            SpeechConnectionSection(store, synthesis = true)
+                        }
+                        item(key = "voice") {
+                            SpeechVoiceSection(store)
+                        }
                     }
                     item(key = "preview") {
                         SpeechPreviewSection(store)

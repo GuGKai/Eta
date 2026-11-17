@@ -9,6 +9,7 @@ import android.net.Uri
 import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
@@ -45,6 +46,10 @@ import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.data.datastore.ConversationWorkspaceRecord
+import io.github.mangi.eta.data.datastore.ConversationWorkspaceState
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
@@ -63,6 +68,7 @@ import io.github.mangi.eta.ui.model.ConversationModeUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
+import io.github.mangi.eta.ui.model.ConversationWorkspaceUi
 import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
@@ -70,6 +76,7 @@ import io.github.mangi.eta.ui.model.QueuedMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
+import io.github.mangi.eta.ui.model.TokenUsageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.model.contentMatches
@@ -87,6 +94,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -96,11 +104,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+/** 新建对话的聚焦请求通道：输入栏直接订阅，绕开逐层传参在重建时丢信号。 */
+internal val composerFocusRequests = MutableStateFlow(0)
+
 internal class AgentAppState(
     context: Context,
     private val scope: CoroutineScope,
     initialConversations: AgentConversationStore.Snapshot = AgentConversationStore.load(context),
     private val titleGenerator: ConversationTitleGenerator = ConversationTitleGenerator(),
+    /** 余额数据源：用来结算「本轮消耗」（首尾余额差）。为空时不做结算。 */
+    private val balanceStore: DeepSeekBalanceStore? = null,
 ) {
     private val appContext = context.applicationContext
     private val runMessageProjector = AgentRunMessageProjector()
@@ -145,11 +158,26 @@ internal class AgentAppState(
         private set
     val isLoadingEarlierMessages: Boolean get() = historyLoadState == ConversationHistoryLoadState.Loading
 
+    /** 第一轮还没命名完的会话：顶栏在这期间显示「新任务」。 */
+    private val autoNamingPending = mutableSetOf<String>()
+    /** 正在补命名的外部入口会话（语音浮窗／小布／小爱／定时任务）：同一会话不重复请求。 */
+    private val externalNamingInFlight = mutableSetOf<String>()
+    /** 正在补命名的恢复/导入会话：重复恢复时避免同一会话并发请求。 */
+    private val recoveredNamingInFlight = mutableSetOf<String>()
+
     private var selectedConversationId: String? = initialConversations.selectedConversationId
     private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
     private var conversationTitles: Map<String, String> = initialConversations.titles
     private var conversationUpdatedAt: Map<String, Long> = initialConversations.updatedAt
     private var conversationPinnedIds: Set<String> = initialConversations.pinnedIds
+    /** 侧栏工作区（会话文件夹）：列表即展示顺序，折叠状态随之持久化。 */
+    private var workspaceRecords: List<ConversationWorkspaceRecord> = emptyList()
+
+    /** 会话 → 工作区归属；没有键的会话不在任何工作区里。 */
+    private var workspaceAssignments: Map<String, String> = emptyMap()
+
+    /** 侧栏选中某个工作区时点「新建会话」，等首条消息生成会话 id 时再归档过去。 */
+    private var pendingNewConversationWorkspaceId: String? = null
 
     var homeState by mutableStateOf(
         selectedConversationId?.let(conversationsById::get) ?: emptyChatState(defaultThinkingEnabled)
@@ -157,6 +185,12 @@ internal class AgentAppState(
         private set
 
     var modelPickerState by mutableStateOf(AgentModelPickerUiState())
+        private set
+
+    /**
+     * 新建对话后的一次性输入焦点信号：置位后由聊天输入框消费（聚焦 + 拉起键盘）。
+     */
+    var composerFocusRequestId by mutableIntStateOf(0)
         private set
 
     var conversationPaneState by mutableStateOf(
@@ -179,6 +213,11 @@ internal class AgentAppState(
     init {
         refreshConversationSummaries()
         observeRuntimeSelection()
+        scope.launch {
+            // 工作区与设置同库（DataStore），与会话库解耦：读不到就按空处理，不影响会话加载。
+            val workspaceState = runCatching { SettingsDataStore.conversationWorkspaces() }.getOrNull()
+            if (workspaceState != null) applyWorkspaceState(workspaceState)
+        }
         runtimeRecoveryInProgress.set(true)
         scope.launch(Dispatchers.IO) {
             try {
@@ -620,6 +659,10 @@ internal class AgentAppState(
                         result = outcome.result,
                         acknowledgeRuntimeResult = true,
                     )
+                    // 重新接管后才拿到终态的一轮同样不经过 finishRound。
+                    if (outcome.result.ok) {
+                        autoNameRecoveredRuns(listOf(conversationId to outcome.result.content))
+                    }
                 }
                 AgentRuntimeClient.AttachOutcome.NotActive -> {
                     withContext(Dispatchers.Main) {
@@ -662,21 +705,125 @@ internal class AgentAppState(
                 true
             }
             if (!saved) break
+            autoNameImportedExternalRuns(archivedRuns)
         }
     }
 
-    suspend fun openAssistantConversation(conversationKey: String): Boolean =
-        openArchivedConversation(AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE, conversationKey)
+    /**
+     * 外部入口（语音浮窗、小布、小爱、定时任务）发起的会话也要自动命名。
+     *
+     * 这些 run 由 Runtime 直接归档，不经过 [finishRound]，导入后标题一直是提问原文。
+     * 只在导入时补一次：标题已经不是导入时的占位原文就不再改它。
+     * */
+    private fun autoNameImportedExternalRuns(runs: List<AgentRunArchiveStore.ArchivedRun>) {
+        val targets = runs.asSequence()
+            .sortedByDescending { it.createdAt }
+            .mapNotNull { run ->
+                val payload = AgentExternalArchivePayload.from(run.handoff.payload) ?: return@mapNotNull null
+                if (run.result.operation != AgentRuntimeWire.OP_CHAT) return@mapNotNull null
+                val answer = run.result.content.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val id = archiveConversationId(run.handoff.source, payload.conversationKey)
+                if (conversationTitles[id] != payload.title) return@mapNotNull null
+                if (id in externalNamingInFlight) return@mapNotNull null
+                id to (payload.userText to answer)
+            }
+            .distinctBy { it.first }
+            // 一次导入最多补这么多，避免积压很多语音会话时开机就发一串命名请求。
+            .take(8)
+            .toList()
+        if (targets.isEmpty()) return
+        targets.forEach { (id, _) -> externalNamingInFlight += id }
+        scope.launch(Dispatchers.IO) {
+            targets.forEach { (conversationId, promptAnswer) ->
+                try {
+                    val title = ConversationTitleGenerator()
+                        .generate(promptAnswer.first, promptAnswer.second)
+                    if (!title.isNullOrBlank()) {
+                        withContext(Dispatchers.Main.immediate) {
+                            conversationTitles = conversationTitles + (conversationId to title)
+                            refreshConversationSummaries()
+                        }
+                        withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                        AndroidAgentLogger.info("External conversation auto named: chars=${title.length}")
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    AndroidAgentLogger.warn("External conversation naming failed: type=${throwable.safeLogType()}")
+                } finally {
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        externalNamingInFlight -= conversationId
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 恢复/导入回填的那一轮不经过 [finishRound]，标题会停在第一轮提问原文。
+     *
+     * 这里只在标题仍是占位时补一次语义命名；已经命名的会话不动，重复恢复也不会重复请求。
+     */
+    private fun autoNameRecoveredRuns(candidates: List<Pair<String, String>>) {
+        val targets = candidates
+            .filter { (_, answer) -> answer.isNotBlank() }
+            .distinctBy { it.first }
+            .filterNot { (id, _) -> id in recoveredNamingInFlight }
+        if (targets.isEmpty()) return
+        targets.forEach { (id, _) -> recoveredNamingInFlight += id }
+        scope.launch(Dispatchers.IO) {
+            targets.forEach { (conversationId, answer) ->
+                try {
+                    val prompt = withContext(Dispatchers.Main.immediate) {
+                        conversationsById[conversationId]
+                            ?.messages
+                            ?.firstOrNull { it is UserMessageUi }
+                            ?.let { (it as UserMessageUi).content }
+                    }
+                    if (prompt.isNullOrBlank()) return@forEach
+                    val placeholder = prompt.defaultConversationTitleFromMessage()
+                    val currentTitle = withContext(Dispatchers.Main.immediate) {
+                        conversationTitles[conversationId]
+                    }
+                    if (!currentTitle.isNullOrBlank() && currentTitle != placeholder) return@forEach
+                    val title = ConversationTitleGenerator().generate(prompt, answer)
+                    if (title.isNullOrBlank()) return@forEach
+                    withContext(Dispatchers.Main.immediate) {
+                        conversationTitles = conversationTitles + (conversationId to title)
+                        refreshConversationSummaries()
+                    }
+                    withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                    AndroidAgentLogger.info("Recovered conversation auto named: chars=${title.length}")
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    AndroidAgentLogger.warn(
+                        "Recovered conversation naming failed: type=${throwable.javaClass.simpleName}"
+                    )
+                } finally {
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        recoveredNamingInFlight -= conversationId
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun openAssistantConversation(
+        conversationKey: String,
+        source: String = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+    ): Boolean = openArchivedConversation(source, conversationKey)
 
     /** 打开外部入口按 [source] 与 [conversationKey] 归档的会话；先导入尚未入库的归档结果。 */
     suspend fun openArchivedConversation(source: String, conversationKey: String): Boolean {
         if (source.isBlank() || conversationKey.isBlank()) return false
-        importArchivedExternalRuns()
+        if (source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) importArchivedExternalRuns()
         return withContext(Dispatchers.Main.immediate) {
-            val conversationId = archiveConversationId(
-                source = source,
-                conversationKey = conversationKey,
-            )
+            val conversationId = if (source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) {
+                conversationKey
+            } else {
+                archiveConversationId(source = source, conversationKey = conversationKey)
+            }
             if (conversationsById[conversationId] == null) {
                 false
             } else {
@@ -715,7 +862,7 @@ internal class AgentAppState(
             !runStore.register(runId, conversationId, observed = false)) return null
         updateConversation(
             conversationId,
-            existingState.copy(
+            ExternalConversationHistory.appendUser(existingState, runId, payload.userText).copy(
                 input = "",
                 isStreaming = true,
                 thinkingEnabled = archivedEffort.enablesReasoning,
@@ -1025,6 +1172,8 @@ internal class AgentAppState(
             searchQuery = "",
         )
         refreshConversationSummaries()
+        composerFocusRequestId += 1
+        composerFocusRequests.value = composerFocusRequestId
         persistConversations()
     }
 
@@ -1081,6 +1230,15 @@ internal class AgentAppState(
                 branchingConversationId = null
             }
         }
+    }
+
+    /** 焦点请求改为序号制后无需清除；保留空实现，兼容既有调用点。 */
+    fun consumeComposerFocusRequest() = Unit
+
+    /** 执行通知的「补充」按钮：回到主界面后把输入框聚焦并拉起键盘。 */
+    fun requestComposerFocus() {
+        composerFocusRequestId += 1
+        composerFocusRequests.value = composerFocusRequestId
     }
 
     fun startCharacterConversation(binding: RoleplayBinding, greeting: String) {
@@ -1141,6 +1299,10 @@ internal class AgentAppState(
         conversationTitles = conversationTitles - conversationId
         conversationUpdatedAt = conversationUpdatedAt - conversationId
         conversationPinnedIds = conversationPinnedIds - conversationId
+        if (workspaceAssignments.containsKey(conversationId)) {
+            workspaceAssignments = workspaceAssignments - conversationId
+            persistWorkspaces()
+        }
         if (wasSelected) {
             conversationSelectionVersion += 1
             cancelHistoryPageLoad()
@@ -1193,9 +1355,15 @@ internal class AgentAppState(
         persistConversations()
     }
 
+    /** 侧栏菜单显式设置置顶状态；与 toggle 共用同一条落库路径。 */
+    fun setConversationPinned(conversationId: String, pinned: Boolean) {
+        if ((conversationId in conversationPinnedIds) != pinned) toggleConversationPin(conversationId)
+    }
+
     suspend fun exportConversationMarkdown(conversationId: String): String? {
         if (conversationId !in conversationsById) return null
         if (!persistConversations().await()) error(appContext.getString(R.string.conversation_persistence_failed))
+
         val title = conversationTitles[conversationId]?.takeIf { it.isNotBlank() }
             ?: appContext.getString(R.string.conversation_unnamed)
         return withContext(Dispatchers.IO) { ConversationMarkdownExporter.export(
@@ -1224,6 +1392,80 @@ internal class AgentAppState(
         ) }
     }
 
+    /** 新建工作区（会话文件夹）。name 为空时用「工作区 N」兜底，返回新 id。 */
+    fun createWorkspace(name: String? = null): String {
+        val id = UUID.randomUUID().toString()
+        val resolved = name?.trim().orEmpty().ifBlank {
+            appContext.getString(R.string.workspace_default_name, workspaceRecords.size + 1)
+        }
+        workspaceRecords = workspaceRecords + ConversationWorkspaceRecord(id = id, name = resolved)
+        persistWorkspaces()
+        refreshConversationSummaries()
+        return id
+    }
+
+    fun renameWorkspace(workspaceId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val index = workspaceRecords.indexOfFirst { it.id == workspaceId }
+        if (index < 0 || workspaceRecords[index].name == trimmed) return
+        workspaceRecords = workspaceRecords.toMutableList().also { it[index] = it[index].copy(name = trimmed) }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 删除工作区只删文件夹本身，里面的会话回到普通列表，不会被一并删除。 */
+    fun deleteWorkspace(workspaceId: String) {
+        if (workspaceRecords.none { it.id == workspaceId }) return
+        workspaceRecords = workspaceRecords.filterNot { it.id == workspaceId }
+        workspaceAssignments = workspaceAssignments.filterValues { it != workspaceId }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    fun setWorkspaceCollapsed(workspaceId: String, collapsed: Boolean) {
+        val index = workspaceRecords.indexOfFirst { it.id == workspaceId }
+        if (index < 0 || workspaceRecords[index].collapsed == collapsed) return
+        workspaceRecords = workspaceRecords.toMutableList().also { it[index] = it[index].copy(collapsed = collapsed) }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 把会话放进工作区；workspaceId 为空表示移出工作区。 */
+    fun moveConversationToWorkspace(conversationId: String, workspaceId: String?) {
+        if (!conversationsById.containsKey(conversationId)) return
+        val target = workspaceId?.takeIf { candidate -> workspaceRecords.any { it.id == candidate } }
+        val updated = if (target == null) {
+            workspaceAssignments - conversationId
+        } else {
+            workspaceAssignments + (conversationId to target)
+        }
+        if (updated == workspaceAssignments) return
+        workspaceAssignments = updated
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 侧栏「新建会话」按钮带上当前选中的工作区；null 表示「全部」，即不归档。 */
+    fun setPendingNewConversationWorkspace(workspaceId: String?) {
+        pendingNewConversationWorkspaceId = workspaceId?.takeIf { candidate ->
+            workspaceRecords.any { it.id == candidate }
+        }
+    }
+
+    private fun applyWorkspaceState(state: ConversationWorkspaceState) {
+        workspaceRecords = state.workspaces
+        workspaceAssignments = state.assignments
+        refreshConversationSummaries()
+    }
+
+    private fun persistWorkspaces() {
+        val state = ConversationWorkspaceState(workspaces = workspaceRecords, assignments = workspaceAssignments)
+        scope.launch(Dispatchers.IO) {
+            runCatching { SettingsDataStore.setConversationWorkspaces(state) }
+        }
+    }
+
     private fun noticeText(code: SystemNoticeCode): String = appContext.getString(
         when (code) {
             SystemNoticeCode.Stopped -> R.string.system_notice_stopped
@@ -1241,6 +1483,34 @@ internal class AgentAppState(
 
     fun interruptAndSendCurrentMessage(submittedText: String? = null) {
         submitOrQueueCurrentMessage(submittedText = submittedText, immediateInterrupt = true)
+    }
+
+    /**
+     * 流式期间「长按发送」：把这句话直接注入正在运行的回合（steerRun），
+     * 不排队也不打断当前运行；注入失败时把草稿放回输入框，避免消息丢失。
+     */
+    fun steerCurrentMessage(submittedText: String? = null) {
+        if (!homeState.isConversationLoaded || homeState.isCompacting) return
+        val prompt = (submittedText ?: homeState.input).trim()
+        if (prompt.isBlank()) return
+        val conversationId = selectedConversationId ?: return
+        val runId = currentRunId?.takeIf { runConversationIds[it] == conversationId }
+        if (runId == null) {
+            restoreInterjectionDraft(conversationId, prompt)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(runId, prompt)
+            if (!accepted) withContext(Dispatchers.Main) {
+                // 注入失败不能只把文字塞回输入框——那正是"发了却没人收到"的观感。
+                // 降级成正常发送：本轮还在跑就入队、本轮已结束就直接发出，保证消息不丢。
+                if (prompt.isNotBlank()) {
+                    submitOrQueueCurrentMessage(submittedText = prompt, immediateInterrupt = false)
+                } else {
+                    restoreInterjectionDraft(conversationId, prompt)
+                }
+            }
+        }
     }
 
     fun steerQueuedMessage(id: String) {
@@ -1282,7 +1552,9 @@ internal class AgentAppState(
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
-        if (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) {
+        if (
+            prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()
+        ) {
             return
         }
         if (!homeState.isStreaming) {
@@ -1334,9 +1606,6 @@ internal class AgentAppState(
         }
 
         val edit = homeState.messageEdit
-        if (edit == null && selectedConversationId?.isReadOnlyExternalArchiveConversation() == true) {
-            moveCurrentDraftToNewConversation()
-        }
 
         val editBoundary = edit?.let {
             AgentConversationRevisionReducer.boundary(homeState, it.targetMessageId)
@@ -1346,8 +1615,14 @@ internal class AgentAppState(
             return
         }
 
-        val conversationId = selectedConversationId ?: newConversationId().also {
-            selectedConversationId = it
+        val conversationId = selectedConversationId ?: newConversationId().also { freshId ->
+            selectedConversationId = freshId
+            // 在某个工作区里新建的会话，首条消息落库时直接归入该工作区。
+            pendingNewConversationWorkspaceId?.let { workspaceId ->
+                workspaceAssignments = workspaceAssignments + (freshId to workspaceId)
+                persistWorkspaces()
+            }
+            pendingNewConversationWorkspaceId = null
         }
         dispatchMessageToConversation(
             conversationId = conversationId,
@@ -1405,6 +1680,9 @@ internal class AgentAppState(
         val fileReferences = pendingFileReferences.map { it.reference }
         val runtimePrompt = AgentFileReferencePromptCodec.format(prompt, fileReferences)
         val runId = "run-${UUID.randomUUID()}"
+        // 登记本轮 run 与会话的绑定：中途插话（steer）按 runId 找任务，缺了这段插话永远失败。
+        currentRunId = runId
+        runConversationIds[runId] = conversationId
         val userMessage = UserMessageUi(
             id = editBoundary?.userMessage?.id ?: "user-$runId",
             content = runtimePrompt,
@@ -1446,6 +1724,8 @@ internal class AgentAppState(
             pendingAutoTitleFallbacks[conversationId] = title
         }
 
+        // 这个会话还没有正式名字：等第一轮回答完整结束后按语义命名，期间顶栏显示占位。
+        if (currentTitle.isNullOrBlank()) autoNamingPending += conversationId
         conversationTitles = conversationTitles + (conversationId to title)
         if (selectedConversationId == conversationId) {
             conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
@@ -1474,6 +1754,12 @@ internal class AgentAppState(
             },
             reasoningEffort = state.reasoningEffort,
         )
+    }
+
+    private fun restoreInterjectionDraft(conversationId: String, text: String) {
+        val current = conversationsById[conversationId] ?: return
+        if (current.input.isBlank()) updateConversation(conversationId, current.copy(input = text))
+        Toast.makeText(appContext, appContext.getString(R.string.chat_interject_unavailable), Toast.LENGTH_SHORT).show()
     }
 
     fun beginMessageEdit(messageId: String) {
@@ -1693,6 +1979,11 @@ internal class AgentAppState(
         val initialPersistence = persistConversations()
 
         val preparationJob = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            // 本轮消耗 = 开跑前的余额 − 整轮跑完后的余额。起点快照立刻发起、不阻塞这一轮，
+            // 到收尾时再 await；挂在 scope 上，不会随本协程被取消而丢掉。
+            val roundStartBalance: Deferred<Double?>? = balanceStore?.let { store ->
+                scope.async(Dispatchers.IO) { store.refreshAndAwaitTotal() }
+            }
             // write-ahead：用户消息未提交前不把可能产生副作用的 run 交给 Runtime。
             if (!initialPersistence.await()) {
                 withContext(Dispatchers.Main) {
@@ -1784,27 +2075,43 @@ internal class AgentAppState(
                 }
                 return@launch
             }
-            val result = runInterruptible {
-                AgentRuntimeClient(appContext, AndroidAgentLogger).run(
-                    request = AgentRuntimeWire.RunRequest(
-                        operation = operation,
-                        rewriteTargetMessageId = rewriteTargetMessageId,
-                        runId = runId,
-                        prompt = prompt,
-                        config = config.copy(supportsSearchSuggestions = true),
-                        images = modelImages,
-                        history = history,
-                        handoff = AgentRuntimeWire.EntryHandoff(
-                            id = runId,
-                            source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
-                            payload = conversationId,
+            val result = try {
+                runInterruptible {
+                    AgentRuntimeClient(appContext, AndroidAgentLogger).run(
+                        request = AgentRuntimeWire.RunRequest(
+                            operation = operation,
+                            rewriteTargetMessageId = rewriteTargetMessageId,
+                            runId = runId,
+                            prompt = prompt,
+                            config = config,
+                            images = modelImages,
+                            history = history,
+                            handoff = AgentRuntimeWire.EntryHandoff(
+                                id = runId,
+                                source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
+                                payload = conversationId,
+                            ),
                         ),
-                    ),
-                    onEvent = { event -> enqueueRunEvent(runId, event) },
-                )
+                        onEvent = { event -> enqueueRunEvent(runId, event) },
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                // 界面被回收（切后台被系统回收 Activity/ViewModel）导致的协程取消，不再传染给 runtime：
+                // 只清本地运行句柄，任务继续跑，下次进入界面由恢复流程把结果接管回会话。
+                withContext(NonCancellable + Dispatchers.Main.immediate) { detachLocalRun(runId) }
+                throw cancelled
+            }
+            if (result.errorCode == AgentRuntimeWire.ERROR_RUN_DETACHED) {
+                // 客户端等待被中断、但任务并未取消：同样交回恢复流程，不能写成“已停止”。
+                withContext(NonCancellable + Dispatchers.Main.immediate) { detachLocalRun(runId) }
+                return@launch
             }
             withContext(Dispatchers.Main) {
                 applyRunResult(runId, result, acknowledgeRuntimeResult = true)
+            }
+            if (result.ok) {
+                // 只有整轮完整结束（不是中途回答）才命名 + 结算这一轮的消耗。
+                finishRound(conversationId, prompt, result.content, roundStartBalance)
             }
         }
         runStore.observe(runId, preparationJob)
@@ -2167,6 +2474,15 @@ internal class AgentAppState(
             AgentFileReferenceGateway.Error.ValidationTimedOut -> appContext.getString(R.string.state_ui_path_verification_timed_out_please_try_again_703687)
         }
 
+    /** 当前界面绑定中的 run；只需一个，后台可并行多个由 runtime 管。 */
+    private var currentRunId: String? = null
+    private var currentRunJob: Job? = null
+    private val runConversationIds = mutableMapOf<String, String>()
+
+    private val stopRequestedRunIds = mutableSetOf<String>()
+    private val CANCEL_RETRY_WINDOW_MS = 3_000L
+    private val userStoppedRunIds = mutableSetOf<String>()
+
     fun stopCurrentRun() {
         val runId = runStore.activeRunId(selectedConversationId) ?: return
         stopRun(runId)
@@ -2193,6 +2509,196 @@ internal class AgentAppState(
         if (!runStore.requestStop(runId, byUser)) return
         scope.launch(Dispatchers.IO) {
             AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+        }
+        // 取消指令可能落在僵死的连接上被丢掉；runId 只有等本轮真正结束才会移出去重集合，
+        // 期间再点终止会被上面那行直接吞掉，按钮看起来就是"没反应"。这里放开一个重试窗口。
+        scope.launch {
+            kotlinx.coroutines.delay(CANCEL_RETRY_WINDOW_MS)
+            if (currentRunId == runId) stopRequestedRunIds.remove(runId)
+        }
+    }
+
+
+    /**
+     * 界面侧脱钩（不取消任务）。
+     *
+     * 切后台被系统回收、Activity/ViewModel 销毁等都会取消本界面协程；这不是用户要停任务。
+     * 这里只清掉本地运行句柄，任务继续在 runtime 侧跑完，结果由下次进入界面的恢复流程接管。
+     */
+    private fun detachLocalRun(runId: String) {
+        runConversationIds.remove(runId)
+        if (currentRunId == runId) currentRunId = null
+        if (currentRunJob?.isActive != true) currentRunJob = null
+    }
+
+    /** 顶栏标题：还没命名（第一轮未完成）时返回 null，由界面显示「新任务」。 */
+    fun topBarConversationTitle(conversationId: String?): String? {
+        val id = conversationId ?: return null
+        if (id in autoNamingPending) return null
+        return conversationTitles[id]?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 整轮完整结束后的收尾：先按语义命名（它的花费也算进本轮），再结算本轮消耗。
+     * 两步都在 IO 上跑，任何失败只影响这两项显示，不影响正文与落库。
+     */
+    private fun finishRound(
+        conversationId: String,
+        prompt: String,
+        answer: String,
+        startBalance: Deferred<Double?>?,
+    ) {
+        val store = balanceStore
+        if (answer.isBlank() && store == null) return
+        scope.launch(Dispatchers.IO) {
+            // 命名的判据是「标题仍是第一轮占位原文」；autoNamingPending 只是快路径，
+            // 界面重建或结果走恢复回填时集合会丢，这里仍然能补上。
+            val pendingNaming = withContext(Dispatchers.Main.immediate) {
+                conversationId in autoNamingPending
+            }
+            val needsNaming = answer.isNotBlank() &&
+                (pendingNaming || isPlaceholderTitle(conversationId))
+            if (!needsNaming) {
+                if (answer.isBlank()) {
+                    AndroidAgentLogger.info("Conversation naming skipped: empty answer")
+                }
+                withContext(Dispatchers.Main.immediate) { autoNamingPending.remove(conversationId) }
+            } else {
+                try {
+                    val title = ConversationTitleGenerator().generate(prompt, answer)
+                    if (!title.isNullOrBlank()) {
+                        withContext(Dispatchers.Main.immediate) {
+                            conversationTitles = conversationTitles + (conversationId to title)
+                            // 侧栏读的是摘要列表；不主动刷新的话标题要等下一次别的刷新才同步。
+                            refreshConversationSummaries()
+                        }
+                        withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                        AndroidAgentLogger.info("Conversation auto named by model: chars=${title.length}")
+                    }
+                } finally {
+                    // 命名真的结束（成功或失败）才解除占位。提前解除会让顶栏在「新任务」和
+                    // 最终标题之间闪一下本轮提问的原文——列表里的占位标题就是那句原文。
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        autoNamingPending.remove(conversationId)
+                    }
+                }
+            }
+            if (store == null) return@launch
+            // 起点用发消息时抓的快照；抓失败时退回最近一次已知余额，并记日志。
+            val before = startBalance?.await() ?: store.state.total
+            if (before == null) {
+                AndroidAgentLogger.info("Round cost skipped: balance unavailable")
+                return@launch
+            }
+            // DeepSeek 余额有几十秒延迟（实测 45s 内落地），立刻抓第二次只会读到同一个数，
+            // 所以隔一会儿补抓几次（见 DeepSeekBalanceStore.SETTLE_RETRY_DELAYS_MS）。
+            val after = store.settleBalanceChange(before)
+            if (after == null) {
+                AndroidAgentLogger.info("Round cost skipped: balance did not settle in time")
+                return@launch
+            }
+            val cost = before - after
+            AndroidAgentLogger.info("Round cost settled: before=$before after=$after cost=$cost")
+            if (cost <= 0.0) return@launch
+            // 结算期间又开了一轮的话，这次余额变化不再只属于本轮，放弃以免记错。
+            val busy = withContext(Dispatchers.Main.immediate) {
+                currentRunId != null || currentRunJob?.isActive == true
+            }
+            if (busy) {
+                AndroidAgentLogger.info("Round cost skipped: another run is active")
+                return@launch
+            }
+            withContext(Dispatchers.Main.immediate) { attachRoundCost(conversationId, cost) }
+        }
+    }
+
+    /**
+     * 标题是否仍是第一轮提问的占位原文；用户手动改过名字的会话返回 false。
+     *
+     * 占位必须用**会话首条用户消息**算：标题占位是第一轮提问生成的。拿本轮 prompt 去比，
+     * 第二轮起永远对不上，就会把「还没命名」误判成「已有名字」，之后再也不会补命名。
+     */
+    private suspend fun isPlaceholderTitle(conversationId: String): Boolean {
+        val firstUser = withContext(Dispatchers.Main.immediate) {
+            conversationsById[conversationId]
+                ?.messages
+                ?.firstOrNull { it is UserMessageUi }
+                ?.let { (it as UserMessageUi).content }
+        } ?: return false
+        val placeholder = firstUser.defaultConversationTitleFromMessage()
+        return withContext(Dispatchers.Main.immediate) {
+            val current = conversationTitles[conversationId]
+            current.isNullOrBlank() || current == placeholder
+        }
+    }
+
+    /** 把本轮消耗写到该会话最后一条回答上，随消息一起落库；老会话没有这一列就不显示。 */
+    private fun attachRoundCost(conversationId: String, cost: Double) {
+        val conversation = conversationsById[conversationId] ?: return
+        val index = conversation.messages.indexOfLast { it is AgentMessageUi }
+        if (index < 0) return
+        val message = conversation.messages[index] as? AgentMessageUi ?: return
+        if (message.roundCost != null) return
+        val messages = conversation.messages.toMutableList().apply {
+            this[index] = message.copy(roundCost = cost)
+        }
+        updateConversation(conversationId, conversation.copy(messages = messages))
+        // 只精确更新这一行：整会话重写在超大会话里很慢，进程被杀会把记录一起丢掉。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                EtaDatabase.get(appContext).conversationDao()
+                    .updateMessageRoundCost(conversationId, message.id, cost)
+            }.onFailure { failure ->
+                AndroidAgentLogger.warn("Round cost persist failed: type=${failure.safeLogType()}")
+            }
+        }
+    }
+
+    /**
+     * 把本轮用时写到该会话最后一条消息上，随消息一起落库。
+     *
+     * 优先挂在该会话最后一条回答上（统计胶囊外面和弹窗都读它）；
+     * 上下文压缩提示、停止提示这类 notice 常常排在回答之后，不能让回答因此拿不到时长。
+     * 只有本轮没有回答、或回答已经记过时长时，才退回最后一条系统提示。
+     */
+    private fun attachRoundDuration(conversationId: String, durationMs: Long) {
+        if (durationMs <= 0L) return
+        val conversation = conversationsById[conversationId] ?: return
+        val messages = conversation.messages
+        val answerIndex = messages.indexOfLast { it is AgentMessageUi }
+        val noticeIndex = messages.indexOfLast { it is SystemNoticeMessageUi }
+        // 真实用时优先挂在回答底栏（capsule 外面和统计窗口都读它）；
+        // 上下文压缩提示、停止提示这类 notice 常常排在回答之后，不能因此让回答拿不到时长。
+        // 只有本轮没有回答，或回答已经记过时长时，才退回最后一条 notice。
+        val index = when {
+            answerIndex >= 0 &&
+                (messages[answerIndex] as? AgentMessageUi)?.roundDurationMs == null -> answerIndex
+            noticeIndex >= 0 -> noticeIndex
+            else -> return
+        }
+        val target = messages[index]
+        val updated = messages.toMutableList()
+        when (target) {
+            is AgentMessageUi -> {
+                if (target.roundDurationMs != null) return
+                updated[index] = target.copy(roundDurationMs = durationMs)
+            }
+            is SystemNoticeMessageUi -> {
+                if (target.roundDurationMs != null) return
+                updated[index] = target.copy(roundDurationMs = durationMs)
+            }
+            else -> return
+        }
+        val message = updated[index]
+        updateConversation(conversationId, conversation.copy(messages = updated))
+        // 与消耗金额同样只精确更新这一行：整会话重写在大对话里很慢。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                EtaDatabase.get(appContext).conversationDao()
+                    .updateMessageRoundDuration(conversationId, message.id, durationMs)
+            }.onFailure { failure ->
+                AndroidAgentLogger.warn("Round duration persist failed: type=${failure.safeLogType()}")
+            }
         }
     }
 
@@ -2251,6 +2757,24 @@ internal class AgentAppState(
             is AgentEvent.SubagentProgress,
             -> updateMessages(runId, updateTimestamp = false) { messages ->
                 runMessageProjector.applyEvent(runId, event, messages)
+            }
+            // 用量事件既写进消息统计，也记到会话上，供顶栏胶囊显示最近一次请求。
+            is AgentEvent.UsageReceived -> {
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
+                updateAssistantUsage(runId, event.usage.toUi())
+            }
+            is AgentEvent.ContextCompaction -> {
+                if (event.phase == AgentEvent.ContextCompaction.PHASE_COMPLETED) {
+                    conversationIdForRun(runId)?.let { id ->
+                        conversationsById[id]?.let { current ->
+                            updateConversation(
+                                id,
+                                current.copy(lastModelUsage = current.lastModelUsage?.copy(contextTokens = null)),
+                            )
+                        }
+                    }
+                }
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
             }
             else -> updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages) }
         }
@@ -2316,9 +2840,23 @@ internal class AgentAppState(
             updateConversation(id, RoleplayConversationReducer.linkRun(it, runId))
         } }
         runMessageProjector.clearRun(runId)
+        // 本轮用时：从用户发出消息算到本轮结束（含工具往返）。正常结束写到最后一条回答；
+        // 中途停止/失败时同样记一笔，显示在停止位置。
+        // 优先用 Runtime 回报的实际耗时：浮窗/语音等外部入口的会话由它先跑完再导入，
+        // 界面这边根本没有发送时刻，只能靠它；本地聊天仍回退到发送时刻。
+        if (result.operation != AgentRuntimeWire.OP_COMPACT) {
+            val elapsed = result.elapsedMs.takeIf { it > 0 }
+                ?: runStore.startedAtMs(runId)?.let { startedAt ->
+                    System.currentTimeMillis() - startedAt
+                }
+            elapsed?.let { attachRoundDuration(completedConversationId, it) }
+        }
         refreshConversationSummaries()
         persistRunResult(runId, completedConversationId, result, acknowledgeRuntimeResult,
             explicitlyStoppedByUser, resumeQueue = true)
+        // 本轮已结束：解除插话绑定，否则之后发消息会被当成对已结束任务的插话。
+        runConversationIds.remove(runId)
+        if (currentRunId == runId) currentRunId = null
     }
 
     private fun persistRunResult(
@@ -2447,6 +2985,16 @@ internal class AgentAppState(
         transform: (List<AgentChatMessageUi>) -> List<AgentChatMessageUi>,
     ) {
         if (updateMessages(runId, transform = transform)) refreshConversationSummaries()
+    }
+
+    /** 记录会话最近一次模型用量：顶栏胶囊显示 token 数与输出速度。 */
+    private fun updateAssistantUsage(runId: String, usage: TokenUsageUi) {
+        if (usage.isEmpty) return
+        conversationIdForRun(runId)?.let { id ->
+            conversationsById[id]?.let { current ->
+                updateConversation(id, current.copy(lastModelUsage = usage))
+            }
+        }
     }
 
     private fun insertSupplementMessage(
@@ -2607,7 +3155,6 @@ internal class AgentAppState(
                     },
                     updatedAtMillis = conversationUpdatedAt[id] ?: 0L,
                     mode = ConversationModeUi.Chat,
-                    isPinned = id in conversationPinnedIds,
                     characterName = state.roleplay?.characterName ?: state.conversationCharacterName,
                     characterAvatarPath = state.roleplay?.avatarPath ?: state.conversationCharacterAvatarPath,
                     isActiveRun = state.isStreaming,
@@ -2616,22 +3163,49 @@ internal class AgentAppState(
                         GuiControlStatus.UserPaused -> appContext.getString(R.string.run_gui_user_paused)
                         else -> null
                     },
+                    isPinned = id in conversationPinnedIds,
+                    workspaceId = workspaceAssignments[id]
+                        ?.takeIf { target -> workspaceRecords.any { it.id == target } },
                 )
             }
+            .sortedByDescending { it.isPinned }
         val query = conversationPaneState.searchQuery.trim()
+        val buckets = summaries.groupForWorkspaces()
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = selectedConversationId,
             conversations = if (query.isBlank()) {
-                summaries
+                buckets.loose
             } else {
                 contentMatchCache.keys.retainAll(conversationsById.keys)
-                summaries.filter { summary ->
+                buckets.loose.filter { summary ->
                     summary.title.contains(query, ignoreCase = true) ||
                         summary.preview.contains(query, ignoreCase = true) ||
                         summary.id in persistedSearchMatches || conversationContentMatches(summary.id, query)
                 }
             },
+            // 搜索时把结果平铺出来，避免命中项被折叠在文件夹里看不见。
+            workspaces = if (query.isBlank()) buckets.workspaces else emptyList(),
         )
+    }
+
+    private data class WorkspaceBuckets(
+        val workspaces: List<ConversationWorkspaceUi>,
+        val loose: List<ConversationSummaryUi>,
+    )
+
+    /** 按工作区归拢摘要：已归入工作区的会话只在文件夹里出现，不在下方分组里重复。 */
+    private fun List<ConversationSummaryUi>.groupForWorkspaces(): WorkspaceBuckets {
+        if (workspaceRecords.isEmpty()) return WorkspaceBuckets(emptyList(), this)
+        val byWorkspace = groupBy { it.workspaceId }
+        val workspaces = workspaceRecords.map { record ->
+            ConversationWorkspaceUi(
+                id = record.id,
+                name = record.name,
+                collapsed = record.collapsed,
+                conversations = byWorkspace[record.id].orEmpty(),
+            )
+        }
+        return WorkspaceBuckets(workspaces = workspaces, loose = filter { it.workspaceId == null })
     }
 
     // 内容匹配按（查询词, 会话状态引用）缓存：刷新摘要时未变化的会话不重复全文扫描。
@@ -2662,8 +3236,10 @@ internal class AgentAppState(
             scope.async(Dispatchers.IO) {
                 try {
                     previous?.join()
-                    persistence.save(appContext,
-                        AgentConversationStore.Snapshot(selected, conversations, titles, timestamps, pinned))
+                    persistence.save(
+                        appContext,
+                        AgentConversationStore.Snapshot(selected, conversations, titles, timestamps, pinned),
+                    )
                     onSaved?.invoke()
                     scope.launch(Dispatchers.Main.immediate) { releaseInactiveConversations(conversations) }
                     true
@@ -2688,15 +3264,20 @@ internal class AgentAppState(
             "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif",
         )
 
-        fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState =
-            AgentChatHomeUiState(
+        fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState {
+            // 新会话的思考强度来自设置里的「默认思考强度」；关闭深度思考时一律 OFF。
+            // 模型不支持该档位时，refreshConversationModel 会按能力归一化回落。
+            val effort = if (thinkingEnabled) Prefs.defaultReasoningEffort() else ReasoningEffort.OFF
+            return AgentChatHomeUiState(
                 messages = emptyList(),
                 history = emptyList(),
                 journal = emptyList(),
                 input = "",
                 isStreaming = false,
-                thinkingEnabled = thinkingEnabled,
+                thinkingEnabled = effort.enablesReasoning,
+                reasoningEffort = effort,
             )
+        }
 
         fun newConversationId(): String = "conv-${UUID.randomUUID()}"
     }

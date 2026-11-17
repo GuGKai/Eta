@@ -80,6 +80,7 @@ internal object AgentRunArchiveStore {
             ok = result.ok,
             content = result.content,
             error = result.error,
+            errorCode = result.errorCode,
             reasoningContent = result.reasoningContent,
             transcriptJson = AgentConversationCodec.encodeTranscriptForStorage(result.transcript),
             contextSnapshotJson = result.contextSnapshot?.encode().orEmpty(),
@@ -87,6 +88,7 @@ internal object AgentRunArchiveStore {
             rewriteTargetMessageId = result.rewriteTargetMessageId,
             userImagePreviewsJson = JSONArray(userImagePreviews).toString(),
             createdAt = createdAt,
+            elapsedMs = result.elapsedMs,
         )
 
     private fun ArchivedRun.toEventEntities(archiveRunId: String): List<RuntimeArchiveEventEntity> =
@@ -112,6 +114,8 @@ internal object AgentRunArchiveStore {
                     ok = run.ok,
                     content = run.content,
                     error = run.error,
+                    errorCode = run.errorCode,
+                    elapsedMs = run.elapsedMs,
                     reasoningContent = run.reasoningContent,
                     contextSnapshot = AgentContextSnapshot.decode(run.contextSnapshotJson),
                     operation = run.operation,
@@ -145,8 +149,13 @@ internal object AgentRunArchiveStore {
 
     private fun compactEvents(events: List<AgentEvent>): List<AgentEvent> {
         val compacted = mutableListOf<AgentEvent>()
-        events.forEach { rawEvent ->
-            val event = rawEvent.recoveryProjection() ?: return@forEach
+        events.forEach { event ->
+            if (
+                event is AgentEvent.AssistantBlockDelta &&
+                event.kind == AgentEvent.AssistantBlockKind.TOOL_CALL
+            ) {
+                return@forEach
+            }
             val previous = compacted.lastOrNull()
             val merged = when {
                 previous is AgentEvent.AssistantBlockDelta &&

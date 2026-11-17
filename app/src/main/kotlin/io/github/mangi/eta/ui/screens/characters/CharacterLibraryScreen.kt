@@ -26,6 +26,8 @@ import com.itos.coui.text.CouiTextKind
 import com.itos.coui.text.Text as CouiText
 import io.github.mangi.eta.agent.roleplay.CharacterProfile
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import androidx.compose.ui.res.stringResource
+import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.app.CharacterLibraryStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ListEmptyState

@@ -20,6 +20,7 @@ internal data class LocalToolRequirement(
     val colorOs: Boolean = false,
     val gui: Boolean = false,
     val freshObservation: Boolean = false,
+    val vivoAlternative: Boolean = false,
 )
 
 /** 展示、模型目录与执行边界共同使用的本地工具能力合同。未登记的工具不能发布。 */
@@ -32,7 +33,7 @@ internal object AgentToolRequirements {
         }
         register(
             RootRequirement.NONE,
-            "get_current_context", "search_apps", "launch_app", "present_to_user", "open_uri", "browser_use", "web_search", "fetch_url",
+            "batch", "get_current_context", "search_apps", "launch_app", "present_to_user", "open_uri", "browser_use", "web_search", "fetch_url",
             "observe_screen", "release_gui", "tap", "tap_area", "tap_element", "long_press",
             "long_press_element", "swipe", "scroll", "scroll_element", "type_text", "input_text",
             "replace_text", "clear_text", "set_clipboard", "get_clipboard", "paste_text",
@@ -41,8 +42,9 @@ internal object AgentToolRequirements {
             "search_notification_history", "recent_app_activity", "app_usage_summary",
             "get_current_location", "get_device_environment", "memory_get", "memory_write",
             "character_memory_get", "character_memory_write",
-            "skills_list", "skills_read", "skills_read_resource", "skills_list_curated",
+            "skills_list", "skills_read", "skills_read_resource", "skills_list_curated", "skills_manage",
             "skills_inspect_github", "skills_install_from_github",
+            "tasks_triggers", "tasks_list", "tasks_create", "tasks_update", "tasks_delete", "tasks_run", "tasks_cancel", "tasks_history",
         )
         register(
             RootRequirement.PARTIAL,
