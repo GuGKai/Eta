@@ -279,6 +279,9 @@ internal fun ConversationPanePanel(
         if (key != selectedWorkspaceKey) {
             suppressSectionPlacement = true
             selectedWorkspaceKey = key
+            // 切换分类后列表是整段替换，落点统一回到最顶部：
+            // 登记一次滚动请求（下一次测量即采用），避免沿用上一个分类的滚动位置。
+            listState.requestScrollToItem(0)
             placementScope.launch {
                 delay(420L)
                 suppressSectionPlacement = false
