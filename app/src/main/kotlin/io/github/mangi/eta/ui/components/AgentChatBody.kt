@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -69,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.drawWithContent
@@ -82,7 +84,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -597,6 +601,7 @@ internal fun AgentConversationMessages(
     val dockWatchdogTolerancePx = with(density) { DockWatchdogTolerance.roundToPx() }
     val coroutineScope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
+    val hapticFeedback = LocalHapticFeedback.current
     val imeInsets = WindowInsets.ime
 
     LaunchedEffect(
@@ -655,6 +660,9 @@ internal fun AgentConversationMessages(
     // 停靠之后用户碰过屏幕：看门狗本轮彻底放手，不许再把视口拽回顶栏。
     var dockUserInterrupted by remember { mutableStateOf(false) }
     var wasUserDragging by remember { mutableStateOf(false) }
+    // 本轮回答已结束、但用户当时没有跟底（滚走了 / 停在会话页上方）：记下这条回答。
+    // 收尾阶段不做任何自动滚动，只在「回到底部」圆钮右上角亮一个蓝点，并震一下。
+    var pendingAnswerDockKey by remember { mutableStateOf<String?>(null) }
     // 正文首行字顶的窗口 y（px）：停靠闭环直接拿它和顶栏底边比，不换算条目顶边。
     var answerFirstLineWindowY by remember { mutableStateOf<Float?>(null) }
     // 上面这个测量值属于哪一条：换轮之后旧值必须作废，否则会拿上一轮的首行位置误判。
@@ -676,6 +684,7 @@ internal fun AgentConversationMessages(
         finalAnswerHandledId,
         earlierMessagesItemCount,
         timelineEntries,
+        dockUserInterrupted,
     ) {
         when {
             isStreaming -> null
@@ -684,6 +693,10 @@ internal fun AgentConversationMessages(
             // 重组会再走到这里——那正是「翻下去又被拽回停靠位」的来源。
             finalAnswerHandledId == streamingAnswerId -> null
             streamingAnswerId == null -> null
+            // 本轮用户碰过屏幕（滚走过 / 停在会话页上方）：视口交给用户，收尾不许再按
+            // 「条目顶贴顶栏」请求落点。流式结束那一帧 finalAnswerHandledId 还没来得及
+            // 赋值，这里正是「答完瞬间把人拽回去」最直接的入口。
+            dockUserInterrupted -> null
             // 这一轮流式期间已经停靠到位：首行就贴着顶栏。收尾时若再按「条目顶贴顶栏」
             // 请求一次，正文会整体下移一个条目内边距（8dp + 首行行距留白），并且因为
             // 该回答已被标记处理过，没有任何逻辑会把它拉回落点——于是位置就永久掉下去。
@@ -708,6 +721,7 @@ internal fun AgentConversationMessages(
             finalAnswerAnchored = false
             finalAnswerHandledId = null
             streamDockedAnswerId = null
+            pendingAnswerDockKey = null
             hasStreamed = true
             dockUserInterrupted = false
             wasUserDragging = false
@@ -721,6 +735,13 @@ internal fun AgentConversationMessages(
             hasStreamed = false
             val id = streamingAnswerId
             if (id != null && finalAnswerHandledId == null) finalAnswerHandledId = id
+            // 收尾这一刻视口没在跟底：一律不自动滚动到任何落点，只在「回到底部」圆钮
+            // 右上角点一个蓝点、同时震一下，等用户自己点（点了才回到这条回答的首行）。
+            val atBottomNow = !scrollState.canScrollForward && bottomContentVisible
+            if (id != null && !finalAnswerAnchored && !atBottomNow) {
+                pendingAnswerDockKey = id
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
+            }
         }
     }
 
@@ -803,6 +824,30 @@ internal fun AgentConversationMessages(
             }
             // 首块不是文本块（代码/表格/引用）时拿不到首行字顶，退化为「条目顶边贴顶栏」。
             val delta = (answerFirstLineWindowY ?: item.offset.toFloat()) - target
+            // 断点追赶：App 在后台时帧停了，正文却继续长高，视口还停在离开时那一屏。
+            // 回到前台后的第一次测量，残差常常有半屏以上；这种「用户根本没看到中间过程」
+            // 的追赶绝不能播缓出曲线，否则恢复后第一秒整段正文会自己往下滑一段 ——
+            // 后台把回答跑完、再点通知进来时看到的那次位移就是它。这里一次对齐，不留位移。
+            val viewportPx = scrollState.layoutInfo.let {
+                it.viewportEndOffset - it.viewportStartOffset
+            }
+            if (!latestIsStreaming && viewportPx > 0 && abs(delta) > viewportPx / 3f) {
+                try {
+                    scrollState.scroll { scrollBy(delta) }
+                } catch (cancelled: CancellationException) {
+                    if (!currentCoroutineContext().isActive) throw cancelled
+                    return true
+                }
+                Log.i(
+                    ScrollJitterTag,
+                    "dock catch-up off-screen: delta=" + delta + " viewport=" + viewportPx,
+                )
+                // 追赶也要吃帧预算：一旦这个落点物理上到不了（scrollBy 被夹成 0 位移），
+                // 残差会一直大于阈值，不计帧就是无上限的每帧一次 scroll —— 屏幕上是抽动。
+                frames++
+                withFrameNanos { }
+                continue
+            }
             if (abs(delta) <= DockSnapPx) {
                 // 到线就一次对齐收口：不再逐帧 ±1px 微调，也不再要求「连续 3 帧稳定」——
                 // 整像素量化让残差在 0/1px 之间反复，前一种写法表现为高频上下抽动，
@@ -971,6 +1016,9 @@ internal fun AgentConversationMessages(
         // 首行逼近顶栏就立刻冻结跟底（矮正文到不了顶栏，始终走默认跟底）。
         // 一次没停成也不就此罢手：正文还在长，交回跟底、隔几帧再收一次。
         // 只试一次的话，任何一次提前失败都会变成「一路跟到底、完全不停靠」。
+        // 用户碰过屏幕（滚走了 / 停在会话页上方）：流式跟顶与收尾停靠一律不做，
+        // 免得收尾最后一帧又把正文拉回顶栏。
+        if (dockUserInterrupted) return@LaunchedEffect
         var attempts = 0
         while (attempts < 4 && currentCoroutineContext().isActive) {
             attempts++
@@ -1042,9 +1090,10 @@ internal fun AgentConversationMessages(
             // 用户一动手就解除抖动熔断：视口交还给人，自动滚动不再抢。
             autoScrollFrozen = false
         } else if (wasUserDragging && isAtBottom) {
-            // 用户主动滑回底部：放弃本轮停靠，恢复跟底。
+            // 用户主动滑回底部：放弃本轮停靠，恢复跟底；提示点也就没意义了。
             wasUserDragging = false
             finalAnswerAnchored = false
+            pendingAnswerDockKey = null
         }
     }
 
@@ -1056,30 +1105,83 @@ internal fun AgentConversationMessages(
         }
     }
 
-    // 键盘弹起会把输入器连同 IME 内边距一起顶高，列表的底部内容内边距随之变大，
-    // 但 LazyColumn 会保持原来的滚动锚点，正文最后一行就留在输入器背后被盖住
-    // （流式期间一路跟底，所以看不出这个问题）。
-    // 弹起前视口确实停在底部时，交给现成的跟底引擎把正文平滑地顶上去 ——
-    // 和流式输出用的是同一套位移曲线，所以不是瞬移，也能跟着 IME 一起逐帧移动；
-    // 翻在历史中间则什么都不做，维持原来的阅读位置。
+    // 键盘弹起会把输入器连同 IME 内边距一起顶高。三种窗口形态都要照顾到：
+    // 1) bottomBar 自己 imePadding：列表底部内容内边距变大（以前只认这一种）；
+    // 2) 窗口 adjustResize：视口被压矮，底部内边距一点没变；
+    // 3) 两者同时发生。
+    // 只看 (1) 的话，(2) 这种窗口里整个效果根本不触发 —— 正文一动不动，最后一行
+    // 被键盘盖住，正是「点了输入框，回答没跟着抬上来」。
+    val imeBottomPx = imeInsets.getBottom(density)
+    val viewportHeightPx by remember(scrollState) {
+        derivedStateOf {
+            scrollState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }
+        }
+    }
+    // 布局实测高度：键盘让位时列表一定会被压实。这个值由 LazyColumn 的 onSizeChanged
+    // 上报，不依赖 WindowInsets 在当前节点是否还可观察，是唯一可靠的键盘抬升信号。
+    var measuredListHeightPx by remember { mutableStateOf(0) }
+    // 贴底状态缓存。只能在「视口高度没有变化」的稳定布局里取样：键盘让位那一帧列表被压实，
+    // canScrollForward 会立刻从 false 翻成 true，此时再取实时值就会把「本来就停在底部」
+    // 误判成「用户翻在历史中间」，于是整段抬升逻辑什么都不做 —— 这正是点了输入框、正文不抬的直接原因。
+    var stableAtBottom by remember { mutableStateOf(false) }
+    LaunchedEffect(scrollState) {
+        var lastHeight = -1
+        snapshotFlow {
+            val info = scrollState.layoutInfo
+            (info.viewportEndOffset - info.viewportStartOffset) to !scrollState.canScrollForward
+        }.collect { (height, atBottom) ->
+            if (lastHeight < 0 || height == lastHeight) stableAtBottom = atBottom
+            lastHeight = height
+        }
+    }
     var previousBottomInset by remember { mutableStateOf(bottomInset) }
-    LaunchedEffect(bottomInset) {
+    var previousImeBottomPx by remember { mutableStateOf(imeBottomPx) }
+    var previousViewportHeightPx by remember { mutableStateOf(0) }
+    var previousMeasuredListHeightPx by remember { mutableStateOf(0) }
+    LaunchedEffect(bottomInset, imeBottomPx, viewportHeightPx, measuredListHeightPx) {
         val insetGrew = bottomInset > previousBottomInset
+        val imeGrew = imeBottomPx > previousImeBottomPx
+        val viewportShrank =
+            previousViewportHeightPx > 0 && viewportHeightPx < previousViewportHeightPx
+        val measuredShrank = previousMeasuredListHeightPx > 0 &&
+            measuredListHeightPx < previousMeasuredListHeightPx
+        val prevInset = previousBottomInset
+        val prevMeasured = previousMeasuredListHeightPx
         previousBottomInset = bottomInset
-        if (!insetGrew) return@LaunchedEffect
-        // 本轮回答已经停靠在顶栏：键盘弹起不再抢滚动。
-        // 停靠位不在列表底部，跟底收口会把视口一路拉到最底，看起来就是
-        // 「刚被键盘顶上去、又被拉回来」。这里直接交还滚动权。
-        if (finalAnswerAnchored ||
-            (streamDockedAnswerId != null && finalAnswerHandledId == streamDockedAnswerId)
-        ) {
-            finalAnswerAnchored = false
-            dockUserInterrupted = true
+        previousImeBottomPx = imeBottomPx
+        previousViewportHeightPx = viewportHeightPx
+        previousMeasuredListHeightPx = measuredListHeightPx
+        val changed = insetGrew || imeGrew || viewportShrank || measuredShrank
+        // 这里不能用实时几何：键盘把视口压矮之后 canScrollForward 已经是新值，
+        // 取实时值必然判成「不在底部」。用稳定布局期采样下来的缓存。
+        val wasAtBottom = stableAtBottom
+        // 诊断用：无论判定结果如何都留一条，便于区分「信号没来」和「信号来了但被拦」。
+        Log.i(
+            ScrollJitterTag,
+            "ime/lift: ime=" + imeBottomPx + " inset=" + bottomInset +
+                " vp=" + viewportHeightPx + " measured=" + measuredListHeightPx +
+                " prevInset=" + prevInset + " prevMeasured=" + prevMeasured +
+                " changed=" + changed + " wasAtBottom=" + wasAtBottom +
+                " anchored=" + finalAnswerAnchored + " keep=" + keepBottomAnchored +
+                " dragging=" + isUserDragging + " streaming=" + isStreaming,
+        )
+        if (!changed) return@LaunchedEffect
+        if (isStreaming || isUserDragging) return@LaunchedEffect
+        if (!wasAtBottom) {
+            // 翻在历史中间，或停靠在顶栏且下方还有内容：维持阅读位置，不抢滚动。
+            if (finalAnswerAnchored) {
+                finalAnswerAnchored = false
+                dockUserInterrupted = true
+            }
             return@LaunchedEffect
         }
-        if (isStreaming || !bottomContentVisible || !keepBottomAnchored) {
-            return@LaunchedEffect
-        }
+        // 视口确实停在底部：残留的停靠状态一律作废，然后直接贴到新的底部。
+        // 不再只靠跟底引擎——它可能被锚点判定或抖动熔断挡着，抬一半就停住。
+        // IME inset 逐帧变化时这里逐帧贴底，看上去就是正文跟着键盘一起平移。
+        finalAnswerAnchored = false
+        dockUserInterrupted = true
+        if (!keepBottomAnchored) onBottomAnchorChanged(true)
+        scrollState.scrollToItem(bottomItemIndex)
         keyboardLiftSettling = true
     }
 
@@ -1314,6 +1416,7 @@ internal fun AgentConversationMessages(
             verticalArrangement = Arrangement.Top,
             modifier = Modifier
                 .fillMaxSize()
+                .onSizeChanged { measuredListHeightPx = it.height }
                 .scrollEndHaptic()
                 .nestedScroll(historyPaging.scrollConnection)
                 .overScrollVertical(),
@@ -1452,60 +1555,108 @@ internal fun AgentConversationMessages(
         ) {
             val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
             val couiDark = CouiTheme.isDark
+            // 提示点颜色与主题蓝一致：COUI 用 accent，Miuix 用 primary。
+            val dockBadgeColor = if (isCoui) {
+                CouiTheme.colorSchemeFor(couiDark).accent
+            } else {
+                MiuixTheme.colorScheme.primary
+            }
             val scrollToBottom: () -> Unit = {
-                onBottomAnchorChanged(true)
-                coroutineScope.launch {
-                    scrollState.animateScrollToItem(bottomItemIndex)
+                // 点按钮先给一次轻震：这是唯一的「回到最底 / 回到回答首行」入口，
+                // 不给反馈会让人以为没点上。
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                // 用户明确要求「回到最底」：本轮停靠一并作废，滚动权交还给跟底。
+                // 只设 keepBottomAnchored 不够：程序化滚动不会触发 isUserDragging，
+                // 残留的 finalAnswerAnchored 会让下一次弹键盘被当成「还停在顶栏」而不抬。
+                finalAnswerAnchored = false
+                dockUserInterrupted = true
+                autoScrollFrozen = false
+                val pending = pendingAnswerDockKey
+                val pendingIndex = if (pending == null) {
+                    -1
+                } else {
+                    latestTimelineEntries.indexOfLast { entry -> entry.key == pending }
+                }
+                if (pending != null && pendingIndex >= 0) {
+                    // 答完时用户没跟底：按钮语义改成「回到这条回答的首行」，也就是跟顶的
+                    // 落点，而不是直接飞到列表最底部；点一下顺便清掉提示点。
+                    pendingAnswerDockKey = null
+                    finalAnswerHandledId = pending
+                    coroutineScope.launch {
+                        snapAnswerToTop(
+                            key = pending,
+                            itemIndex = pendingIndex + earlierMessagesItemCount,
+                        )
+                    }
+                } else {
+                    onBottomAnchorChanged(true)
+                    coroutineScope.launch {
+                        scrollState.animateScrollToItem(bottomItemIndex)
+                    }
                 }
             }
-            if (isCoui) {
-                // 纯色圆钮：去掉 COUI 的轮廓光与玻璃材质，只留一块实心底色 + 朝下的小折角箭头。
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(if (couiDark) Color(0xFF1E2024) else Color(0xFFF5F6F8))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClickLabel = stringResource(R.string.ui_back_to_bottom_32282e),
-                            onClick = scrollToBottom,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = ConversationPaneIcons.ChevronRight,
-                        contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
+            Box {
+                if (isCoui) {
+                    // 纯色圆钮：去掉 COUI 的轮廓光与玻璃材质，只留一块实心底色 + 朝下的小折角箭头。
+                    Box(
                         modifier = Modifier
-                            .size(18.dp)
-                            .rotate(90f),
-                        tint = CouiTheme.colorSchemeFor(couiDark).onSurface,
-                    )
-                }
-            } else {
-                IconButton(
-                    modifier = Modifier
-                        .dropShadow(
-                            shape = CircleShape,
-                            shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (couiDark) Color(0xFF1E2024) else Color(0xFFF5F6F8))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClickLabel = stringResource(R.string.ui_back_to_bottom_32282e),
+                                onClick = scrollToBottom,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = ConversationPaneIcons.ChevronRight,
+                            contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
+                            modifier = Modifier
+                                .size(18.dp)
+                                .rotate(90f),
+                            tint = CouiTheme.colorSchemeFor(couiDark).onSurface,
                         )
-                        .squircleBorder(
-                            width = 0.5.dp,
-                            color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                            cornerRadius = IconButtonDefaults.CornerRadius,
-                        ),
-                    onClick = scrollToBottom,
-                    backgroundColor = MiuixTheme.colorScheme.surfaceContainerHigh,
-                    minWidth = 40.dp,
-                    minHeight = 40.dp,
-                ) {
-                    Icon(
-                        imageVector = ConversationPaneIcons.ChevronRight,
-                        contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
+                    }
+                } else {
+                    IconButton(
                         modifier = Modifier
-                            .size(18.dp)
-                            .rotate(90f),
-                        tint = MiuixTheme.colorScheme.onSurface,
+                            .dropShadow(
+                                shape = CircleShape,
+                                shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
+                            )
+                            .squircleBorder(
+                                width = 0.5.dp,
+                                color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
+                                cornerRadius = IconButtonDefaults.CornerRadius,
+                            ),
+                        onClick = scrollToBottom,
+                        backgroundColor = MiuixTheme.colorScheme.surfaceContainerHigh,
+                        minWidth = 40.dp,
+                        minHeight = 40.dp,
+                    ) {
+                        Icon(
+                            imageVector = ConversationPaneIcons.ChevronRight,
+                            contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
+                            modifier = Modifier
+                                .size(18.dp)
+                                .rotate(90f),
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                // 回答结束但用户没跟底：主题蓝实心点，圆心正好压在圆钮的圆周上
+                // （40dp 圆钮半径 20dp，右上 45° 边缘点是 (34.1, 5.9)；align(TopEnd)
+                // 之后点中心在 (36, 4)，所以再往内挪 2dp、往下挪 2dp 就落在边上）。
+                if (pendingAnswerDockKey != null) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = (-2).dp, y = 2.dp)
+                            .size(8.dp)
+                            .background(dockBadgeColor, CircleShape),
                     )
                 }
             }
