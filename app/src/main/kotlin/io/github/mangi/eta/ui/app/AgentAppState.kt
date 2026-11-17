@@ -3432,7 +3432,6 @@ internal class AgentAppState(
                 thinkingEnabled = reasoningEffort.enablesReasoning,
                 reasoningEffort = reasoningEffort,
             )
-        }
 
         fun newConversationId(): String = "conv-${UUID.randomUUID()}"
     }

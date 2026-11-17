@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.ImportContacts
@@ -1121,7 +1122,7 @@ private fun SettingsPageContent(
                     SettingsGroupCard {
                         ArrowPreference(
                             title = stringResource(R.string.ui_eta_system_assistant_003e9b),
-                            startAction = { SettingsIcon(Icons.Rounded.SupportAgent) },
+                            startAction = { SettingsIcon(Icons.Rounded.SupportAgent, SettingsIconColors.Green) },
                             endActions = {
                                 Text(
                                     text = assistantRoleStatus.displayValue(),
