@@ -283,6 +283,12 @@ private fun MarkdownBlockView(
             onFirstLineTop = onFirstLineTop,
         )
         is MarkdownCode -> MarkdownCodeBlock(block, scope)
+        is MarkdownMath -> MarkdownDisplayMathBlock(
+            block = block,
+            style = scope.style,
+            inQuote = scope.inQuote,
+            reveal = scope.reveal,
+        )
         is MarkdownQuote -> MarkdownQuoteBlock(block, scope)
         is MarkdownAlert -> MarkdownAlertBlock(block, scope)
         is MarkdownList -> MarkdownListBlock(block, scope)
@@ -292,6 +298,7 @@ private fun MarkdownBlockView(
             style = scope.style.table,
             scope = scope,
             onFirstLineTop = onFirstLineTop,
+            maxInlineMathWidth = TableMaxColumnWidth - 24.dp,
         )
         is MarkdownRule -> Box(
             modifier = Modifier
@@ -312,7 +319,19 @@ private fun MarkdownText(
     softWrap: Boolean = true,
     /** 上报首行文字上沿的窗口坐标（px）：正文停靠要贴的是字形上沿，不是块顶边。 */
     onFirstLineTop: ((Float) -> Unit)? = null,
+    maxInlineMathWidth: Dp? = null,
 ) {
+    val inlineContent = if (block.inlineMath.isEmpty()) {
+        emptyMap()
+    } else {
+        rememberInlineMathContentMap(
+            text = block.text,
+            specs = block.inlineMath,
+            textStyle = style,
+            fallbackColor = scope.style.textColor,
+            maxInlineWidthDp = maxInlineMathWidth,
+        )
+    }
     val reveal = scope.reveal
     val text = markdownSpeechHighlighted(block.text, block.offset)
     // 首行字顶 = 文本节点窗口 y + 首行字符框相对文本布局框的 top。
@@ -360,19 +379,28 @@ private fun MarkdownText(
             text = text,
             style = animatedStyle,
             softWrap = softWrap,
+            inlineContent = inlineContent,
             modifier = modifier.then(probeModifier),
             onTextLayout = recordFirstLine,
         )
         return
     }
     val revealState = rememberSmoothTextRevealState(block.revealKey, reveal)
+    val atomicSpans = if (block.inlineMath.isEmpty()) {
+        emptyList()
+    } else {
+        remember(block.inlineMath) {
+            block.inlineMath.map { RevealAtomicSpan(it.rangeStart, it.rangeEnd) }
+        }
+    }
     Text(
         text = text,
         style = animatedStyle,
         softWrap = softWrap,
+        inlineContent = inlineContent,
         modifier = modifier.then(probeModifier).smoothTextReveal(revealState),
         onTextLayout = { layout ->
-            revealState.onTextLayout(block.text.text, layout)
+            revealState.onTextLayout(block.text.text, layout, atomicSpans)
             recordFirstLine(layout)
         },
     )
@@ -824,6 +852,7 @@ private fun MarkdownTableBlock(block: MarkdownTable, scope: MarkdownRenderScope)
                                 scope = scope,
                                 // 单元格以固定宽度测量，不需要 fill；fill 会干扰列宽的固有尺寸查询。
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                maxInlineMathWidth = TableMaxColumnWidth - 24.dp,
                             )
                         }
                     }
