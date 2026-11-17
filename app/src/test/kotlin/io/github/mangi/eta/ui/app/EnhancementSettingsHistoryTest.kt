@@ -40,5 +40,4 @@ class EnhancementSettingsHistoryTest {
         assertEquals(PowerAssistantTarget.GEMINI, restored.powerTarget())
         assertTrue(source.getBoolean(Prefs.Keys.ASSISTANT_AUTO_CONFIG, false))
     }
-
 }

@@ -334,7 +334,6 @@
   <string name="ui_provider_does_not_exist_83cee6">Provider does not exist</string>
   <string name="ui_contextual_usage_d12810">Context usage</string>
   <string name="ui_context_length_tokens_227860">Context window (tokens)</string>
-  <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">Bright screen evokes automatic voice input</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">Only pick levels the model or gateway supports.</string>
   <string name="ui_preferences_and_strategies_2abd3c">Preferences and Strategies</string>
   <string name="ui_stop_a17f70">stop</string>
@@ -442,7 +441,6 @@
   <string name="ui_regenerate_2e1905">Regenerate</string>
   <string name="ui_regenerate_reply_84a7d9">Regenerate reply</string>
   <string name="ui_reset_built_in_configuration_35b6ec">Reset built-in settings</string>
-  <string name="ui_lock_screen_evokes_automatic_voice_input_1cde18">Lock screen evokes automatic voice input</string>
   <string name="ui_reset_browser_session_791b36">Reset browser session</string>
   <string name="ui_deep_thinking_enabled_by_default_c032d6">Reasoning enabled by default</string>
   <string name="settings_default_reasoning_effort">Default reasoning effort</string>
@@ -1692,6 +1690,8 @@
   <string name="assistant_role_status_default">Set as default</string>
   <string name="assistant_role_status_unset">Not set</string>
   <string name="assistant_role_summary_default">Active default assistant, tap to open system settings</string>
+  <string name="assistant_role_status_other">Other app</string>
+  <string name="assistant_role_summary_other">Current default: %1$s. Tap to switch to Eta</string>
   <string name="assistant_role_system_settings_title">System default assistant settings</string>
   <string name="assistant_role_system_settings_summary">Open system settings to switch or manage manually</string>
 </resources>

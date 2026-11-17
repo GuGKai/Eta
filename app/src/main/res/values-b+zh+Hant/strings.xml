@@ -315,7 +315,6 @@
   <string name="ui_provider_does_not_exist_83cee6">Provider 不存在</string>
   <string name="ui_contextual_usage_d12810">內容用量</string>
   <string name="ui_context_length_tokens_227860">內容長度上限（tokens）</string>
-  <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏喚起自動語音輸入</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">只選模型或閘道實際支援的檔位</string>
   <string name="ui_preferences_and_strategies_2abd3c">偏好與策略</string>
   <string name="ui_stop_a17f70">停止</string>
@@ -423,7 +422,6 @@
   <string name="ui_regenerate_2e1905">重新產生</string>
   <string name="ui_regenerate_reply_84a7d9">重新產生回覆</string>
   <string name="ui_reset_built_in_configuration_35b6ec">重設內建設定</string>
-  <string name="ui_lock_screen_evokes_automatic_voice_input_1cde18">鎖定畫面喚起自動語音輸入</string>
   <string name="ui_reset_browser_session_791b36">重設瀏覽器工作階段</string>
   <string name="ui_deep_thinking_enabled_by_default_c032d6">預設啟用思考</string>
   <string name="settings_default_reasoning_effort">預設思考強度</string>
@@ -1566,6 +1564,8 @@
   <string name="assistant_role_status_default">已設為預設</string>
   <string name="assistant_role_status_unset">未設為預設</string>
   <string name="assistant_role_summary_default">已是系統預設數位助理，點擊開啟系統設定</string>
+  <string name="assistant_role_status_other">其他應用程式</string>
+  <string name="assistant_role_summary_other">目前預設：%1$s，點擊切換為 Eta</string>
   <string name="assistant_role_system_settings_title">系統預設助理設定</string>
   <string name="assistant_role_system_settings_summary">若系統彈窗未生效，可前往系統設定手動選擇</string>
 </resources>

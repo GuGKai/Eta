@@ -329,7 +329,6 @@
   <string name="ui_provider_does_not_exist_83cee6">Provider 不存在</string>
   <string name="ui_contextual_usage_d12810">上下文用量</string>
   <string name="ui_context_length_tokens_227860">上下文窗口（tokens）</string>
-  <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏唤起自动语音输入</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">只选模型或网关实际支持的档位</string>
   <string name="ui_preferences_and_strategies_2abd3c">偏好与策略</string>
   <string name="ui_stop_a17f70">停止</string>
@@ -437,7 +436,6 @@
   <string name="ui_regenerate_2e1905">重新生成</string>
   <string name="ui_regenerate_reply_84a7d9">重新生成回复</string>
   <string name="ui_reset_built_in_configuration_35b6ec">重置内置配置</string>
-  <string name="ui_lock_screen_evokes_automatic_voice_input_1cde18">锁屏唤起自动语音输入</string>
   <string name="ui_reset_browser_session_791b36">重置浏览器会话</string>
   <string name="ui_deep_thinking_enabled_by_default_c032d6">默认启用思考</string>
   <string name="settings_default_reasoning_effort">默认思考强度</string>
@@ -1673,6 +1671,8 @@
   <string name="assistant_role_status_default">已设为默认</string>
   <string name="assistant_role_status_unset">未设为默认</string>
   <string name="assistant_role_summary_default">已是系统默认数字助理，点击打开系统设置</string>
+  <string name="assistant_role_status_other">其他应用</string>
+  <string name="assistant_role_summary_other">当前默认：%1$s，点击切换为 Eta</string>
   <string name="assistant_role_system_settings_title">系统默认助理设置</string>
   <string name="assistant_role_system_settings_summary">如果系统弹窗未生效，可前往系统设置手动选择</string>
 </resources>
