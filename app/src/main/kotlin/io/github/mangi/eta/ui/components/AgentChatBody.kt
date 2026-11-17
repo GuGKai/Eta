@@ -840,7 +840,15 @@ internal fun AgentConversationMessages(
         // 等待「正文继续长高把落点带下来」的帧预算只有这么点：跟底被冻结之后列表保持
         // 首个可见条目的锚点，正文变长并不会让首行自己逼近顶栏，长时间等下去只会把画面
         // 冻在原地（以前是 900 帧 ≈ 15 秒），等不到就交回跟底，由外层隔几帧再试一次。
-        while (frames < 900 && waitedFrames < WaitForGrowthFrameBudget) {
+        // 流式期间正文一定还会继续长高，只留一个防死循环的宽松上限；非流式仍用 24 帧。
+        // 以前一律 24 帧（≈0.4 秒），正文一时没长到让首行越过落点就判定失败，
+        // 重试也只是重复踩同一个坑。
+        val growthFrameBudget = if (latestIsStreaming) {
+            StreamingGrowthFrameBudget
+        } else {
+            WaitForGrowthFrameBudget
+        }
+        while (frames < 900 && waitedFrames < growthFrameBudget) {
             // 用户正在手动滑动，或下方又冒出工具链（这段只是过渡文本）：立刻放弃停靠，交回默认跟底。
             if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
             val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it2 -> it2.key == key }
@@ -1000,7 +1008,12 @@ internal fun AgentConversationMessages(
     // 门槛满足后只能大幅回拉，看起来就是「先滚过头再突然拉回来」。
     // 矮正文的首行永远到不了顶栏，这里就一直等到本轮结束，保持默认跟底行为。
     suspend fun awaitAnswerReachTop(key: String): Boolean {
-        val threshold = topInsetPx + dockGapPx + dockLookaheadPx
+        // 门槛必须就是落点本身。以前这里额外加 dockLookaheadPx（16dp）提前放行，
+        // 结果一进停靠循环就必然还差 16dp 要往下滚；而流式跟底此刻通常已经在最底部，
+        // 只能「等正文继续长高」，等不到就整轮放弃停靠 —— 那就是「一路跟到底、首行
+        // 始终不贴顶栏」的主因。lookahead 只留给跟底冻结当提前量，不参与这里判定。
+        val threshold = topInsetPx + dockGapPx
+        var waited = 0
         while (currentCoroutineContext().isActive) {
             if (isUserDragging) return false
             // 下方又冒出工具链：这段只是过渡正文，交给默认跟底。
@@ -1015,6 +1028,8 @@ internal fun AgentConversationMessages(
                     .firstOrNull { info -> info.key == key }
                 if (item != null && item.offset <= threshold) return true
             }
+            // 死等上限：落点物理不可达时不要一直挂在这里，交回外层重试。
+            if (++waited >= AwaitReachTopFrameBudget) return false
             withFrameNanos { }
         }
         return false
@@ -1048,20 +1063,38 @@ internal fun AgentConversationMessages(
         // 用户碰过屏幕（滚走了 / 停在会话页上方）：流式跟顶与收尾停靠一律不做，
         // 免得收尾最后一帧又把正文拉回顶栏。
         if (dockUserInterrupted) return@LaunchedEffect
+        // 重试不再有次数上限。以前 4 次用完就收摊，可这个 LaunchedEffect 的 key
+        // （streamingAnswerId 与时间线末尾条目）在流式期间都不变，不会重组重跑 ——
+        // 于是这一轮就静默地一路跟到底了。现在改成「直到真正停住、被标记处理、
+        // 用户接管或本轮结束」，节奏由逐步加长的退避控制。
         var attempts = 0
-        while (attempts < 4 && currentCoroutineContext().isActive) {
+        var backoffFrames = 6
+        while (currentCoroutineContext().isActive) {
+            // 停靠循环判定落点物理不可达时会自己写 handled：尊重那个结论，别再重来。
+            if (finalAnswerHandledId == answerId) return@LaunchedEffect
+            if (isUserDragging) return@LaunchedEffect
+            if (latestTimelineEntries.lastOrNull()?.key != answerId) return@LaunchedEffect
             attempts++
-            if (!awaitAnswerReachTop(key = answerId)) return@LaunchedEffect
-            finalAnswerAnchored = true
-            if (dockAnswerToTop(key = answerId, itemIndex = itemIndex)) {
-                // 只有真正停住了才标记已处理：矮正文、被夹住时要允许正文变长后重来。
-                finalAnswerHandledId = answerId
-                streamDockedAnswerId = answerId
-                dockUserInterrupted = false
-                return@LaunchedEffect
+            val reached = awaitAnswerReachTop(key = answerId)
+            // await 返回 false 有三种原因：用户接管、末尾换了条目、死等超时。
+            // 前两种必须立刻退场；超时只是「这一轮落点还没到」，退避后再来一轮。
+            if (isUserDragging) return@LaunchedEffect
+            if (latestTimelineEntries.lastOrNull()?.key != answerId) return@LaunchedEffect
+            if (reached) {
+                finalAnswerAnchored = true
+                if (dockAnswerToTop(key = answerId, itemIndex = itemIndex)) {
+                    // 只有真正停住了才标记已处理：矮正文、被夹住时要允许正文变长后重来。
+                    finalAnswerHandledId = answerId
+                    streamDockedAnswerId = answerId
+                    dockUserInterrupted = false
+                    return@LaunchedEffect
+                }
+                finalAnswerAnchored = false
             }
-            finalAnswerAnchored = false
-            repeat(6) { withFrameNanos { } }
+            if (attempts >= DockRetryBackoffStart) {
+                backoffFrames = (backoffFrames * 2).coerceAtMost(DockRetryMaxBackoffFrames)
+            }
+            repeat(backoffFrames) { withFrameNanos { } }
         }
     }
 
@@ -1983,6 +2016,13 @@ private const val DockSnapPx = 3f
 private const val FirstLineTopPlausibleSlackPx = 200f
 // 「等正文继续长高」的帧预算：约 0.4 秒。首行在跟底冻结后不会再动，长等无意义。
 private const val WaitForGrowthFrameBudget = 24
+// 流式期间的同一份预算：正文一定还在长，这里只防死循环（约 5 秒）。
+private const val StreamingGrowthFrameBudget = 300
+// awaitAnswerReachTop 的死等上限（约 15 秒）：落点物理不可达时及时交回外层重试。
+private const val AwaitReachTopFrameBudget = 900
+// 停靠重试的退避：前几次快速重来，之后指数放大到上限，避免空转烧帧。
+private const val DockRetryBackoffStart = 4
+private const val DockRetryMaxBackoffFrames = 60
 
 
 // 停靠看门狗：间隔、偏离容差与纠正次数上限。
