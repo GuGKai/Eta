@@ -175,8 +175,22 @@ internal object AgentPromptBuilder {
         roleplayContext?.personaMessage()?.let(messages::put)
         buildMemorySystemMessage(memoryContext, writable = roleplayContext == null)?.let(messages::put)
         buildSkillSystemMessage(skillContext)?.let(messages::put)
+        if (roleplayContext == null) messages.put(promptSuggestionsMessage())
         return messages
     }
+
+    /**
+     * 回答末尾的下一步建议协议。
+     *
+     * 界面把该块剥离后渲染成可点的 chip，点击等价于用户自己发出那句；
+     * 因此要求每条都是可直接发送的完整句子，且不要在正文里复述。
+     */
+    private fun promptSuggestionsMessage(): JSONObject = systemMessage(
+        "回答收尾时另起一行给出下一步建议：<suggestions>[\"…\",\"…\"]</suggestions>，最多 3 条。" +
+            "每条必须是用户可以直接发给你的完整句子（不超过 30 字），彼此是不同方向，不是同一句的改写；" +
+            "界面会把它渲染成按钮并从正文中移除，所以不要在正文里重复这些建议，也不要写进代码块。" +
+            "一轮只输出一次；任务已完整结束且没有自然下一步、正在等用户确认、或用户只要求一句结论时不要输出。"
+    )
 
     private fun rootInstructions(available: Boolean): String =
         (if (available) {

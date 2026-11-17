@@ -151,4 +151,10 @@ internal data class ConversationMessageEntity(
     @ColumnInfo(name = "round_cost") val roundCost: Double? = null,
     /** 本轮（整个 run）的总用时（毫秒）；老会话为 null，界面据此决定显不显示。 */
     @ColumnInfo(name = "round_duration_ms") val roundDurationMs: Long? = null,
+    /**
+     * 回答末尾的下一步建议（JSON 字符串数组）；已从正文剥离，只用于渲染 chips。
+     * 老消息为 "[]"，解析失败时同样按空处理。
+     */
+    @ColumnInfo(name = "prompt_suggestions_json", defaultValue = "'[]'")
+    val promptSuggestionsJson: String = "[]",
 )

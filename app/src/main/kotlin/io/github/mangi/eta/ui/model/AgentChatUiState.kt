@@ -77,6 +77,11 @@ data class AgentMessageUi(
     val roundDurationMs: Long? = null,
     /** 仅当前内存会话展示，不进入消息存储、归档与导出。 */
     val searchSuggestionsHtml: List<String> = emptyList(),
+    /**
+     * 回答末尾的下一步建议；已从正文剥离，仅当前内存会话展示，
+     * 不进入消息存储、归档与导出（重开会话后消失）。
+     */
+    val promptSuggestions: List<String> = emptyList(),
 ) : AgentChatMessageUi
 
 enum class SystemNoticeCode(val wireValue: String) {

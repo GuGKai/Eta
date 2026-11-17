@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.app
 
 import android.os.SystemClock
+import io.github.mangi.eta.agent.model.PromptSuggestions
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.runtime.SearchSuggestionsBudget
@@ -427,11 +428,7 @@ internal class AgentRunMessageProjector(
     ): List<AgentChatMessageUi> =
         messages.map { message ->
             if (message is AgentMessageUi && isAssistantMessageForRun(message.id, runId)) {
-                message.copy(
-                    content = message.content.trimEnd(),
-                    isStreaming = false,
-                    renderMarkdown = true,
-                )
+                message.settled()
             } else {
                 message
             }
@@ -446,11 +443,7 @@ internal class AgentRunMessageProjector(
         // 换行节点变成一段固定间距，在正文与后续工具卡片之间形成莫名的空行。
         return messages.map { message ->
             if (message is AgentMessageUi && isAssistantMessageForRound(message.id, runId, round)) {
-                message.copy(
-                    content = message.content.trimEnd(),
-                    isStreaming = false,
-                    renderMarkdown = true,
-                )
+                message.settled()
             } else {
                 message
             }
@@ -467,11 +460,7 @@ internal class AgentRunMessageProjector(
         val assistantId = assistantMessageId(runId, round, index)
         return messages.map { message ->
             if (message is AgentMessageUi && message.id == assistantId) {
-                message.copy(
-                    content = replacementContent?.trimEnd() ?: message.content.trimEnd(),
-                    isStreaming = false,
-                    renderMarkdown = true,
-                )
+                message.settled(replacementContent ?: message.content)
             } else {
                 message
             }
@@ -610,6 +599,20 @@ internal class AgentRunMessageProjector(
 
     fun clearRun(runId: String) {
         thinkingStartedAt.keys.removeAll { it.startsWith("$runId-thinking-") }
+    }
+
+    /**
+     * 定稿一条回答：裁掉尾部空白、退出流式，并把末尾的下一步建议块剥离到
+     * [AgentMessageUi.promptSuggestions]（只进内存，不落库，也不进 history）。
+     */
+    private fun AgentMessageUi.settled(content: String = this.content): AgentMessageUi {
+        val (cleaned, prompts) = PromptSuggestions.extract(content)
+        return copy(
+            content = cleaned.trimEnd(),
+            isStreaming = false,
+            renderMarkdown = true,
+            promptSuggestions = prompts,
+        )
     }
 
     private fun ThinkingMessageUi.finished(
@@ -796,11 +799,20 @@ internal class AgentRunMessageProjector(
             notice: SystemNoticeCode?,
             detail: String? = null,
         ): List<AgentChatMessageUi> {
+            // 终态文本同样要剥掉建议块：这条路径会用 Runtime 回报的原始回答覆盖正文，
+            // 不处理就会把界面刚剥干净的标签又写回来（还会随之落库）。
+            val (cleanContent, prompts) = PromptSuggestions.extract(content)
             val targetIndex = resultTargetIndex(runId, messages)
             if (targetIndex < 0) {
                 val id = resultFallbackId(runId, messages)
                 return messages + if (notice == null) {
-                    AgentMessageUi(id = id, content = content, isStreaming = false, renderMarkdown = true)
+                    AgentMessageUi(
+                        id = id,
+                        content = cleanContent,
+                        isStreaming = false,
+                        renderMarkdown = true,
+                        promptSuggestions = prompts,
+                    )
                 } else {
                     SystemNoticeMessageUi(id, notice, detail)
                 }
@@ -811,10 +823,13 @@ internal class AgentRunMessageProjector(
                 val sameRoundBlocks = round?.let {
                     messages.count { message -> message is AgentMessageUi && message.id.assistantRound(runId) == it }
                 } ?: 0
+                val body = if (sameRoundBlocks <= 1) cleanContent else target.content.ifBlank { cleanContent }
+                val settledPrompts = if (body == cleanContent) prompts else target.promptSuggestions
                 target.copy(
-                    content = if (sameRoundBlocks <= 1) content else target.content.ifBlank { content },
+                    content = body,
                     isStreaming = false,
                     renderMarkdown = true,
+                    promptSuggestions = settledPrompts,
                 )
             }
             return messages.mapIndexed { index, message -> if (index == targetIndex) replacement else message }

@@ -46,7 +46,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
@@ -108,6 +107,7 @@ import com.itos.coui.shape.CouiShape
 import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
+import io.github.mangi.eta.agent.model.PromptSuggestions
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
@@ -261,6 +261,7 @@ internal fun ChatMessageItem(
             onRegenerate = { onRegenerateMessage(message.id) },
             onEdit = { onEditMessage(message.id) },
             onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
+            onSuggestionClick = onSuggestionClick,
             onAnswerFirstLineTop = onAnswerFirstLineTop,
             modifier = modifier,
         )
@@ -669,10 +670,23 @@ private fun AgentMessageBlock(
     onRegenerate: () -> Unit,
     onEdit: () -> Unit = {},
     onSelectCandidate: (Int) -> Unit = {},
+    onSuggestionClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     /** 正文首行字顶相对本条消息顶边的偏移（px）：正文停靠要贴的是首行文字，不是条目顶边。 */
     onAnswerFirstLineTop: ((Float) -> Unit)? = null,
 ) {
+    // 渲染层兜底：正文若还带着模型输出的 <suggestions> 块（历史数据、或某条链路把原始
+    // 文本写回 content），在这里统一剥掉，界面永远只显示干净正文 + 底部建议 chips。
+    val settledBody = remember(message.content, message.isStreaming) {
+        val visible = if (message.isStreaming) {
+            PromptSuggestions.visibleDuringStreaming(message.content)
+        } else {
+            message.content
+        }
+        PromptSuggestions.extract(visible)
+    }
+    val bodyContent = settledBody.first
+    val promptSuggestions = message.promptSuggestions.ifEmpty { settledBody.second }
     val keepStreamingMarkdown = remember(message.id) { message.isStreaming }
     DisposableEffect(retainedStreamingState) {
         retainedStreamingState?.attachContent()
@@ -689,11 +703,11 @@ private fun AgentMessageBlock(
         null
     }
     val completedDocument = (streamingState ?: retainedStreamingState)
-        ?.snapshot?.completedDocumentFor(message.content)
+        ?.snapshot?.completedDocumentFor(bodyContent)
     val revealComplete = streamingRevealComplete && !message.isStreaming &&
         (streamingState == null || completedDocument != null)
-    LaunchedEffect(retainedStreamingState, revealComplete, message.content) {
-        retainedStreamingState?.revealedContent = message.content.takeIf { revealComplete }
+    LaunchedEffect(retainedStreamingState, revealComplete, bodyContent) {
+        retainedStreamingState?.revealedContent = bodyContent.takeIf { revealComplete }
     }
 
     // 只对正在朗读的这条消息订阅句级进度，其余消息保持不重组。
@@ -702,7 +716,7 @@ private fun AgentMessageBlock(
         ?.takeIf { it.messageId == message.id && it.sentenceIndex >= 0 }
         ?.sentenceIndex
     val speechSentences = if (speakingIndex != null && message.renderMarkdown) {
-        rememberSpeechSentences(message.content)
+        rememberSpeechSentences(bodyContent)
     } else {
         null
     }
@@ -733,7 +747,7 @@ private fun AgentMessageBlock(
             streamingState != null && !revealComplete && speakingIndex == null -> {
                 StreamingMarkdown(
                     state = streamingState,
-                    content = message.content,
+                    content = bodyContent,
                     isStreaming = message.isStreaming,
                     tone = MarkdownTone.Answer,
                     onRevealCompleteChange = { streamingRevealComplete = it },
@@ -744,7 +758,7 @@ private fun AgentMessageBlock(
             message.renderMarkdown -> {
                 SelectionContainer {
                     StaticMarkdown(
-                        content = message.content,
+                        content = bodyContent,
                         tone = MarkdownTone.Answer,
                         parsed = completedDocument,
                         modifier = Modifier.fillMaxWidth(),
@@ -759,7 +773,7 @@ private fun AgentMessageBlock(
                 val fallbackTextScale = LocalAppearanceSettings.current.chatTextScale
                 SelectionContainer {
                     Text(
-                        text = message.content,
+                        text = bodyContent,
                         style = MiuixTheme.textStyles.body1.copy(
                             fontSize = 16.sp * fallbackTextScale,
                             lineHeight = 25.sp * fallbackTextScale,
@@ -774,11 +788,19 @@ private fun AgentMessageBlock(
             SearchSuggestionsView(html = html, modifier = Modifier.padding(top = 8.dp))
         }
 
+        if (promptSuggestions.isNotEmpty()) {
+            SuggestionChips(
+                prompts = promptSuggestions,
+                onSuggestionClick = onSuggestionClick,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+
         // 回答显现完成后才出现操作行；淡入展开避免贴底滚动时整页突然跳动一行高度。
         AnimatedVisibility(
             visible = showCopyAction &&
                 !message.isStreaming &&
-                message.content.isNotBlank() &&
+                bodyContent.isNotBlank() &&
                 revealComplete,
             enter = fadeIn(tween(160)) + expandVertically(tween(160), expandFrom = Alignment.Top),
             exit = fadeOut(tween(120)) + shrinkVertically(tween(120), shrinkTowards = Alignment.Top),
@@ -792,7 +814,7 @@ private fun AgentMessageBlock(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(AnswerActionSpacing),
             ) {
-                if (allowSpeech) SpeechReadAloudButton(message.id, message.content)
+                if (allowSpeech) SpeechReadAloudButton(message.id, bodyContent)
                 if (showMessageActions) {
                     if (message.characterEditable) {
                         AnswerActionButton(
@@ -1325,40 +1347,40 @@ private fun SuggestionChipsRow(
     onSuggestionClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FlowRow(
+    SuggestionChips(
+        prompts = message.prompts,
+        onSuggestionClick = onSuggestionClick,
+        modifier = modifier,
+    )
+}
+
+/** 回答末尾的下一步建议：点一下就等于把这条文本作为下一条用户消息发出。 */
+@Composable
+private fun SuggestionChips(
+    prompts: List<String>,
+    onSuggestionClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 字号：13sp 起点 × 会话文字倍率，跟着正文一起缩放，把字调大后不会脱节。
+    val chipFontSize = (13f * LocalAppearanceSettings.current.chatTextScale).sp
+    // 每条建议独占一行：并排会在窄屏上挤成几个小方块，扫读反而更慢。
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // 不再额外缩进：左边缘与正文首字对齐，视觉上作为正文的延伸。
+            .padding(vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        message.prompts.forEach { prompt ->
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MiuixTheme.colorScheme.surface)
-                    .border(
-                        0.5.dp,
-                        MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                        RoundedCornerShape(10.dp),
-                    )
-                    .clickable { onSuggestionClick(prompt) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.AutoAwesome,
-                    contentDescription = null,
-                    modifier = Modifier.size(12.dp),
-                    tint = MiuixTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = prompt,
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.onSurface,
-                )
-            }
+        prompts.forEach { prompt ->
+            // 单选项语义：建议并不保存选中态，点击即发送，因此固定 selected = false；
+            // 外观沿用 COUI 胶囊规范（Miuix 分支保留项目自身的描边样式）。
+            EtaChoiceChip(
+                text = prompt,
+                selected = false,
+                onClick = { onSuggestionClick(prompt) },
+                maxLines = 2,
+                fontSize = chipFontSize,
+            )
         }
     }
 }

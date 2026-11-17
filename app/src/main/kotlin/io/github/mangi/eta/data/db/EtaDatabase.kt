@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 36,
+    version = 37,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -82,6 +82,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_33_34,
                         MIGRATION_34_35,
                         MIGRATION_35_36,
+                        MIGRATION_36_37,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -375,6 +376,20 @@ internal abstract class EtaDatabase : RoomDatabase() {
         /** 35 → 36：MCP 工具目录记录截断原因（上游 #216；本地库版本号高于上游，故改名续接）。 */
         internal val MIGRATION_35_36 = Migration(35, 36) { database ->
             database.execSQL("ALTER TABLE mcp_servers ADD COLUMN tools_truncation_reason TEXT")
+        }
+
+        /**
+         * 36 → 37：回答末尾的下一步建议落库。
+         *
+         * 只加列、不回填：老消息拿到 "[]"，界面按「没有建议」处理；
+         * 之前只存在内存里的 chips 也补不回来，但之后切换会话不再丢。
+         */
+        internal val MIGRATION_36_37 = Migration(36, 37) { database ->
+            if (!database.columnExists("conversation_messages", "prompt_suggestions_json")) {
+                database.execSQL(
+                    "ALTER TABLE conversation_messages ADD COLUMN prompt_suggestions_json TEXT NOT NULL DEFAULT '[]'",
+                )
+            }
         }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {

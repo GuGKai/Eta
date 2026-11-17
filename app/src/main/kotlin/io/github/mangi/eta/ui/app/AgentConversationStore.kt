@@ -442,6 +442,7 @@ internal object AgentConversationStore {
                         ttftSteps = usage?.ttftSteps,
                         decodeMs = usage?.decodeMs,
                         decodeTokens = usage?.decodeTokens,
+                        promptSuggestionsJson = promptSuggestions.toJsonArrayString(),
                     )
                 }
             }
@@ -537,6 +538,7 @@ internal object AgentConversationStore {
                 ).takeUnless { it.isEmpty },
                 roundCost = roundCost,
                 roundDurationMs = roundDurationMs,
+                promptSuggestions = promptSuggestionsJson.toStringList(),
             )
 
             TYPE_SYSTEM_NOTICE -> SystemNoticeCode.fromWireValue(content)?.let { code ->

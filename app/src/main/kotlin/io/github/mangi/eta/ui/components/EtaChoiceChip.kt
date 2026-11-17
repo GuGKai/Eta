@@ -17,12 +17,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
 import com.itos.coui.shape.CouiCapsuleShape
 import com.itos.coui.text.CouiTextKind
 import com.itos.coui.text.Text as CouiText
+import com.itos.coui.text.rememberCouiTextStyle
 import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
@@ -43,6 +45,9 @@ internal fun EtaChoiceChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    maxLines: Int = 1,
+    /** 覆盖字号；null 表示沿用 COUI/Miuix 各自 kind 的规范字号。 */
+    fontSize: TextUnit? = null,
 ) {
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
@@ -83,15 +88,25 @@ internal fun EtaChoiceChip(
                     .padding(horizontal = 14.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                CouiText(
-                    text = text,
-                    kind = CouiTextKind.GroupFooter,
-                    color = content,
-                    maxLines = 1,
-                )
+                if (fontSize == null) {
+                    CouiText(
+                        text = text,
+                        kind = CouiTextKind.GroupFooter,
+                        color = content,
+                        maxLines = maxLines,
+                    )
+                } else {
+                    // 覆盖字号时取 COUI 的 GroupFooter 基础样式再改字号，字族与行距比例沿用规范。
+                    val baseStyle = rememberCouiTextStyle(CouiTextKind.GroupFooter)
+                    Text(
+                        text = text,
+                        style = baseStyle.copy(fontSize = fontSize, lineHeight = fontSize * 1.4f),
+                        color = content,
+                        maxLines = maxLines,
+                    )
+                }
             }
-        }
-        AppearanceUiStyle.MIUIX -> {
+        }        AppearanceUiStyle.MIUIX -> {
             val container by animateColorAsState(
                 targetValue = if (selected) {
                     MiuixTheme.colorScheme.tertiaryContainer
@@ -117,9 +132,13 @@ internal fun EtaChoiceChip(
             )
             Text(
                 text = text,
-                style = MiuixTheme.textStyles.footnote1,
+                style = if (fontSize == null) {
+                    MiuixTheme.textStyles.footnote1
+                } else {
+                    MiuixTheme.textStyles.footnote1.copy(fontSize = fontSize, lineHeight = fontSize * 1.4f)
+                },
                 color = content,
-                maxLines = 1,
+                maxLines = maxLines,
                 modifier = modifier
                     .semantics { this.selected = selected }
                     .squircleBorder(width = 1.dp, color = border, cornerRadius = 16.dp)
