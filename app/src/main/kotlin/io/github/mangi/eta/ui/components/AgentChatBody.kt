@@ -690,6 +690,9 @@ internal fun AgentConversationMessages(
     // 本轮回答已结束、但用户当时没有跟底（滚走了 / 停在会话页上方）：记下这条回答。
     // 收尾阶段不做任何自动滚动，只在「回到底部」圆钮右上角亮一个蓝点，并震一下。
     var pendingAnswerDockKey by remember { mutableStateOf<String?>(null) }
+    // 收尾时视口不在底部、但也不能立刻下结论（后台跑完时这一帧还是离开时那一屏）：
+    // 记下这条回答，等布局稳定几帧后再决定「贴到答首行」还是「保持原样」。
+    var pendingTailSettleKey by remember { mutableStateOf<String?>(null) }
     // 正文首行字顶的窗口 y（px）：停靠闭环直接拿它和顶栏底边比，不换算条目顶边。
     var answerFirstLineWindowY by remember { mutableStateOf<Float?>(null) }
     // 上面这个测量值属于哪一条：换轮之后旧值必须作废，否则会拿上一轮的首行位置误判。
@@ -749,6 +752,7 @@ internal fun AgentConversationMessages(
             finalAnswerHandledId = null
             streamDockedAnswerId = null
             pendingAnswerDockKey = null
+            pendingTailSettleKey = null
             hasStreamed = true
             dockUserInterrupted = false
             wasUserDragging = false
@@ -762,12 +766,15 @@ internal fun AgentConversationMessages(
             hasStreamed = false
             val id = streamingAnswerId
             if (id != null && finalAnswerHandledId == null) finalAnswerHandledId = id
-            // 收尾这一刻视口没在跟底：一律不自动滚动到任何落点，只在「回到底部」圆钮
-            // 右上角点一个蓝点、同时震一下，等用户自己点（点了才回到这条回答的首行）。
-            val atBottomNow = !scrollState.canScrollForward && bottomContentVisible
-            if (id != null && !finalAnswerAnchored && !atBottomNow) {
-                pendingAnswerDockKey = id
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
+            // 收尾这一帧不能下判断：回答在后台跑完时，前台的帧是停的，这段逻辑要等到
+            // 用户点通知回来的第一帧才跑，而那一刻的滚动几何还是「离开时那一屏」的旧值
+            // —— 正文其实已经长出好几屏，canScrollForward 却还停在 false，于是一律被判成
+            // 「本来就停在底部」，什么都不做，用户看到的就永远是最底部。
+            // 现在只先冻结跟底（防止回前台这几帧又被跟底拉到新底部），把落点判定推迟到
+            // 布局稳定之后由 pendingTailSettleKey 那个 effect 来做。
+            if (id != null && !finalAnswerAnchored) {
+                finalAnswerAnchored = true
+                pendingTailSettleKey = id
             }
         }
     }
@@ -1095,6 +1102,83 @@ internal fun AgentConversationMessages(
                 backoffFrames = (backoffFrames * 2).coerceAtMost(DockRetryMaxBackoffFrames)
             }
             repeat(backoffFrames) { withFrameNanos { } }
+        }
+    }
+
+    // 收尾落点判定：等布局按新正文重新测量稳定之后再决定。
+    // 三种结局：本来就在底部（保持不动）／用户自己滚走了（不滚动，只亮蓝点+轻震）／
+    // 用户没滚走却没在底部（回答在后台跑完、点通知进来）——直接把视口收到答首行贴顶。
+    LaunchedEffect(pendingTailSettleKey) {
+        val id = pendingTailSettleKey ?: return@LaunchedEffect
+        // 后台期间帧是停的，这里天然会等到回前台；再多等几帧让 LazyColumn 完成测量。
+        repeat(TailSettleFrameBudget) { withFrameNanos { } }
+        if (pendingTailSettleKey != id) return@LaunchedEffect
+        pendingTailSettleKey = null
+        if (finalAnswerHandledId != null && finalAnswerHandledId != id) {
+            // 预埋的 handled 不是这条：不去动视口，但要把冻结的跟底还原。
+            finalAnswerAnchored = false
+            return@LaunchedEffect
+        }
+        val atBottomNow = !scrollState.canScrollForward && bottomContentVisible
+        if (atBottomNow) {
+            // 就在底部：还原跟底，什么都不动。
+            finalAnswerAnchored = false
+            return@LaunchedEffect
+        }
+        val entries = latestTimelineEntries
+        val answerIndex = entries.indexOfLast { entry -> entry.key == id }
+        if (answerIndex < 0) {
+            finalAnswerAnchored = false
+            return@LaunchedEffect
+        }
+        if (entries.lastOrNull()?.key != id) {
+            // 下方还有工具链：这条不是收尾正文，交回跟底。
+            finalAnswerAnchored = false
+            return@LaunchedEffect
+        }
+        if (dockUserInterrupted) {
+            // 用户自己滚走的：绝不抢滚动，只在圆钮上加蓝点、轻震一次，等用户自己点。
+            finalAnswerAnchored = false
+            pendingAnswerDockKey = id
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
+            return@LaunchedEffect
+        }
+        // 剩下的就是「后台跑完、点通知进来」：直接把视口收到这条回答的首行贴顶。
+        // 没有位移动画，也不亮蓝点——用户第一眼要看的本来就是回答的开头。
+        finalAnswerAnchored = true
+        if (dockAnswerToTop(key = id, itemIndex = answerIndex + earlierMessagesItemCount)) {
+            streamDockedAnswerId = id
+            Log.i(ScrollJitterTag, "dock tail settle: docked to first line")
+        } else {
+            finalAnswerAnchored = false
+            Log.i(ScrollJitterTag, "dock tail settle: unreachable, keep viewport")
+        }
+    }
+
+    // 蓝点提示「回到这条回答的首行」只在「首行还在顶栏下方」时才有意义。
+    // 首行一旦上滑越过顶栏下沿，说明用户已经在往下读这条回答，此时点它反而是往回跳 ——
+    // 于是自动取消停靠、去掉蓝点，「回到底部」按钮回归本来的「滚到列表最底部」语义。
+    LaunchedEffect(pendingAnswerDockKey) {
+        val pending = pendingAnswerDockKey ?: return@LaunchedEffect
+        while (currentCoroutineContext().isActive) {
+            if (pendingAnswerDockKey != pending) return@LaunchedEffect
+            val firstLineY = answerFirstLineWindowY?.takeIf { answerFirstLineOwnerKey == pending }
+            // 首行量不到（首块不是文本）时退化成看条目顶边：条目顶已经高过顶栏下沿，
+            // 说明整条回答都滚到顶栏上面去了。
+            val passedTop = if (firstLineY != null) {
+                firstLineY <= topInsetPx - DockExceedTolerancePx
+            } else {
+                val itemTop = scrollState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { info -> info.key == pending }
+                    ?.offset
+                itemTop != null && itemTop <= topInsetPx - DockExceedTolerancePx
+            }
+            if (passedTop) {
+                pendingAnswerDockKey = null
+                Log.i(ScrollJitterTag, "dock badge cleared: first line above top bar")
+                return@LaunchedEffect
+            }
+            withFrameNanos { }
         }
     }
 
@@ -2020,6 +2104,10 @@ private const val WaitForGrowthFrameBudget = 24
 private const val StreamingGrowthFrameBudget = 300
 // awaitAnswerReachTop 的死等上限（约 15 秒）：落点物理不可达时及时交回外层重试。
 private const val AwaitReachTopFrameBudget = 900
+// 收尾落点判定前的稳定帧数：等 LazyColumn 按新正文重新测量完再读滚动几何。
+private const val TailSettleFrameBudget = 3
+// 「首行越过顶栏下沿」的判定容差（px）：吃掉整像素舍入，别把刚贴顶误判成越过。
+private const val DockExceedTolerancePx = 2f
 // 停靠重试的退避：前几次快速重来，之后指数放大到上限，避免空转烧帧。
 private const val DockRetryBackoffStart = 4
 private const val DockRetryMaxBackoffFrames = 60
