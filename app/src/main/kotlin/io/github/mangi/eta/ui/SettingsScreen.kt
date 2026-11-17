@@ -323,6 +323,10 @@ private fun SettingsPageContent(
         if (chosen != null && targetPrefs != null) {
             if (putStringSync(targetPrefs, Prefs.Keys.AGENT_DEFAULT_REASONING_EFFORT, chosen.wireValue)) {
                 savedDefaultEffort = chosen
+                // fork 侧额外把配置推到远端，Runtime（模块进程）立刻能读到这个新默认值。
+                coroutineScope.launch {
+                    RuntimeConfigRepository.syncToRemotePreferences(EtaApp.serviceInstance)
+                }
             } else {
                 Toast.makeText(
                     context.applicationContext,
@@ -517,15 +521,8 @@ private fun SettingsPageContent(
             }
         }
     }
-    // 默认思考强度：不提供 OFF（由上面的「默认启用思考」开关统一关闭），
-    // 具体档位在会话创建时按模型支持的能力归一化。
-    val defaultEffortOptions = remember { ReasoningEffort.entries.filter { it != ReasoningEffort.OFF } }
-    val defaultEffortItems = remember(defaultEffortOptions) {
-        defaultEffortOptions.map { it.displayName }
-    }
-    var defaultReasoningEffort by remember(agentPrefs) {
-        mutableStateOf(Prefs.defaultReasoningEffort())
-    }
+    // 默认思考强度由上游实现统一管理（见上方 agentPrefs 之后的状态块）：
+    // 档位取当前模型支持的能力，关闭「默认启用思考」时不可选。
 
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
@@ -553,39 +550,36 @@ private fun SettingsPageContent(
                     )
 
                     CouiIconDivider()
-                    CouiDropdownPreference(
-                        title = stringResource(R.string.settings_default_reasoning_effort),
-                        items = defaultEffortItems,
-                        selectedIndex = defaultEffortOptions
-                            .indexOf(defaultReasoningEffort)
-                            .coerceAtLeast(0),
-                        enabled = agentPrefs != null,
-                        icon = { CouiSettingsIcon(Icons.Rounded.Psychology, SettingsIconColors.Orange) },
-                        onSelectedIndexChange = { index ->
-                            val effort = defaultEffortOptions.getOrNull(index)
-                                ?: return@CouiDropdownPreference
-                            val targetPrefs = agentPrefs ?: return@CouiDropdownPreference
-                            if (putStringSync(
-                                    prefs = targetPrefs,
-                                    key = Prefs.Keys.AGENT_DEFAULT_REASONING_EFFORT,
-                                    value = effort.wireValue,
+                    if (effortOptions.size > 1) {
+                        CouiDropdownPreference(
+                            title = defaultEffortTitle,
+                            items = effortLabels,
+                            selectedIndex = selectedEffortIndex,
+                            onSelectedIndexChange = onDefaultEffortSelect,
+                            icon = {
+                                CouiSettingsIcon(
+                                    icon = Icons.Rounded.Tune,
+                                    tint = SettingsIconColors.Blue,
+                                    enabled = defaultEffortEnabled,
                                 )
-                            ) {
-                                defaultReasoningEffort = effort
-                                coroutineScope.launch {
-                                    RuntimeConfigRepository.syncToRemotePreferences(
-                                        EtaApp.serviceInstance,
-                                    )
-                                }
-                            } else {
-                                Toast.makeText(
-                                    context.applicationContext,
-                                    context.getString(R.string.settings_write_failed),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                    )
+                            },
+                            enabled = defaultEffortEnabled,
+                        )
+                    } else {
+                        CouiPreference(
+                            title = defaultEffortTitle,
+                            summary = defaultEffortUnsupported,
+                            icon = {
+                                CouiSettingsIcon(
+                                    icon = Icons.Rounded.Tune,
+                                    tint = SettingsIconColors.Blue,
+                                    enabled = false,
+                                )
+                            },
+                            enabled = false,
+                            showChevron = false,
+                        )
+                    }
                 }
 
                 Group(title = stringResource(R.string.settings_context_extensions)) {
