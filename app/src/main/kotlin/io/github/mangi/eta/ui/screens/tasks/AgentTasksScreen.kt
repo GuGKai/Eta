@@ -98,7 +98,9 @@ internal fun AgentTasksScreen(onBack: () -> Unit) {
     val tasks by dao.observeTasks().collectAsState(initial = emptyList())
     val runs by dao.observeRuns().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
-    var triggers by remember { mutableStateOf<List<TaskTriggerUi>>(emptyList()) }
+    var triggers by remember {
+        mutableStateOf(TaskTriggerCatalogCache.triggers ?: emptyList())
+    }
     var selectedTrigger by remember { mutableStateOf<TaskTriggerUi?>(null) }
     var describeTarget by remember { mutableStateOf<AgentTaskEntity?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -129,10 +131,11 @@ internal fun AgentTasksScreen(onBack: () -> Unit) {
     }
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            triggers = withContext(Dispatchers.IO) {
-                AgentTaskScheduler.refresh(context)
-                loadTaskTriggers(context)
-            }
+            // 调度刷新只是副作用，放到后台单独跑，不要挡着触发器面板的数据。
+            launch(Dispatchers.IO) { AgentTaskScheduler.refresh(context) }
+            val loaded = withContext(Dispatchers.IO) { loadTaskTriggers(context) }
+            TaskTriggerCatalogCache.update(loaded)
+            triggers = loaded
             awaitCancellation()
         }
     }

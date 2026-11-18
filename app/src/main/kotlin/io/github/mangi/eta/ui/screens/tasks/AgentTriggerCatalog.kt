@@ -36,6 +36,9 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.coui.CouiNoticeDialog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -64,6 +67,30 @@ internal fun loadTaskTriggers(context: Context): List<TaskTriggerUi> {
     val supported = AgentTaskRules.timeTypes + AgentTaskRules.eventTypes
     return (0 until array.length()).map { array.getJSONObject(it) }.filter { it.optString("type") in supported }
         .map { TaskTriggerUi(it.getString("type"), it.optBoolean("available")) }
+}
+
+/**
+ * 触发器目录的进程内缓存。
+ * capabilities() 要跑一遍权限检查与调度状态汇总，首次进入页面时耗时明显；
+ * 缓存后再次打开自动任务页可以直接渲染，避免下方面板"先缺一块再补上"。
+ */
+internal object TaskTriggerCatalogCache {
+    @Volatile
+    var triggers: List<TaskTriggerUi>? = null
+        private set
+
+    fun update(value: List<TaskTriggerUi>) {
+        triggers = value
+    }
+}
+
+/** 进入自动任务页之前预热触发器目录，让面板首帧就位。 */
+internal fun warmUpTaskTriggers(context: Context, scope: CoroutineScope) {
+    if (TaskTriggerCatalogCache.triggers != null) return
+    scope.launch(Dispatchers.IO) {
+        val loaded = runCatching { loadTaskTriggers(context) }.getOrNull() ?: return@launch
+        TaskTriggerCatalogCache.update(loaded)
+    }
 }
 
 @Composable

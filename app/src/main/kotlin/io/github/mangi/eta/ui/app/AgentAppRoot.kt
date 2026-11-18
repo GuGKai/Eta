@@ -98,6 +98,7 @@ import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServersScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
 import io.github.mangi.eta.ui.screens.tasks.AgentTasksScreen
+import io.github.mangi.eta.ui.screens.tasks.warmUpTaskTriggers
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
 import io.github.mangi.eta.ui.screens.subagent.SubagentSettingsScreen
@@ -367,7 +368,11 @@ fun AgentAppRoot(
             },
             onOpenTerminal = { pushRoute(AppRoute.Terminal) },
             onOpenBrowser = { openConversationBrowser() },
-            onOpenTasks = { pushRoute(AppRoute.Tasks) },
+            onOpenTasks = {
+                // 先把触发器目录预热好，进入页面时下方面板不会先缺一块再补上。
+                warmUpTaskTriggers(context, uiScope)
+                pushRoute(AppRoute.Tasks)
+            },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onConversationTogglePin = { conversation ->
                 agentState.toggleConversationPin(conversation.id)
