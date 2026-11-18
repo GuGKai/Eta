@@ -145,6 +145,28 @@ internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composabl
 private val InputContainerShape = RoundedCornerShape(20.dp)
 
 /**
+ * 输入栏容器底色。
+ *
+ * - COUI：固定灰（深色 #1C1E22 / 浅色 #F6F7F9）；
+ * - MIUIUX：surfaceContainer（浅色下与 surface 撞色时回退 #F5F6F8）。
+ *
+ * 余额胶囊与输入框共用这一份颜色，两者形状内部在任何明暗模式下都完全一致。
+ */
+@Composable
+internal fun chatInputContainerColor(): Color {
+    if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+        return if (CouiTheme.isDark) Color(0xFF1C1E22) else Color(0xFFF6F7F9)
+    }
+    val surfaceContainer = MiuixTheme.colorScheme.surfaceContainer
+    val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
+    return if (!isDark && surfaceContainer == MiuixTheme.colorScheme.surface) {
+        Color(0xFFF5F6F8)
+    } else {
+        surfaceContainer
+    }
+}
+
+/**
  * Agent 输入器始终保持同一空间结构，聚焦、输入和执行过程只改变状态，不搬动操作入口。
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -370,11 +392,8 @@ internal fun AgentChatInputBar(
         val couiDark = CouiTheme.isDark
         val couiInputShape = remember { CouiShape(24.dp, 2.3f) }
         val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
-        val miuixInputBg = if (!isDark && MiuixTheme.colorScheme.surfaceContainer == MiuixTheme.colorScheme.surface) {
-            Color(0xFFF5F6F8)
-        } else {
-            MiuixTheme.colorScheme.surfaceContainer
-        }
+        // 输入框与余额胶囊共用同一份底色，两者在明暗模式下都不会出现色差。
+        val inputContainerColor = chatInputContainerColor()
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -398,7 +417,7 @@ internal fun AgentChatInputBar(
                                 )
                                 .clip(couiInputShape)
                                 .background(
-                                    if (couiDark) Color(0xFF1C1E22) else Color(0xFFF6F7F9),
+                                    inputContainerColor,
                                     couiInputShape,
                                 )
                                 .border(
@@ -417,7 +436,7 @@ internal fun AgentChatInputBar(
                                     ),
                                 )
                                 .squircleSurface(
-                                    color = miuixInputBg,
+                                    color = inputContainerColor,
                                     cornerRadius = 22.dp,
                                 )
                                 .squircleBorder(

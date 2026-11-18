@@ -168,7 +168,8 @@ private fun AccountCapsule(
         modifier = modifier
             // 先裁成胶囊形状，按下的水波纹才是圆的，不会露出方形遮罩。
             .clip(CircleShape)
-            .background(MiuixTheme.colorScheme.surfaceContainer, CircleShape)
+            // 填充色与输入框底色完全一致（亮/暗色都由 chatInputContainerColor 决定），不出现第二种灰。
+            .background(chatInputContainerColor(), CircleShape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics { contentDescription = description }
             .padding(horizontal = 8.dp, vertical = 5.dp),
