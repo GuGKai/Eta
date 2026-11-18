@@ -367,6 +367,7 @@ fun AgentAppRoot(
             },
             onOpenTerminal = { pushRoute(AppRoute.Terminal) },
             onOpenBrowser = { openConversationBrowser() },
+            onOpenTasks = { pushRoute(AppRoute.Tasks) },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onConversationTogglePin = { conversation ->
                 agentState.toggleConversationPin(conversation.id)

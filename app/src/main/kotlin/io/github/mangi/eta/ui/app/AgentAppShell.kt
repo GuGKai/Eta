@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
@@ -116,6 +117,7 @@ internal fun AgentAppShell(
     onNewConversationWorkspace: (String?) -> Unit = {},
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenTasks: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -212,6 +214,7 @@ internal fun AgentAppShell(
                                                 onNewConversation = onNewConversation,
                                                 onOpenTerminal = onOpenTerminal,
                                                 onOpenBrowser = onOpenBrowser,
+                                                onOpenTasks = onOpenTasks,
                                             )
                                         }
                                     }
@@ -252,6 +255,7 @@ internal fun AgentAppShell(
                                     onNewConversation = onNewConversation,
                                     onOpenTerminal = onOpenTerminal,
                                     onOpenBrowser = onOpenBrowser,
+                                    onOpenTasks = onOpenTasks,
                                     homeCharacter = homeCharacter,
                                     onOpenCharacter = onOpenCharacter,
                                     conversationStatus = conversationStatus,
@@ -319,6 +323,7 @@ private fun CouiTopBarOverflowMenu(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenTasks: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -330,6 +335,7 @@ private fun CouiTopBarOverflowMenu(
     val newConversationText = stringResource(R.string.action_new_conversation)
     val openTerminalText = stringResource(R.string.action_open_terminal)
     val openBrowserText = stringResource(R.string.action_open_browser)
+    val openTasksText = stringResource(R.string.automation_title)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
     )
@@ -337,6 +343,7 @@ private fun CouiTopBarOverflowMenu(
         newConversationText,
         openTerminalText,
         openBrowserText,
+        openTasksText,
         autoReadText,
         hasSpeechPlayback,
         autoReadEnabled,
@@ -344,6 +351,8 @@ private fun CouiTopBarOverflowMenu(
         buildList {
             add(CouiMenuItem(value = 1, text = openTerminalText, icon = Icons.Rounded.Terminal))
             add(CouiMenuItem(value = 3, text = openBrowserText, icon = Icons.Rounded.Language))
+            // 与设置页同一个入口，直接跳到自动任务列表。
+            add(CouiMenuItem(value = 4, text = openTasksText, icon = Icons.Rounded.FilterAlt))
             if (hasSpeechPlayback) {
                 add(
                     CouiMenuItem(
@@ -374,6 +383,7 @@ private fun CouiTopBarOverflowMenu(
                 when (item.value) {
                     1 -> onOpenTerminal()
                     3 -> onOpenBrowser()
+                    4 -> onOpenTasks()
                     5 -> speechSettings?.let { current ->
                         scope.launch {
                             SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !current.chatAutoSpeak))
@@ -396,6 +406,7 @@ private fun AgentTopBar(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenTasks: () -> Unit,
     homeCharacter: RoleplayChatUi?,
     onOpenCharacter: () -> Unit,
     conversationStatus: (@Composable () -> Unit)?,
@@ -468,6 +479,7 @@ private fun AgentTopBar(
             TopBarOverflowMenu(
                 onOpenTerminal = onOpenTerminal,
                 onOpenBrowser = onOpenBrowser,
+                onOpenTasks = onOpenTasks,
             )
         }
     }
@@ -499,6 +511,7 @@ private val TopBarMenuIconSize = 20.dp
 private fun TopBarOverflowMenu(
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenTasks: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -519,13 +532,15 @@ private fun TopBarOverflowMenu(
             onDismissRequest = { showMenu = false },
         ) {
             val openTerminalText = stringResource(R.string.action_open_terminal)
-                            val openBrowserText = stringResource(R.string.action_open_browser)
+            val openBrowserText = stringResource(R.string.action_open_browser)
+            val openTasksText = stringResource(R.string.automation_title)
             val autoReadText = stringResource(
                 if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
             )
             val menuItems = remember(
                 openTerminalText,
                 openBrowserText,
+                openTasksText,
                 autoReadText,
                 hasSpeechPlayback,
                 autoReadEnabled,
@@ -546,6 +561,17 @@ private fun TopBarOverflowMenu(
                         icon = { modifier ->
                             Icon(
                                 imageVector = Icons.Rounded.Language,
+                                contentDescription = null,
+                                modifier = modifier.size(TopBarMenuIconSize),
+                            )
+                        },
+                    ),
+                    // 与设置页同一个入口，直接跳到自动任务列表。
+                    DropdownItem(
+                        text = openTasksText,
+                        icon = { modifier ->
+                            Icon(
+                                imageVector = Icons.Rounded.FilterAlt,
                                 contentDescription = null,
                                 modifier = modifier.size(TopBarMenuIconSize),
                             )
@@ -576,15 +602,17 @@ private fun TopBarOverflowMenu(
                         index = index,
                         onSelectedIndexChange = {
                             showMenu = false
-                            if (hasSpeechPlayback && index == menuItems.lastIndex) {
-                                speechSettings?.let { current ->
-                                    scope.launch {
-                                        SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !current.chatAutoSpeak))
-                                    }
-                                }
-                            } else when (index) {
+                            when (index) {
                                 0 -> onOpenTerminal()
                                 1 -> onOpenBrowser()
+                                2 -> onOpenTasks()
+                                else -> if (hasSpeechPlayback) {
+                                    speechSettings?.let { current ->
+                                        scope.launch {
+                                            SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !current.chatAutoSpeak))
+                                        }
+                                    }
+                                }
                             }
                         },
                     )
