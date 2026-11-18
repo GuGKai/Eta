@@ -289,6 +289,30 @@ private val EdgeShadowLightWidth = 15.dp
 private val EdgeShadowDarkWidth = 0.dp
 
 /**
+ * 会话页左缘发丝描边色：直接沿用改造前侧栏右侧那道 0.5dp 收边线的取色
+ * （COUI 深色白 8.6%，Miuix 走 dividerLine 42%）。浅色返回透明，即不描边。
+ */
+@Composable
+internal fun conversationPaneEdgeStrokeColor(): Color {
+    if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+        return if (CouiTheme.isDark) Color(0x16FFFFFF) else Color.Transparent
+    }
+    return if (MiuixTheme.colorScheme.background.luminance() > 0.5f) {
+        Color.Transparent
+    } else {
+        MiuixTheme.colorScheme.dividerLine.copy(alpha = 0.42f)
+    }
+}
+
+/** 描边宽度：和改造前那道收边线同宽。 */
+private val EdgeStrokeWidth = 0.5.dp
+private val EdgeStrokeWidthNone = 0.dp
+
+@Composable
+internal fun conversationPaneEdgeStrokeWidth(): Dp =
+    if (conversationPaneEdgeStrokeColor().alpha > 0f) EdgeStrokeWidth else EdgeStrokeWidthNone
+
+/**
  * COUI 顶栏内部的子 backdrop（`LocalCouiToolbarBackdrop` 在源码里是 internal，只能反射拿一次）。
  *
  * 自己搭顶栏材质后需要它来手动 provide，让 `CouiTopAppBarIconButton` 这类只认该 local 的控件

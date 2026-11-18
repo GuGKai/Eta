@@ -31,16 +31,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -119,6 +116,8 @@ fun ConversationSidePaneScaffold(
         val chatScrimAlpha = conversationPaneChatScrimAlpha()
         val edgeShadowWidth = conversationPaneEdgeShadowWidth()
         val chatScrimColor = conversationPaneChatScrimColor()
+        val edgeStrokeColor = conversationPaneEdgeStrokeColor()
+        val edgeStrokeWidth = conversationPaneEdgeStrokeWidth()
         val paneWidth = minOf(maxWidth * ConversationPaneMetrics.PaneWidthFraction, ConversationPaneMetrics.PaneMaxWidth)
         val paneWidthPx = with(density) { paneWidth.toPx() }
         val anchors = remember(paneWidthPx) {
@@ -288,35 +287,23 @@ fun ConversationSidePaneScaffold(
                                 // 裁剪路径建一次复用，阴影带预渲染成位图。
                                 val cornerRadiusPx = screenCornerRadius.toPx()
                                 val shadowWidthPx = edgeShadowWidth.toPx()
-                                val pageClipPath = Path().apply {
-                                    addRoundRect(
-                                        RoundRect(
-                                            rect = Rect(Offset.Zero, size),
-                                            topLeft = CornerRadius(cornerRadiusPx, cornerRadiusPx),
-                                            bottomLeft = CornerRadius(cornerRadiusPx, cornerRadiusPx),
-                                        ),
-                                    )
-                                }
+                                // 左缘两个角走超椭圆，和输入框同一族形状：
+                                // 半径仍等于机身圆角，指数 2.25 让「外框到输入框」的间距
+                                // 整条轮廓恒等 8dp（正圆弧时斜角处会被吃掉 1.3dp）。
+                                val pageClipPath = superellipsePagePath(
+                                    size = size,
+                                    radius = cornerRadiusPx,
+                                    exponent = SuperellipseCorner.PageExponent,
+                                )
                                 // 分界阴影带：把页面轮廓整体向外膨一个阴影宽度得到外圈，再用
                                 // Difference 把页面本身挖掉，剩下的正好是贴着左上圆角、左竖边、
                                 // 左下圆角的一条弯带，圆角处自然跟着弧线贴合。
-                                val edgeShadowOuterPath = Path().apply {
-                                    addRoundRect(
-                                        RoundRect(
-                                            rect = Rect(
-                                                offset = Offset(-shadowWidthPx, -shadowWidthPx),
-                                                size = Size(
-                                                    width = size.width + shadowWidthPx * 2f,
-                                                    height = size.height + shadowWidthPx * 2f,
-                                                ),
-                                            ),
-                                            cornerRadius = CornerRadius(
-                                                cornerRadiusPx + shadowWidthPx,
-                                                cornerRadiusPx + shadowWidthPx,
-                                            ),
-                                        ),
-                                    )
-                                }
+                                val edgeShadowOuterPath = superellipseInflatedPath(
+                                    size = size,
+                                    radius = cornerRadiusPx,
+                                    inflate = shadowWidthPx,
+                                    exponent = SuperellipseCorner.PageExponent,
+                                )
                                 // 直边段用横向渐变，上下圆角用径向渐变（圆心与圆角同心），
                                 // 淡出方向始终垂直于轮廓，圆角处才真的跟着弧线走。
                                 val edgeShadowStraightBrush = conversationEdgeShadowBrush(
@@ -335,6 +322,22 @@ fun ConversationSidePaneScaffold(
                                     shadowWidthPx = shadowWidthPx,
                                     color = edgeShadowColor,
                                 )
+                                // 分界描边路径：只描左竖边和上下两个圆角——从左上弧的 (d, r) 起，
+                                // 经左竖边到左下弧的 (d, h - d) 止，顶边、底边、右侧都不描，
+                                // 免得页面另外三条边多出一圈线。圆角段同样是超椭圆。
+                                // 半径取 r - d、圆心不动，等于把轮廓整体内缩 d，整条描边都落在
+                                // 页面内侧，不会被裁掉一半而发虚。
+                                val edgeStrokeWidthPx = edgeStrokeWidth.toPx()
+                                val pageEdgeStrokePath = if (edgeStrokeWidthPx <= 0f) {
+                                    null
+                                } else {
+                                    superellipsePageEdgeStrokePath(
+                                        size = size,
+                                        radius = cornerRadiusPx,
+                                        exponent = SuperellipseCorner.PageExponent,
+                                        inset = edgeStrokeWidthPx / 2f,
+                                    )
+                                }
                                 onDrawWithContent chatPage@{
                                     // 只有进度相关的东西逐帧读，缓存里的一律不动，
                                     // 否则拖动每一帧都会重建位图。
@@ -410,6 +413,14 @@ fun ConversationSidePaneScaffold(
                                         if (scrimAlpha > 0f) {
                                             drawRect(color = chatScrimColor, alpha = scrimAlpha)
                                         }
+                                    }
+                                    // 描边放在最后：遮罩和页面内容都画完再压上这条线，深度才准。
+                                    if (pageEdgeStrokePath != null) {
+                                        drawPath(
+                                            path = pageEdgeStrokePath,
+                                            color = edgeStrokeColor,
+                                            style = Stroke(width = edgeStrokeWidthPx),
+                                        )
                                     }
                                 }
                             }

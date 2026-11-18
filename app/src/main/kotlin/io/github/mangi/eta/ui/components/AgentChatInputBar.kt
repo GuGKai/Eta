@@ -142,7 +142,19 @@ private val ThinkingIconSize = 21.dp
 /** 输入栏正中的余额胶囊：由外壳页面注入，避免把余额状态一路透传进输入栏。 */
 internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
 
-private val InputContainerShape = RoundedCornerShape(20.dp)
+/**
+ * 输入框圆角。跟着屏幕圆角做同心：内圆角 = 外圆角 − 这一侧的留白，
+ * 两条弧共用圆心，圆角处的间距才和直边一致（离边缘 8dp 时，用 24dp 就会比直边宽一截）。
+ * 屏幕本身没有圆角时算出 ≤ 0，退化成直角，不硬造。
+ */
+@Composable
+private fun rememberInputContainerRadius(): Dp {
+    val screenCornerRadius = rememberScreenCornerRadius()
+    return (screenCornerRadius - ChatInputOuterMargin).coerceAtLeast(0.dp)
+}
+
+/** COUI 输入框的角权重（库里 CouiShape 的 cornerWeight 参数），越大越接近超椭圆。 */
+private const val InputCornerWeight = 2.3f
 
 /**
  * 输入栏容器底色。
@@ -390,7 +402,9 @@ internal fun AgentChatInputBar(
 
         val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
         val couiDark = CouiTheme.isDark
-        val couiInputShape = remember { CouiShape(24.dp, 2.3f) }
+        val inputRadius = rememberInputContainerRadius()
+        val inputContainerShape = remember(inputRadius) { RoundedCornerShape(inputRadius) }
+        val couiInputShape = remember(inputRadius) { CouiShape(inputRadius, InputCornerWeight) }
         val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
         // 输入框与余额胶囊共用同一份底色，两者在明暗模式下都不会出现色差。
         val inputContainerColor = chatInputContainerColor()
@@ -428,7 +442,7 @@ internal fun AgentChatInputBar(
                         } else {
                             Modifier
                                 .dropShadow(
-                                    shape = InputContainerShape,
+                                    shape = inputContainerShape,
                                     shadow = Shadow(
                                         radius = 12.dp,
                                         color = Color.Black,
@@ -437,12 +451,12 @@ internal fun AgentChatInputBar(
                                 )
                                 .squircleSurface(
                                     color = inputContainerColor,
-                                    cornerRadius = 22.dp,
+                                    cornerRadius = inputRadius,
                                 )
                                 .squircleBorder(
                                     width = 0.5.dp,
                                     color = MiuixTheme.colorScheme.outline.copy(alpha = 0.5f),
-                                    cornerRadius = 22.dp,
+                                    cornerRadius = inputRadius,
                                 )
                         },
                     )
