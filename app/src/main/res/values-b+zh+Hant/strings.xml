@@ -1061,6 +1061,7 @@
   <string name="conversation_model_unavailable">此對話原用的模型無法使用，已改用 %1$s</string>
   <string name="model_switch_current">切換模型，目前為 %1$s</string>
   <string name="model_picker_title">選擇模型</string>
+  <string name="chat_conversation_model_title">選擇目前會話模型</string>
   <string name="model_picker_filter_all">全部</string>
   <string name="context_no_previous_usage">暫無上輪用量</string>
   <string name="context_no_model_limit">未知上下文視窗，自動壓縮已關閉。仍可手動壓縮，也可在設定 → 模型提供商中填寫視窗。</string>

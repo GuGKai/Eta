@@ -80,6 +80,7 @@ internal fun AgentHomeScreen(
                     focusInputOnSync = state.focusInputOnSync,
                     messageEdit = state.messageEdit,
                     onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
+                    onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
                     onCompactContext = { onAction(AgentHomeAction.CompactContext) },
                     canCompactContext = state.canCompactContext,
                     onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },

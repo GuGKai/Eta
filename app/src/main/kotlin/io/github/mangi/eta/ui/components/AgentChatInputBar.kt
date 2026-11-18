@@ -79,7 +79,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.shadow.Shadow
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -97,7 +96,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -118,6 +118,8 @@ import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.markdown.EditorialLineHeightStyle
 import io.github.mangi.eta.ui.app.composerFocusRequests
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
+import io.github.mangi.eta.ui.model.AgentModelOptionUi
+import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
 import io.github.mangi.eta.ui.model.QueuedMessageUi
@@ -191,6 +193,7 @@ internal fun AgentChatInputBar(
     isStreaming: Boolean,
     reasoningEffort: ReasoningEffort,
     availableReasoningEfforts: List<ReasoningEffort>,
+    modelPickerState: AgentModelPickerUiState,
     pendingImages: List<PendingImageUi>,
     pendingFileReferences: List<PendingFileReferenceUi>,
     queuedMessages: List<QueuedMessageUi> = emptyList(),
@@ -200,6 +203,7 @@ internal fun AgentChatInputBar(
     editHasLaterTurns: Boolean,
     preserveFollowingMessages: Boolean,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
+    onModelSelected: (String) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
     onSubmit: (String) -> Unit,
@@ -223,6 +227,7 @@ internal fun AgentChatInputBar(
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val hapticFeedback = LocalHapticFeedback.current
+    var showModelSheet by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val textFieldState = rememberTextFieldState(initialText = input)
     val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
@@ -544,16 +549,16 @@ internal fun AgentChatInputBar(
 
                             Spacer(modifier = Modifier.width(2.dp))
 
-                            if (availableReasoningEfforts.isNotEmpty()) {
-                                ThinkingEffortChip(
-                                    effort = reasoningEffort,
-                                    options = availableReasoningEfforts,
-                                    enabled = !isStreaming,
-                                    popupAnchorTopPx = inputContainerTopPx,
-                                    popupMaxHeight = thinkingPopupMaxHeight,
-                                    onEffortChange = onReasoningEffortChange,
-                                )
-                            }
+                            ThinkingEffortChip(
+                                effort = reasoningEffort,
+                                options = availableReasoningEfforts,
+                                model = modelPickerState.selectedModel,
+                                enabled = !isStreaming,
+                                popupAnchorTopPx = inputContainerTopPx,
+                                popupMaxHeight = thinkingPopupMaxHeight,
+                                onEffortChange = onReasoningEffortChange,
+                                onRequestModelSheet = { showModelSheet = true },
+                            )
                         }
 
                         Spacer(modifier = Modifier.weight(1f))
@@ -696,24 +701,40 @@ internal fun AgentChatInputBar(
                 }
             }
         }
+        // 长按思考强度按钮弹出的会话内选模型弹窗；样式与设置页标题模型弹窗一致。
+        ConversationModelPickerSheet(
+            visible = showModelSheet,
+            pickerState = modelPickerState,
+            onDismissRequest = { showModelSheet = false },
+            onSelectModel = onModelSelected,
+        )
     }
 
 }
 
-/** 思考强度选择保持为单一图标，当前状态仅通过图标颜色表达。 */
+/**
+ * 思考强度 / 会话模型二合一控件：图标显示当前会话所用模型的品牌标识。
+ * 单击弹出思考强度档位；当前模型没有可选档位时，单击直接弹出会话内选模型弹窗。
+ * 长按（带震动反馈）始终弹出会话内选模型弹窗。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ThinkingEffortChip(
     effort: ReasoningEffort,
     options: List<ReasoningEffort>,
+    model: AgentModelOptionUi?,
     enabled: Boolean,
     popupAnchorTopPx: Int,
     popupMaxHeight: Dp,
     onEffortChange: (ReasoningEffort) -> Unit,
+    onRequestModelSheet: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showPopup by remember { mutableStateOf(false) }
-    val active = effort != ReasoningEffort.OFF
+    val hapticFeedback = LocalHapticFeedback.current
     val menuEnabled = enabled && options.size > 1
+    /** 长按切模型：这个行为由当前会话模型驱动，没有模型时无从切换。 */
+    val modelSwitchEnabled = enabled && model != null
     val anchor = rememberCouiMenuAnchor()
     LaunchedEffect(menuEnabled) {
         if (!menuEnabled) showPopup = false
@@ -721,28 +742,36 @@ private fun ThinkingEffortChip(
     val popupPositionProvider = remember(popupAnchorTopPx) {
         InputPopupPositionProvider(popupAnchorTopPx)
     }
-    val contentColor by animateColorAsState(
-        targetValue = if (active) {
-            MiuixTheme.colorScheme.primary
-        } else {
-            MiuixTheme.colorScheme.onSurfaceVariantSummary
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "thinking_content",
-    )
+    val effortDescription = stringResource(R.string.chat_reasoning_effort, effort.displayName)
     Box(modifier = modifier) {
-        IconButton(
-            onClick = { anchor.open { showPopup = true } },
-            enabled = menuEnabled,
-            minWidth = ChatInputActionSize,
-            minHeight = ChatInputActionSize,
-            modifier = Modifier.couiMenuAnchor(anchor),
+        // 图标跟随会话当前模型：单击仍是思考强度，长按切模型。
+        Box(
+            modifier = Modifier
+                .couiMenuAnchor(anchor)
+                .size(ChatInputActionSize)
+                .clip(CircleShape)
+                .combinedClickable(
+                    enabled = menuEnabled || modelSwitchEnabled,
+                    onClick = {
+                        when {
+                            menuEnabled -> anchor.open { showPopup = true }
+                            modelSwitchEnabled -> onRequestModelSheet()
+                        }
+                    },
+                    onLongClick = {
+                        if (modelSwitchEnabled) {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onRequestModelSheet()
+                        }
+                    },
+                )
+                .semantics { contentDescription = effortDescription },
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = ImageVector.vectorResource(R.drawable.ic_atom),
-                contentDescription = stringResource(R.string.chat_reasoning_effort, effort.displayName),
-                modifier = Modifier.size(ThinkingIconSize),
-                tint = contentColor,
+            ModelBrandMark(
+                modelId = model?.modelId,
+                sourceType = model?.providerSourceType,
+                size = ThinkingIconSize,
             )
         }
         when (LocalUiStyle.current) {

@@ -60,6 +60,8 @@ internal fun OptionalModelPickerContent(
     followTitle: String,
     followSubtitle: String,
     onSelectModel: (String?) -> Unit,
+    /** 「跟随主模型」一行只在可选「不指定模型」的场景有意义，会话内选模型时关掉。 */
+    showFollowOption: Boolean = true,
 ) {
     var query by remember { mutableStateOf("") }
     var providerFilter by remember { mutableStateOf<String?>(null) }
@@ -146,7 +148,7 @@ internal fun OptionalModelPickerContent(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(bottom = 16.dp),
         ) {
-            if (query.isBlank() && providerFilter == null) {
+            if (showFollowOption && query.isBlank() && providerFilter == null) {
                 item(key = "inherit_primary") {
                     OptionalModelRow(
                         title = followTitle,
