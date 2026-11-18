@@ -36,11 +36,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -117,6 +118,7 @@ import io.github.mangi.eta.data.repository.ConversationBranchBoundary
 import io.github.mangi.eta.ui.model.branchMessageOutline
 import io.github.mangi.eta.ui.app.AgentConversationRevisionReducer
 import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.layout.rememberFloatingBottomBarInsets
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownStateCache
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
@@ -2264,6 +2266,12 @@ private fun AgentChatBottomBar(
             },
         )
     }
+    // 贴底悬浮栏安全边距：手势条隐藏时 navigationBars 为 0，按屏幕物理圆角抬升底边；
+    // 固定底 padding 用本地同心圆角的 ChatInputOuterMargin，与外层 imePadding 连续消费衔接。
+    val bottomBarInsets = rememberFloatingBottomBarInsets(
+        baseInsets = WindowInsets.navigationBars,
+        fixedBottomPadding = ChatInputOuterMargin,
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2285,7 +2293,7 @@ private fun AgentChatBottomBar(
                 // 这块实色背景紧接上方渐变的实色端，两者同色同透明度，接缝不可见；
                 // 输入框胶囊本身画在它上面，圆角外侧就是这块实色，不会再露硬边。
                 .background(MiuixTheme.colorScheme.surface)
-                .navigationBarsPadding()
+                .windowInsetsPadding(bottomBarInsets)
                 .padding(
                     start = ChatInputOuterMargin,
                     end = ChatInputOuterMargin,
