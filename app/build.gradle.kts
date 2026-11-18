@@ -40,7 +40,11 @@ val etaApplicationId =
 
 android {
     namespace = "io.github.mangi.eta"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
     ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
@@ -50,7 +54,7 @@ android {
         minSdk = 33
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026112010
+        versionCode = 2026112012
         versionName = "3.5.0"
 
         ndk {
@@ -178,6 +182,9 @@ dependencies {
     implementation(libs.coui.icons)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.blur)
+    implementation(libs.miuix.glass)
+    implementation(libs.miuix.glass.icons)
+    implementation(libs.miuix.material)
     implementation(libs.miuix.nav)
     implementation(libs.miuix.preference)
     implementation(libs.material.icons.extended)

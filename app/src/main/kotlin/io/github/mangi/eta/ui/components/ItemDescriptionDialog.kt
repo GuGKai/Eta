@@ -9,10 +9,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.itos.coui.theme.CouiTheme
 import com.itos.coui.text.CouiTextKind
@@ -22,12 +27,14 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiNoticeDialog
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.glass.GlassDialog
+import top.yukonga.miuix.kmp.glass.GlassDialogButton
+import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 internal fun ItemDescriptionDialog(
+    show: Boolean,
     title: String,
     description: String,
     onDismiss: () -> Unit,
@@ -62,23 +69,43 @@ internal fun ItemDescriptionDialog(
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            WindowDialog(show = true, title = title, onDismissRequest = onDismiss) {
+            var retainedTitle by remember { mutableStateOf(title) }
+            var retainedDescription by remember { mutableStateOf(description) }
+            if (show) {
+                retainedTitle = title
+                retainedDescription = description
+            }
+            GlassDialog(
+                show = show,
+                title = retainedTitle,
+                backdrop = currentGlassOverlayBackdrop(),
+                onDismissRequest = onDismiss,
+            ) {
                 Column(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Text(
-                        text = description,
+                        text = retainedDescription,
                         style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
                             .verticalScroll(rememberScrollState()),
                     )
-                    TextButton(
-                        text = stringResource(R.string.action_close),
+                    GlassDialogButton(
                         onClick = onDismiss,
+                        role = GlassDialogButtonRole.Normal,
                         modifier = Modifier.fillMaxWidth(),
-                    )
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_close),
+                            style = MiuixTheme.textStyles.button,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }

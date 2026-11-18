@@ -39,17 +39,14 @@ import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.SwipeUp
 import androidx.compose.material.icons.rounded.SystemUpdate
-import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
-import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -105,6 +102,7 @@ import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiSettingsIcon
 import io.github.mangi.eta.ui.components.coui.CouiSwitchPreference
+import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.model.AgentModelPickerProjector
 import io.github.mangi.eta.ui.navigation.AppRoute
 import kotlinx.coroutines.Dispatchers
@@ -117,11 +115,11 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.glass.GlassDialog
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 private object SettingsIconColors {
     val Blue = Color(0xFF4285F4)
@@ -218,6 +216,8 @@ private fun SettingsPageContent(
     }
     var checkingUpdate by remember { mutableStateOf(false) }
     var availableUpdate by remember { mutableStateOf<AppLatestRelease?>(null) }
+    var retainedUpdate by remember { mutableStateOf<AppLatestRelease?>(null) }
+    if (availableUpdate != null) retainedUpdate = availableUpdate
     val checkForUpdate: () -> Unit = {
         if (!checkingUpdate) {
             checkingUpdate = true
@@ -937,6 +937,30 @@ private fun SettingsPageContent(
             MiuixScaffoldPage(
                 title = stringResource(R.string.ui_set_up_7debf9),
                 onBack = onBack,
+                overlay = {
+                    val activeUpdate = availableUpdate ?: retainedUpdate
+                    GlassDialog(
+                        show = availableUpdate != null,
+                        backdrop = currentGlassOverlayBackdrop(),
+                        title = stringResource(R.string.ui_update_available_title),
+                        summary = activeUpdate?.let { update ->
+                            stringResource(R.string.ui_update_available_message, update.version, appVersionName)
+                        },
+                        onDismissRequest = { availableUpdate = null },
+                        onDismissFinished = { if (availableUpdate == null) retainedUpdate = null },
+                    ) {
+                        MiuixDialogActions(
+                            confirmText = stringResource(R.string.ui_update_go_download),
+                            confirmEnabled = activeUpdate != null,
+                            onCancel = { availableUpdate = null },
+                            onConfirm = {
+                                val target = activeUpdate
+                                availableUpdate = null
+                                if (target != null) openUrl(target.url)
+                            },
+                        )
+                    }
+                },
             ) {
                 item(key = "section_agent") {
                     SmallTitle(stringResource(R.string.settings_llm_providers))
@@ -955,10 +979,11 @@ private fun SettingsPageContent(
                             icon = Icons.Rounded.Psychology,
                         )
                         if (effortOptions.size > 1) {
-                            OverlayDropdownPreference(
+                            GlassDropdownPreference(
                                 title = defaultEffortTitle,
                                 items = effortLabels,
                                 selectedIndex = selectedEffortIndex,
+                                backdrop = currentGlassOverlayBackdrop(),
                                 enabled = defaultEffortEnabled,
                                 onSelectedIndexChange = onDefaultEffortSelect,
                                 startAction = {
@@ -1090,10 +1115,11 @@ private fun SettingsPageContent(
                             onClick = { onNavigate(AppRoute.AssistantOverlaySettings) },
                         )
                         if (prefs != null || hasConnectedFramework) {
-                            OverlayDropdownPreference(
+                            GlassDropdownPreference(
                                 title = stringResource(R.string.ui_long_press_the_power_button_1958d0),
                                 items = powerAssistantItems,
                                 selectedIndex = powerAssistantTargets.indexOf(powerAssistantTarget),
+                                backdrop = currentGlassOverlayBackdrop(),
                                 onSelectedIndexChange = onPowerTargetSelect,
                                 startAction = {
                                     SettingsIcon(
@@ -1110,80 +1136,6 @@ private fun SettingsPageContent(
                                 key = Prefs.Keys.ASSISTANT_AUTO_CONFIG,
                                 icon = Icons.Rounded.Settings,
                             )
-                        }
-                    }
-                }
-
-                if (prefs != null || hasConnectedFramework) {
-                    item(key = "section_oem_assistant_compatibility") {
-                        SmallTitle(stringResource(R.string.ui_xiaobu_xiaoai_compatible_entrance_ae918a))
-                        SettingsGroupCard {
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_enable_vendor_assistant_custom_models_c8e465),
-                                key = Prefs.Keys.AGENT_CUSTOM_MODEL,
-                                icon = Icons.Rounded.Cloud,
-                            )
-                            SwitchPref(
-                                context = context,
-                                prefs = prefs,
-                                title = stringResource(R.string.ui_only_take_over_with_agent_prefix_d17556),
-                                key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
-                                icon = Icons.Rounded.FilterAlt,
-                            )
-                        }
-                    }
-                }
-
-                if (prefs != null || hasConnectedFramework || capabilities.root.isGranted || hasUsedSystemizer) {
-                    item(key = "section_gemini") {
-                        SmallTitle("Gemini")
-                        SettingsGroupCard {
-                            if (prefs != null || hasConnectedFramework) {
-                                SwitchPref(
-                                    context = context,
-                                    prefs = prefs,
-                                    title = stringResource(R.string.ui_maintain_hey_google_detection_after_screen_rest_9d6877),
-                                    key = Prefs.Keys.HOTWORD_SELF_HEAL,
-                                    icon = Icons.Rounded.Hearing,
-                                )
-                                SwitchPref(
-                                    context = context,
-                                    prefs = prefs,
-                                    title = stringResource(R.string.ui_lock_screen_evokes_automatic_voice_input_1cde18),
-                                    key = Prefs.Keys.LOCKSCREEN_VOICE_COMMAND,
-                                    icon = Icons.Rounded.Lock,
-                                )
-                                SwitchPref(
-                                    context = context,
-                                    prefs = prefs,
-                                    title = stringResource(R.string.ui_bright_screen_evokes_automatic_voice_input_4358fe),
-                                    key = Prefs.Keys.SCREEN_ON_VOICE_COMMAND,
-                                    icon = Icons.Rounded.SettingsVoice,
-                                )
-                            }
-                            if (capabilities.root.isGranted || hasUsedSystemizer) {
-                                ArrowPreference(
-                                    title = stringResource(R.string.ui_convert_google_apps_to_system_apps_0f6d89),
-                                    startAction = {
-                                        SettingsIcon(
-                                            icon = Icons.Rounded.Inventory,
-                                            enabled = !installingSystemizer,
-                                        )
-                                    },
-                                    summary = if (capabilities.root.isGranted) null else stringResource(R.string.capability_root_required),
-                                    enabled = !installingSystemizer,
-                                    holdDownState = showSystemizerDialog,
-                                    onClick = {
-                                        if (!capabilities.root.isGranted) {
-                                            onNavigate(AppRoute.SystemEnhance)
-                                        } else if (!installingSystemizer) {
-                                            showSystemizerDialog = true
-                                        }
-                                    },
-                                )
-                            }
                         }
                     }
                 }
@@ -1356,38 +1308,19 @@ private fun SettingsPageContent(
         }
     }
 
-    availableUpdate?.let { update ->
-        when (LocalUiStyle.current) {
-            AppearanceUiStyle.COUI -> {
-                CouiConfirmDialog(
-                    visible = true,
-                    title = stringResource(R.string.ui_update_available_title),
-                    message = stringResource(R.string.ui_update_available_message, update.version, appVersionName),
-                    confirmText = stringResource(R.string.ui_update_go_download),
-                    onConfirm = {
-                        availableUpdate = null
-                        openUrl(update.url)
-                    },
-                    onDismissRequest = { availableUpdate = null },
-                )
-            }
-            AppearanceUiStyle.MIUIX -> {
-                WindowDialog(
-                    show = true,
-                    title = stringResource(R.string.ui_update_available_title),
-                    summary = stringResource(R.string.ui_update_available_message, update.version, appVersionName),
-                    onDismissRequest = { availableUpdate = null },
-                ) {
-                    MiuixDialogActions(
-                        confirmText = stringResource(R.string.ui_update_go_download),
-                        onCancel = { availableUpdate = null },
-                        onConfirm = {
-                            availableUpdate = null
-                            openUrl(update.url)
-                        },
-                    )
-                }
-            }
+    if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+        availableUpdate?.let { update ->
+            CouiConfirmDialog(
+                visible = true,
+                title = stringResource(R.string.ui_update_available_title),
+                message = stringResource(R.string.ui_update_available_message, update.version, appVersionName),
+                confirmText = stringResource(R.string.ui_update_go_download),
+                onConfirm = {
+                    availableUpdate = null
+                    openUrl(update.url)
+                },
+                onDismissRequest = { availableUpdate = null },
+            )
         }
     }
 }

@@ -173,6 +173,7 @@ internal fun AgentTasksScreen(onBack: () -> Unit) {
 
     describeTarget?.let { task ->
         ItemDescriptionDialog(
+            show = true,
             title = task.name,
             description = describeTask(context, task, runs.filter { it.taskId == task.id }),
             onDismiss = { describeTarget = null },

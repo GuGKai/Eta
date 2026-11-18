@@ -300,7 +300,10 @@ internal object ChatActionIcons {
         }
     }
 
-    /** 顶栏与菜单共用的“新建对话”线性气泡加号图标（24x24 视口）。 */
+    /**
+     * 旧版“新建对话”线性气泡加号图标，保留用于回退上游 7dc3cb73 的 MapsUgc。
+     * 回退位置：AgentAppShell 新建对话菜单 1 处、ConversationPaneChrome 2 处。
+     */
     val NewChat: ImageVector by lazy {
         ImageVector.Builder(
             name = "ChatNewConversation",

@@ -46,6 +46,8 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MapsUgc
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -105,6 +107,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -112,7 +116,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.foundation.Image
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -160,20 +163,32 @@ import com.itos.coui.topappbar.TopAppBarSurface
 import com.itos.coui.topappbar.TopAppBarButtonGroup
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.app.LocalBlurEnabled
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.coui.CouiTopAppBarIconButton
+import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurColors
+import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.ProgressiveBlur
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.glass.GlassIconButton
+import top.yukonga.miuix.kmp.glass.GlassTopAppBarDefaults
+import top.yukonga.miuix.kmp.glass.glassPanel
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.glass.NewMessage
+import top.yukonga.miuix.kmp.icon.glass.Search
+import top.yukonga.miuix.kmp.icon.glass.SecurityStatus
+import top.yukonga.miuix.kmp.icon.glass.SettingsOutline
+import top.yukonga.miuix.kmp.material.GlassDefaults
+import top.yukonga.miuix.kmp.material.GlassShadows
+import top.yukonga.miuix.kmp.material.GlassShape
+import top.yukonga.miuix.kmp.material.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -361,6 +376,7 @@ internal fun ConversationPaneTopBar(
                 hasCouiToolbarBackdrop = LocalUiStyle.current == AppearanceUiStyle.COUI &&
                     couiBackdrop != null &&
                     CouiToolbarBackdropLocal != null,
+                miuixBackdrop = miuixBackdrop,
                 onClick = onNewConversation,
             )
         }
@@ -426,9 +442,44 @@ internal fun ConversationPaneTopBar(
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            TopBarBackdrop(backdrop = miuixBackdrop) {
-                Box(modifier = modifier.fillMaxWidth()) {
-                    barContent()
+            val progressiveBackdrop = miuixBackdrop?.takeIf { isRuntimeShaderSupported() }
+            val progressive = progressiveBackdrop != null
+            val blurColors = BlurDefaults.blurColors(
+                blendColors = remember(containerColor) { listOf(BlendColorEntry(containerColor.copy(alpha = 0.3f))) },
+            )
+            Layout(
+                modifier = modifier.fillMaxWidth(),
+                content = {
+                    Box(
+                        modifier = if (progressiveBackdrop != null) {
+                            Modifier.progressiveTextureBlur(
+                                backdrop = progressiveBackdrop,
+                                shape = RectangleShape,
+                                gradient = ProgressiveBlur.Top.copy(curve = 0.5f),
+                                blurRadius = GlassTopAppBarDefaults.ProgressiveBlurRadius.value,
+                                colors = blurColors,
+                            )
+                        } else {
+                            Modifier.background(containerColor)
+                        },
+                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        barContent()
+                    }
+                },
+            ) { measurables, constraints ->
+                val foreground = measurables[1].measure(constraints.copy(minWidth = 0, minHeight = 0))
+                val width = constraints.constrainWidth(foreground.width)
+                val height = constraints.constrainHeight(foreground.height)
+                val bandHeight = if (progressive) {
+                    ((height + 20.dp.toPx()) * 1.15f).roundToInt()
+                } else {
+                    height + GlassTopAppBarDefaults.BandOverhang.roundToPx()
+                }
+                val background = measurables[0].measure(Constraints.fixed(width, bandHeight))
+                layout(width, height) {
+                    background.placeRelative(0, 0)
+                    foreground.placeRelative(0, 0)
                 }
             }
         }
@@ -487,6 +538,7 @@ private fun PaneBrandHeader(modifier: Modifier = Modifier) {
 @Composable
 internal fun NewConversationIconButton(
     hasCouiToolbarBackdrop: Boolean,
+    miuixBackdrop: Backdrop?,
     onClick: () -> Unit,
 ) {
     val description = stringResource(R.string.action_new_conversation)
@@ -497,7 +549,7 @@ internal fun NewConversationIconButton(
             if (hasCouiToolbarBackdrop) {
                 // 材质、按压、玻璃全部交给 COUI 顶栏按钮自己画（它从 LocalCouiToolbarBackdrop 采样）。
                 CouiTopAppBarIconButton(
-                    icon = ChatActionIcons.NewChat,
+                    icon = Icons.Rounded.MapsUgc,
                     contentDescription = description,
                     onClick = onClick,
                     dark = dark,
@@ -531,7 +583,7 @@ internal fun NewConversationIconButton(
                     contentAlignment = Alignment.Center,
                 ) {
                     CouiIcon(
-                        imageVector = ChatActionIcons.NewChat,
+                        imageVector = Icons.Rounded.MapsUgc,
                         contentDescription = null,
                         modifier = Modifier.size(ConversationPanelMetrics.NewChatIconSize),
                         tint = colors.title,
@@ -541,23 +593,15 @@ internal fun NewConversationIconButton(
         }
         AppearanceUiStyle.MIUIX -> {
             val colors = MiuixTheme.colorScheme
-            val isDark = colors.surface.luminance() < 0.5f
-            val bg = if (isDark) colors.surfaceContainer else colors.surfaceContainer
-            IconButton(
+            GlassIconButton(
                 onClick = onClick,
-                minWidth = 40.dp,
-                minHeight = 40.dp,
-                backgroundColor = bg.copy(alpha = if (isDark) 0.85f else 0.92f),
-                modifier = Modifier.border(
-                    width = 0.5.dp,
-                    color = colors.outline.copy(alpha = if (isDark) 0.36f else 0.22f),
-                    shape = CircleShape,
-                ),
+                backdrop = miuixBackdrop,
+                size = GlassTopAppBarDefaults.ButtonSize,
             ) {
                 Icon(
-                    imageVector = ChatActionIcons.NewChat,
+                    imageVector = MiuixIcons.Glass.NewMessage,
                     contentDescription = description,
-                    modifier = Modifier.size(ConversationPanelMetrics.NewChatIconSize),
+                    modifier = Modifier.size(28.dp),
                     tint = colors.onSurface,
                 )
             }
@@ -597,11 +641,7 @@ internal fun ConversationPaneBottomDock(
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
     val view = LocalView.current
     val couiDark = CouiTheme.isDark
-    val activeMiuixBackdrop = if (
-        !isCoui &&
-        LocalBlurEnabled.current &&
-        isRuntimeShaderSupported()
-    ) {
+    val activeMiuixBackdrop = if (!isCoui && isRuntimeShaderSupported()) {
         miuixBackdrop
     } else {
         null
@@ -627,16 +667,16 @@ internal fun ConversationPaneBottomDock(
             .progressiveTextureBlur(
                 backdrop = activeMiuixBackdrop,
                 shape = RectangleShape,
-                gradient = ProgressiveBlur.Bottom.copy(curve = 2.1f),
-                blurRadius = 22f,
+                gradient = ProgressiveBlur.Bottom.copy(curve = 1.6f),
+                blurRadius = 56f,
                 colors = BlurColors(
                     blendColors = listOf(
-                        BlendColorEntry(containerColor.copy(alpha = 0.64f)),
+                        BlendColorEntry(containerColor.copy(alpha = 0.36f)),
                     ),
                 ),
             )
             .background(bottomScrimBrush)
-    } else if (activeCouiBackdrop == null) {
+    } else if (!isCoui || activeCouiBackdrop == null) {
         Modifier.background(bottomScrimBrush)
     } else {
         Modifier
@@ -684,6 +724,11 @@ internal fun ConversationPaneBottomDock(
         keyboard?.hide()
     }
 
+    val permissionsDesc = if (hasPermissionAttention) {
+        stringResource(R.string.conversation_permission_attention)
+    } else {
+        stringResource(R.string.route_permissions)
+    }
     val settingsDesc = stringResource(R.string.route_settings)
     val searchPlaceholder = stringResource(R.string.conversation_search_hint)
     val cancelText = stringResource(R.string.action_cancel)
@@ -810,6 +855,8 @@ internal fun ConversationPaneBottomDock(
                 }
             } else {
                 val effectiveCouiBackdrop = activeCouiBackdrop
+                val permissionsIcon = if (isCoui) ConversationPaneIcons.Permissions else MiuixIcons.Glass.SecurityStatus
+                val settingsIcon = if (isCoui) ConversationPaneIcons.Settings else MiuixIcons.Glass.SettingsOutline
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -820,14 +867,24 @@ internal fun ConversationPaneBottomDock(
                         onSearchChange = onSearchChange,
                         couiBackdrop = effectiveCouiBackdrop,
                         cancelText = cancelText,
+                        miuixBackdrop = activeMiuixBackdrop,
                         modifier = Modifier.weight(1f),
                     )
                     PaneDockCircleButton(
-                        icon = ConversationPaneIcons.Settings,
+                        icon = permissionsIcon,
+                        contentDescription = permissionsDesc,
+                        showBadge = hasPermissionAttention,
+                        couiBackdrop = effectiveCouiBackdrop,
+                        miuixBackdrop = activeMiuixBackdrop,
+                        onClick = onOpenPermissions,
+                    )
+                    PaneDockCircleButton(
+                        icon = settingsIcon,
                         contentDescription = settingsDesc,
                         showBadge = false,
                         // 按 COUI-Kit 的标准用法：浮层组件都吃同一份 backdrop，不做裁剪。
                         couiBackdrop = effectiveCouiBackdrop,
+                        miuixBackdrop = activeMiuixBackdrop,
                         onClick = onOpenSettings,
                     )
                 }
@@ -844,6 +901,7 @@ private fun PaneSearchCapsule(
     onSearchChange: (String) -> Unit,
     couiBackdrop: CouiBackdrop?,
     cancelText: String,
+    miuixBackdrop: Backdrop?,
     modifier: Modifier = Modifier,
 ) {
     val placeholder = stringResource(R.string.conversation_search_hint)
@@ -926,9 +984,9 @@ private fun PaneSearchCapsule(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = ConversationPaneIcons.Search,
+                imageVector = if (isCoui) ConversationPaneIcons.Search else MiuixIcons.Glass.Search,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(if (isCoui) 18.dp else 20.dp),
                 tint = if (isFocused) accentColor else hintColor,
             )
             Spacer(Modifier.width(9.dp))
@@ -1028,27 +1086,30 @@ private fun PaneSearchCapsule(
             searchContent()
         }
     } else {
-        val pillShape = CircleShape
-        val bgColor = miuixColors.surfaceContainer
-        val borderColor = if (isFocused) {
-            accentColor.copy(alpha = 0.55f)
-        } else {
-            miuixColors.outline.copy(alpha = if (miuixDark) 0.36f else 0.24f)
-        }
+        val pillShape = remember { GlassShape(ConversationPanelMetrics.BottomDockHeight / 2) }
+        val fallbackBg = GlassTopAppBarDefaults.buttonFill()
         Box(
             modifier = modifier
                 .height(ConversationPanelMetrics.BottomDockHeight)
-                .dropShadow(
+                .glassPanel(
+                    backdrop = miuixBackdrop,
                     shape = pillShape,
-                    shadow = Shadow(
-                        radius = 10.dp,
-                        color = Color.Black,
-                        alpha = if (miuixDark) 0.22f else 0.05f,
-                    ),
+                    style = GlassDefaults.style(miuixDark),
+                    material = GlassTopAppBarDefaults.buttonMaterial(),
+                    stroke = GlassTopAppBarDefaults.buttonStroke(),
+                    shadow = GlassShadows.Regular,
+                    shading = false,
+                    fallback = Modifier
+                        .clip(CircleShape)
+                        .background(fallbackBg),
                 )
-                .clip(pillShape)
-                .background(bgColor, pillShape)
-                .border(if (isFocused) 1.dp else 0.5.dp, borderColor, pillShape),
+                .then(
+                    if (isFocused) {
+                        Modifier.border(1.2.dp, accentColor.copy(alpha = 0.65f), CircleShape)
+                    } else {
+                        Modifier
+                    },
+                ),
             contentAlignment = Alignment.CenterStart,
         ) {
             searchContent()
@@ -1063,12 +1124,12 @@ private fun PaneDockCircleButton(
     showBadge: Boolean,
     couiBackdrop: CouiBackdrop?,
     appearProgress: Float = 1f,
+    miuixBackdrop: Backdrop? = null,
     onClick: () -> Unit,
 ) {
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
     val couiDark = CouiTheme.isDark
     val miuixColors = MiuixTheme.colorScheme
-    val miuixDark = miuixColors.surface.luminance() < 0.5f
 
     val iconTint = if (isCoui) {
         CouiPageDefaults.themeColors(couiDark).title
@@ -1078,7 +1139,7 @@ private fun PaneDockCircleButton(
     val badgeBorderColor = if (isCoui) {
         if (couiDark) Color(0xFF23252A) else Color.White
     } else {
-        miuixColors.surfaceContainer
+        GlassTopAppBarDefaults.buttonFill()
     }
 
     val buttonSize = if (isCoui) 40.dp else ConversationPanelMetrics.DockButtonSize
@@ -1105,36 +1166,18 @@ private fun PaneDockCircleButton(
                 }
             }
         } else {
-            val bgColor = miuixColors.surfaceContainer
-            val borderColor = miuixColors.outline.copy(alpha = if (miuixDark) 0.36f else 0.24f)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .dropShadow(
-                        shape = CircleShape,
-                        shadow = Shadow(
-                            radius = 10.dp,
-                            color = Color.Black,
-                            alpha = if (miuixDark) 0.22f else 0.05f,
-                        ),
-                    ),
+            GlassIconButton(
+                onClick = onClick,
+                backdrop = miuixBackdrop,
+                size = ConversationPanelMetrics.DockButtonSize,
+                modifier = Modifier.fillMaxSize(),
             ) {
-                IconButton(
-                    onClick = onClick,
-                    minWidth = ConversationPanelMetrics.DockButtonSize,
-                    minHeight = ConversationPanelMetrics.DockButtonSize,
-                    backgroundColor = bgColor,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .border(0.5.dp, borderColor, CircleShape),
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = contentDescription,
-                        modifier = Modifier.size(ConversationPanelMetrics.DockIconSize),
-                        tint = iconTint,
-                    )
-                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    modifier = Modifier.size(28.dp),
+                    tint = iconTint,
+                )
             }
         }
 

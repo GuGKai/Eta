@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.RocketLaunch
@@ -94,9 +95,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
@@ -113,7 +116,6 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.ConversationBranchBoundary
 import io.github.mangi.eta.ui.model.branchMessageOutline
 import io.github.mangi.eta.ui.app.AgentConversationRevisionReducer
-import io.github.mangi.eta.ui.app.LocalBlurEnabled
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownStateCache
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
@@ -148,16 +150,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.material.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.glass.GlassIconButton
+import top.yukonga.miuix.kmp.glass.glassPress
 import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -419,8 +423,12 @@ private fun AgentChatScaffold(
     topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
+    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    val chatBackdrop = if (isCoui) null else rememberGlassBackdrop()
+
+    // COUI 保留本地消息模糊层；上游已移除全局 LocalBlurEnabled，API/运行时判断仍保留。
     val surfaceColor = MiuixTheme.colorScheme.surface
-    val frostEnabled = hasMessages && LocalBlurEnabled.current && isRuntimeShaderSupported()
+    val frostEnabled = hasMessages && isRuntimeShaderSupported()
     val messageBackdrop = rememberLayerBackdrop {
         // Backdrop 必须包含不透明底色，否则文字边缘模糊到透明区域时会出现黑边。
         drawRect(surfaceColor)
@@ -453,6 +461,7 @@ private fun AgentChatScaffold(
                 inputSyncVersion = inputSyncVersion,
                 focusInputOnSync = focusInputOnSync,
                 messageEdit = messageEdit,
+                glassBackdrop = chatBackdrop,
                 onSubmit = onSubmit,
                 onInterruptAndSubmit = onInterruptAndSubmit,
                 onSteerSubmit = onSteerSubmit,
@@ -475,41 +484,47 @@ private fun AgentChatScaffold(
         },
     ) { innerPadding ->
         val bottomPadding = innerPadding.calculateBottomPadding()
-        if (!hasMessages) {
-            EmptyChatState(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = topInset, bottom = bottomPadding),
-            )
-        } else {
-            AgentConversationMessages(
-                visibleMessages = visibleMessages,
-                scrollState = scrollState,
-                isStreaming = isStreaming,
-                bottomInset = bottomPadding,
-                topInset = topInset,
-                keepBottomAnchored = keepBottomAnchored,
-                onBottomAnchorChanged = onBottomAnchorChanged,
-                onSuggestionClick = onSuggestionClick,
-                onRunTraceClick = onRunTraceClick,
-                onOpenBrowser = onOpenBrowser,
-                onEditMessage = onEditMessage,
-                onDeleteMessage = onDeleteMessage,
-                onRegenerateMessage = onRegenerateMessage,
-                onBranchMessage = onBranchMessage,
-                onSelectReplyCandidate = onSelectReplyCandidate,
-                messageActionsEnabled = !isStreaming && !isCompacting && !isBranching && messageEdit == null,
-                editTargetMessageId = messageEdit?.targetMessageId,
-                currentBrowserMessageId = currentBrowserMessageId,
-                hasEarlierMessages = hasEarlierMessages,
-                messageStartIndex = messageStartIndex,
-                historyLoadState = historyLoadState,
-                onLoadEarlierMessages = onLoadEarlierMessages,
-                onHistoryViewportChanged = onHistoryViewportChanged,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (frostEnabled) Modifier.layerBackdrop(messageBackdrop) else Modifier),
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .captureGlassBackdrop(chatBackdrop),
+        ) {
+            if (!hasMessages) {
+                EmptyChatState(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = topInset, bottom = bottomPadding),
+                )
+            } else {
+                AgentConversationMessages(
+                    visibleMessages = visibleMessages,
+                    scrollState = scrollState,
+                    isStreaming = isStreaming,
+                    topInset = topInset,
+                    bottomInset = bottomPadding,
+                    keepBottomAnchored = keepBottomAnchored,
+                    onBottomAnchorChanged = onBottomAnchorChanged,
+                    onSuggestionClick = onSuggestionClick,
+                    onRunTraceClick = onRunTraceClick,
+                    onOpenBrowser = onOpenBrowser,
+                    onEditMessage = onEditMessage,
+                    onDeleteMessage = onDeleteMessage,
+                    onRegenerateMessage = onRegenerateMessage,
+                    onBranchMessage = onBranchMessage,
+                    onSelectReplyCandidate = onSelectReplyCandidate,
+                    messageActionsEnabled = !isStreaming && !isCompacting && !isBranching && messageEdit == null,
+                    editTargetMessageId = messageEdit?.targetMessageId,
+                    currentBrowserMessageId = currentBrowserMessageId,
+                    hasEarlierMessages = hasEarlierMessages,
+                    messageStartIndex = messageStartIndex,
+                    historyLoadState = historyLoadState,
+                    onLoadEarlierMessages = onLoadEarlierMessages,
+                    onHistoryViewportChanged = onHistoryViewportChanged,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (frostEnabled) Modifier.layerBackdrop(messageBackdrop) else Modifier),
+                )
+            }
         }
     }
 }
@@ -1804,6 +1819,8 @@ internal fun AgentConversationMessages(
 
     // 滚动层保持整屏，输入器作为后绘制浮层；输入器高度进入列表的
     // afterContentPadding，确保跟到底部时最后一行停在输入器上方。
+    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    val messagesBackdrop = if (isCoui || assistantOverlay) null else rememberGlassBackdrop()
     CompositionLocalProvider(LocalOnChatItemExpand provides onExpandItem) {
         Box(modifier = modifier.clipToBounds()) {
             LazyColumn(
@@ -1811,6 +1828,7 @@ internal fun AgentConversationMessages(
                 verticalArrangement = Arrangement.Top,
                 modifier = Modifier
                     .fillMaxSize()
+                    .captureGlassBackdrop(messagesBackdrop)
                     .onSizeChanged { measuredListHeightPx = it.height }
                     .scrollEndHaptic()
                     .nestedScroll(historyPaging.scrollConnection)
@@ -2019,29 +2037,16 @@ internal fun AgentConversationMessages(
                             )
                         }
                     } else {
-                        IconButton(
-                            modifier = Modifier
-                                .dropShadow(
-                                    shape = CircleShape,
-                                    shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
-                                )
-                                .squircleBorder(
-                                    width = 0.5.dp,
-                                    color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                                    cornerRadius = IconButtonDefaults.CornerRadius,
-                                ),
+                        GlassIconButton(
                             onClick = scrollToBottom,
-                            backgroundColor = MiuixTheme.colorScheme.surfaceContainerHigh,
-                            minWidth = 40.dp,
-                            minHeight = 40.dp,
+                            backdrop = messagesBackdrop,
+                            size = 40.dp,
                         ) {
                             Icon(
-                                imageVector = ConversationPaneIcons.ChevronRight,
+                                imageVector = Icons.Rounded.ArrowDownward,
                                 contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .rotate(90f),
-                                tint = MiuixTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(18.dp),
+                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                             )
                         }
                     }
@@ -2225,6 +2230,7 @@ private fun AgentChatBottomBar(
     inputSyncVersion: Int,
     focusInputOnSync: Boolean,
     messageEdit: MessageEditUiState?,
+    glassBackdrop: Backdrop?,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit,
     onSteerSubmit: (String) -> Unit,
@@ -2323,6 +2329,7 @@ private fun AgentChatBottomBar(
                 onCancelMessageEdit = onCancelMessageEdit,
                 focusInputRequest = focusInputRequest,
                 onFocusInputHandled = onFocusInputHandled,
+                glassBackdrop = glassBackdrop,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -2470,6 +2477,8 @@ private fun EmptyChatState(
     }
 }
 
+
+
 /** 空白首页问候语的放大倍数（约两档字号）。 */
 private const val EmptyGreetingFontScale = 1.3f
 
@@ -2529,6 +2538,7 @@ private class ScrollIndicatorSampler {
             heights.clear()
             calibratedRangePx = 0f
         }
+
         if (heights.size > 6000) heights.clear()
         visible.forEach { item ->
             keys.getOrNull(item.index)?.let { key -> heights[key] = item.size }

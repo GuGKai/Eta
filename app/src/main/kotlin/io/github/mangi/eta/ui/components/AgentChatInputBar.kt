@@ -29,13 +29,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -96,6 +94,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -123,19 +122,25 @@ import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
 import io.github.mangi.eta.ui.model.QueuedMessageUi
-import kotlin.math.roundToInt
-import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.ListPopupColumn
-import top.yukonga.miuix.kmp.basic.ListPopupDefaults
-import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.glass.GlassPopup
+import top.yukonga.miuix.kmp.glass.GlassPopupItem
+import top.yukonga.miuix.kmp.glass.glassPanel
+import top.yukonga.miuix.kmp.glass.glassPress
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.glass.Close
+import top.yukonga.miuix.kmp.material.GlassDefaults
+import top.yukonga.miuix.kmp.material.GlassEdgeStrokes
+import top.yukonga.miuix.kmp.material.GlassMaterials
+import top.yukonga.miuix.kmp.material.GlassShadows
+import top.yukonga.miuix.kmp.material.GlassShape
+import top.yukonga.miuix.kmp.material.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleSurface
-import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowListPopup
 
 private val SendButtonVisualSize = ChatInputActionIconSize
 private val SendIconSize = 16.dp
@@ -223,6 +228,7 @@ internal fun AgentChatInputBar(
     /** 新建对话后的一次性聚焦信号。 */
     focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
+    glassBackdrop: Backdrop? = null,
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -245,13 +251,6 @@ internal fun AgentChatInputBar(
     val canSend = textFieldState.text.isNotBlank() ||
         pendingImages.isNotEmpty() ||
         pendingFileReferences.isNotEmpty()
-    val density = LocalDensity.current
-    val statusBarTopPx = WindowInsets.statusBars.getTop(density)
-    var inputContainerTopPx by remember { mutableIntStateOf(0) }
-    val thinkingPopupMaxHeight = with(density) {
-        (inputContainerTopPx - statusBarTopPx).coerceAtLeast(0).toDp()
-    }.minus(ChatInputPopupMargin * 2)
-        .coerceAtLeast(ListPopupDefaults.MinPopupHeight)
 
     LaunchedEffect(isEditingMessage, inputSyncVersion) {
         // 编辑态与排队消息撤回由外部业务状态驱动；普通输入只保留在本地，避免每个字符把聊天舞台
@@ -413,12 +412,24 @@ internal fun AgentChatInputBar(
         val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
         // 输入框与余额胶囊共用同一份底色，两者在明暗模式下都不会出现色差。
         val inputContainerColor = chatInputContainerColor()
+        val miuixInputBg = if (!isDark && MiuixTheme.colorScheme.surfaceContainer == MiuixTheme.colorScheme.surface) {
+            Color(0xFFF5F6F8)
+        } else {
+            MiuixTheme.colorScheme.surfaceContainer
+        }
+        val defaultInputBorderColor = if (isCoui) {
+            if (couiDark) Color(0x20FFFFFF) else Color(0x0E000000)
+        } else {
+            MiuixTheme.colorScheme.outline.copy(alpha = 0.5f)
+        }
+        val inputBorderColor = if (isCoui) {
+            if (couiDark) Color(0x20FFFFFF) else Color(0x0E000000)
+        } else {
+            MiuixTheme.colorScheme.outline.copy(alpha = 0.5f)
+        }
+        val miuixInputShape = remember { GlassShape(24.dp) }
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .onGloballyPositioned { coordinates ->
-                    inputContainerTopPx = coordinates.positionInWindow().y.roundToInt()
-                },
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
                 modifier = Modifier
@@ -446,22 +457,28 @@ internal fun AgentChatInputBar(
                                 )
                         } else {
                             Modifier
-                                .dropShadow(
-                                    shape = inputContainerShape,
-                                    shadow = Shadow(
-                                        radius = 12.dp,
-                                        color = Color.Black,
-                                        alpha = if (isDark) 0.20f else 0.05f,
+                                .glassPanel(
+                                    backdrop = glassBackdrop,
+                                    shape = miuixInputShape,
+                                    style = GlassDefaults.style(isDark),
+                                    material = GlassMaterials.puredThinGlass(isDark),
+                                    stroke = GlassEdgeStrokes.forTheme(
+                                        isDark = isDark,
+                                        light = GlassEdgeStrokes.SmallLight,
+                                        dark = GlassEdgeStrokes.SmallDark,
                                     ),
-                                )
-                                .squircleSurface(
-                                    color = inputContainerColor,
-                                    cornerRadius = inputRadius,
-                                )
-                                .squircleBorder(
-                                    width = 0.5.dp,
-                                    color = MiuixTheme.colorScheme.outline.copy(alpha = 0.5f),
-                                    cornerRadius = inputRadius,
+                                    shadow = GlassShadows.Regular,
+                                    shading = false,
+                                    fallback = Modifier
+                                        .squircleSurface(
+                                            color = miuixInputBg,
+                                            cornerRadius = 24.dp,
+                                        )
+                                        .squircleBorder(
+                                            width = 0.5.dp,
+                                            color = inputBorderColor,
+                                            cornerRadius = 24.dp,
+                                        ),
                                 )
                         },
                     )
@@ -531,7 +548,7 @@ internal fun AgentChatInputBar(
                                 minHeight = ChatInputActionSize,
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = if (isCoui) Icons.Rounded.Close else MiuixIcons.Glass.Close,
                                     contentDescription = stringResource(R.string.ui_cancel_edit_c698df),
                                     modifier = Modifier.size(ChatInputActionIconSize),
                                     tint = MiuixTheme.colorScheme.onSurface,
@@ -539,8 +556,7 @@ internal fun AgentChatInputBar(
                             }
                         } else {
                             AgentAttachmentPickerButton(
-                                popupAnchorTopPx = inputContainerTopPx,
-                                popupMaxHeight = thinkingPopupMaxHeight,
+                                glassBackdrop = glassBackdrop,
                                 onAttachImage = onAttachImage,
                                 onAttachFiles = onAttachFiles,
                                 onAttachFolder = onAttachFolder,
@@ -549,16 +565,17 @@ internal fun AgentChatInputBar(
 
                             Spacer(modifier = Modifier.width(2.dp))
 
+                        if (isCoui || availableReasoningEfforts.isNotEmpty()) {
                             ThinkingEffortChip(
                                 effort = reasoningEffort,
                                 options = availableReasoningEfforts,
                                 model = modelPickerState.selectedModel,
                                 enabled = !isStreaming,
-                                popupAnchorTopPx = inputContainerTopPx,
-                                popupMaxHeight = thinkingPopupMaxHeight,
+                                glassBackdrop = glassBackdrop,
                                 onEffortChange = onReasoningEffortChange,
                                 onRequestModelSheet = { showModelSheet = true },
                             )
+                        }
                         }
 
                         Spacer(modifier = Modifier.weight(1f))
@@ -724,8 +741,7 @@ private fun ThinkingEffortChip(
     options: List<ReasoningEffort>,
     model: AgentModelOptionUi?,
     enabled: Boolean,
-    popupAnchorTopPx: Int,
-    popupMaxHeight: Dp,
+    glassBackdrop: Backdrop?,
     onEffortChange: (ReasoningEffort) -> Unit,
     onRequestModelSheet: () -> Unit,
     modifier: Modifier = Modifier,
@@ -735,25 +751,89 @@ private fun ThinkingEffortChip(
     val menuEnabled = enabled && options.size > 1
     /** 长按切模型：这个行为由当前会话模型驱动，没有模型时无从切换。 */
     val modelSwitchEnabled = enabled && model != null
+    var chipBounds by remember { mutableStateOf(Rect.Zero) }
+    val active = effort != ReasoningEffort.OFF
+    val interactive = enabled && options.size > 1
+    val binaryToggleTarget = remember(options, effort) {
+        if (options.size == 2 && ReasoningEffort.OFF in options) {
+            options.firstOrNull { it != effort }
+        } else {
+            null
+        }
+    }
     val anchor = rememberCouiMenuAnchor()
     LaunchedEffect(menuEnabled) {
         if (!menuEnabled) showPopup = false
     }
-    val popupPositionProvider = remember(popupAnchorTopPx) {
-        InputPopupPositionProvider(popupAnchorTopPx)
+
+    val colors = MiuixTheme.colorScheme
+    val isDark = colors.surface.luminance() < 0.5f
+    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    val ink = colors.onSurface.copy(alpha = 1f)
+    val contentColor by animateColorAsState(
+        targetValue = if (active) {
+            colors.primary
+        } else {
+            ink.copy(alpha = if (isDark) 0.58f else 0.54f)
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "thinking_content",
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (active) {
+            colors.primary.copy(alpha = if (isDark) 0.18f else 0.10f)
+        } else {
+            ink.copy(alpha = if (isDark) 0.06f else 0.038f)
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "thinking_bg",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (active) {
+            colors.primary.copy(alpha = if (isDark) 0.30f else 0.22f)
+        } else {
+            ink.copy(alpha = if (isDark) 0.10f else 0.065f)
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "thinking_border",
+    )
+
+    val chipLabel = when (effort) {
+        ReasoningEffort.OFF -> stringResource(R.string.reasoning_chip_off)
+        ReasoningEffort.DEFAULT -> stringResource(R.string.reasoning_chip_default)
+        else -> effort.displayName
     }
-    val effortDescription = stringResource(R.string.chat_reasoning_effort, effort.displayName)
+    val accessibilityLabel = stringResource(R.string.chat_reasoning_effort, effort.displayName)
+    val interactionSource = remember { MutableInteractionSource() }
+
     Box(modifier = modifier) {
         // 图标跟随会话当前模型：单击仍是思考强度，长按切模型。
         Box(
             modifier = Modifier
+                .onGloballyPositioned { chipBounds = it.boundsInWindow() }
                 .couiMenuAnchor(anchor)
                 .size(ChatInputActionSize)
                 .clip(CircleShape)
+                .background(bgColor, CircleShape)
+                .border(0.5.dp, borderColor, CircleShape)
+                .then(
+                    if (isCoui) {
+                        Modifier.couiButtonFeedback(isDark, interactionSource, enabled = interactive)
+                    } else {
+                        Modifier.glassPress(interactionSource, enabled = interactive)
+                    },
+                )
                 .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = null,
                     enabled = menuEnabled || modelSwitchEnabled,
+                    role = Role.Button,
                     onClick = {
                         when {
+                            !isCoui && binaryToggleTarget != null -> {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onEffortChange(binaryToggleTarget)
+                            }
                             menuEnabled -> anchor.open { showPopup = true }
                             modelSwitchEnabled -> onRequestModelSheet()
                         }
@@ -765,7 +845,7 @@ private fun ThinkingEffortChip(
                         }
                     },
                 )
-                .semantics { contentDescription = effortDescription },
+                .semantics { contentDescription = accessibilityLabel },
             contentAlignment = Alignment.Center,
         ) {
             ModelBrandMark(
@@ -796,34 +876,31 @@ private fun ThinkingEffortChip(
                     anchor = anchor,
                 )
             }
-            AppearanceUiStyle.MIUIX -> {
-                WindowListPopup(
-                    show = showPopup && menuEnabled && popupAnchorTopPx > 0,
-                    popupPositionProvider = popupPositionProvider,
-                    alignment = PopupPositionProvider.Align.TopStart,
-                    onDismissRequest = { showPopup = false },
-                    maxHeight = popupMaxHeight,
-                ) {
-                    val dismiss = LocalDismissState.current
-                    ListPopupColumn {
-                        options.forEachIndexed { index, option ->
-                            DropdownImpl(
-                                text = option.displayName,
-                                optionSize = options.size,
-                                isSelected = option == effort,
-                                index = index,
-                                onSelectedIndexChange = {
-                                    onEffortChange(option)
-                                    dismiss?.invoke()
-                                },
-                            )
+                AppearanceUiStyle.MIUIX -> {
+                    val overlayBackdrop = currentGlassOverlayBackdrop() ?: glassBackdrop
+                    EtaTopLayer {
+                        GlassPopup(
+                            show = showPopup && interactive,
+                            onDismissRequest = { showPopup = false },
+                            anchorBounds = chipBounds,
+                            backdrop = overlayBackdrop,
+                        ) {
+                            options.forEach { option ->
+                                GlassPopupItem(
+                                    text = option.displayName,
+                                    selected = option == effort,
+                                    onClick = {
+                                        showPopup = false
+                                        onEffortChange(option)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
 
 /**
  * 横向跟随 Chip，竖向则避开整个输入面板；默认下拉定位只会避开 Chip 自身。
