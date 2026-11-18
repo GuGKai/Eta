@@ -58,6 +58,7 @@ internal fun SkillSwitchRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
     onDelete: (() -> Unit)? = null,
+    busy: Boolean = false,
 ) {
     var showDescription by remember(skill.id) { mutableStateOf(false) }
     val description = skill.description.ifBlank { stringResource(R.string.skills_no_description) }
@@ -154,6 +155,8 @@ internal fun SkillSwitchRow(
                         dark = dark,
                         colors = CouiSwitchDefaults.colors(colors.accent, dark),
                         enabled = enabled,
+                        // 写入中只在这一行的开关上转一圈，避免整页因为 busy 而变色闪烁。
+                        loading = busy,
                     )
                 },
             )

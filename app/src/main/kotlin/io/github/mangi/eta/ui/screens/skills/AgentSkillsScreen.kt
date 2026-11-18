@@ -94,7 +94,7 @@ fun AgentSkillsScreen(
                         } else {
                             null
                         },
-                        enabled = !operationPending,
+                        enabled = !state.isImporting,
                         onClick = openZipPicker,
                     )
                 }
@@ -104,7 +104,8 @@ fun AgentSkillsScreen(
                         builtinInstalled.forEachIndexed { index, skill ->
                             SkillSwitchRow(
                                 skill = skill,
-                                enabled = !operationPending,
+                                enabled = !state.isImporting,
+                                busy = state.busySkillId == skill.id,
                                 onToggle = { enabled ->
                                     onAction(AgentSkillsAction.ToggleSkill(skill.id, enabled))
                                 },
@@ -121,7 +122,8 @@ fun AgentSkillsScreen(
                         userInstalled.forEachIndexed { index, skill ->
                             SkillSwitchRow(
                                 skill = skill,
-                                enabled = !operationPending,
+                                enabled = !state.isImporting,
+                                busy = state.busySkillId == skill.id,
                                 onToggle = { enabled ->
                                     onAction(AgentSkillsAction.ToggleSkill(skill.id, enabled))
                                 },
@@ -140,7 +142,7 @@ fun AgentSkillsScreen(
                             CouiPreference(
                                 title = skill.name,
                                 summary = stringResource(R.string.ui_click_to_reinstall_dc60de),
-                                enabled = !operationPending,
+                                enabled = !state.isImporting,
                                 onClick = {
                                     onAction(AgentSkillsAction.ReinstallBuiltin(skill.id))
                                 },
@@ -168,7 +170,7 @@ fun AgentSkillsScreen(
                         action = {
                             CouiButton(
                                 text = stringResource(R.string.skills_import_zip),
-                                enabled = !operationPending,
+                                enabled = !state.isImporting,
                                 role = CouiButtonRole.Primary,
                                 onClick = openZipPicker,
                             )
@@ -205,7 +207,7 @@ fun AgentSkillsScreen(
                                     InfiniteProgressIndicator(size = 20.dp)
                                 }
                             },
-                            enabled = !operationPending,
+                            enabled = !state.isImporting,
                             onClick = openZipPicker,
                         )
                     }
@@ -222,7 +224,8 @@ fun AgentSkillsScreen(
                             builtinInstalled.forEach { skill ->
                                 SkillSwitchRow(
                                     skill = skill,
-                                    enabled = !operationPending,
+                                    enabled = !state.isImporting,
+                                    busy = state.busySkillId == skill.id,
                                     onToggle = { enabled ->
                                         onAction(AgentSkillsAction.ToggleSkill(skill.id, enabled))
                                     },
@@ -243,7 +246,8 @@ fun AgentSkillsScreen(
                             userInstalled.forEach { skill ->
                                 SkillSwitchRow(
                                     skill = skill,
-                                    enabled = !operationPending,
+                                    enabled = !state.isImporting,
+                                    busy = state.busySkillId == skill.id,
                                     onToggle = { enabled ->
                                         onAction(AgentSkillsAction.ToggleSkill(skill.id, enabled))
                                     },
@@ -266,7 +270,7 @@ fun AgentSkillsScreen(
                                 BasicComponent(
                                     title = skill.name,
                                     summary = stringResource(R.string.ui_click_to_reinstall_dc60de),
-                                    enabled = !operationPending,
+                                    enabled = !state.isImporting,
                                     onClick = {
                                         onAction(AgentSkillsAction.ReinstallBuiltin(skill.id))
                                     },
@@ -295,7 +299,7 @@ fun AgentSkillsScreen(
                             action = {
                                 TextButton(
                                     text = stringResource(R.string.skills_import_zip),
-                                    enabled = !operationPending,
+                                    enabled = !state.isImporting,
                                     onClick = openZipPicker,
                                 )
                             },

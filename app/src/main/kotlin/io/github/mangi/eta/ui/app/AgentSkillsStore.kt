@@ -33,11 +33,11 @@ internal class AgentSkillsStore(
     var skillsState by mutableStateOf(AgentSkillsUiState(isLoading = true))
         private set
 
-    fun refreshSkills() {
+    fun refreshSkills(forceRefresh: Boolean = true) {
         scope.launch(Dispatchers.IO) {
             val entries = runCatching {
                 SkillRuntime.createIndexService(appContext)
-                    .listSkillsForManagement(forceRefresh = true)
+                    .listSkillsForManagement(forceRefresh = forceRefresh)
             }.getOrElse {
                 withContext(Dispatchers.Main) {
                     skillsState = skillsState.copy(
@@ -76,26 +76,39 @@ internal class AgentSkillsStore(
 
     fun toggleSkill(skillId: String, enabled: Boolean) {
         if (skillsState.isImporting || skillsState.busySkillId != null) return
-        skillsState = skillsState.copy(busySkillId = skillId)
+        val previousSkills = skillsState.skills
+        // 乐观更新：先把这一行的开关切到目标状态。
+        // COUI 的开关是受控组件，若等 IO 落盘后再改 state，开关会先弹回原位再跳过去，整页跟着闪。
+        skillsState = skillsState.copy(
+            busySkillId = skillId,
+            skills = previousSkills.map { item ->
+                if (item.id == skillId) item.copy(enabled = enabled) else item
+            },
+        )
         scope.launch(Dispatchers.IO) {
             val succeeded = runCatching {
                 SkillRuntime.createIndexService(appContext).setSkillEnabled(skillId, enabled)
             }.isSuccess
             withContext(Dispatchers.Main) {
-                skillsState = skillsState.copy(
-                    busySkillId = null,
-                    notice = if (succeeded) {
-                        skillsState.notice
-                    } else {
-                        newSkillNotice(
+                skillsState = if (succeeded) {
+                    skillsState.copy(busySkillId = null)
+                } else {
+                    // 写入失败才回滚这一行的开关，并给出提示。
+                    skillsState.copy(
+                        busySkillId = null,
+                        skills = previousSkills,
+                        notice = newSkillNotice(
                             title = appContext.getString(R.string.state_unable_to_update_skills_04e56c),
                             message = appContext.getString(R.string.state_the_skill_switch_has_not_changed_please_try_again_la_fa262f),
                             isError = true,
-                        )
-                    },
-                )
+                        ),
+                    )
+                }
             }
-            refreshSkills()
+            if (succeeded) {
+                // 已经按写入结果更新过界面，这里只做一次轻量核对，不再强制重建内置技能索引。
+                refreshSkills(forceRefresh = false)
+            }
         }
     }
 
