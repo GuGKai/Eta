@@ -84,14 +84,18 @@ internal fun ModelProviderListScreen(
         RuntimeConfigRepository.ensureDefaults(EtaApp.serviceInstance)
     }
 
+    // 自行添加（非内置）的提供商置顶，其中最近添加的排最上面；内置提供商保持原有顺序。
     val filteredProviders = remember(providers, searchQuery) {
         val query = searchQuery.trim()
-        providers.filter { provider ->
+        val matched = providers.filter { provider ->
             query.isBlank() ||
                 provider.name.contains(query, ignoreCase = true) ||
                 provider.baseUrl.contains(query, ignoreCase = true) ||
                 provider.typeLabel.contains(query, ignoreCase = true)
         }
+        val userAdded = matched.filterNot { it.isBuiltIn }.sortedByDescending { it.sortOrder }
+        val builtIn = matched.filter { it.isBuiltIn }.sortedBy { it.sortOrder }
+        userAdded + builtIn
     }
 
     when (LocalUiStyle.current) {
