@@ -143,7 +143,9 @@ import com.itos.coui.shape.CouiCapsuleShape
 import com.itos.coui.dialog.CouiDialogDefaults
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
+import com.itos.coui.layout.Divider
 import com.itos.coui.menu.CouiMenuItem
+import com.itos.coui.radiobutton.RadioButton
 import com.itos.coui.menu.Menu
 import com.itos.coui.menu.CouiMenuAnchor
 import com.itos.coui.menu.couiMenuAnchor
@@ -156,14 +158,15 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
-import io.github.mangi.eta.ui.components.coui.CouiIconDivider
+import io.github.mangi.eta.ui.components.coui.CouiIconDividerIndent
+import io.github.mangi.eta.ui.components.coui.CouiSettingsIcon
 import io.github.mangi.eta.ui.components.coui.CouiInputDialog
 import com.itos.coui.dialog.CouiDialogAction
 import com.itos.coui.dialog.CouiDialogPlacement
 import com.itos.coui.dialog.Dialog
 import com.itos.coui.menu.rememberCouiWindowBackdrop
 import io.github.mangi.eta.ui.components.coui.rememberCouiDialogMaterial
-import io.github.mangi.eta.ui.components.coui.CouiPreference
+import io.github.mangi.eta.ui.components.coui.couiPrimaryDialogAction
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import io.github.mangi.eta.ui.model.ConversationWorkspaceUi
@@ -2109,10 +2112,8 @@ private fun WorkspaceMoveDialog(
     val emptyText = stringResource(R.string.workspace_move_empty)
     val removeText = stringResource(R.string.action_remove_from_workspace)
     val cancelText = stringResource(R.string.action_cancel)
-    // 已经在某个工作区里时，不再重复提供「移入同一个工作区」。
-    val targets = remember(workspaces, conversation.workspaceId) {
-        workspaces.filter { it.id != conversation.workspaceId }
-    }
+    // 保留全部分类，当前所在的那个也用右侧圆点标出来（与设置页模型提供商的单选一致）。
+    val targets = workspaces
     val canRemove = conversation.workspaceId != null
 
     when (LocalUiStyle.current) {
@@ -2123,7 +2124,22 @@ private fun WorkspaceMoveDialog(
                 onDismissRequest = onDismiss,
                 dark = couiDark,
                 title = title,
-                confirmAction = CouiDialogAction(text = cancelText, onClick = onDismiss),
+                // 已在分类下时，「移出工作区」是页脚右侧的红色主操作，取消排在它左边。
+                confirmAction = if (canRemove) {
+                    couiPrimaryDialogAction(
+                        text = removeText,
+                        onClick = { onMove(null) },
+                        destructive = true,
+                        dark = couiDark,
+                    )
+                } else {
+                    CouiDialogAction(text = cancelText, onClick = onDismiss)
+                },
+                dismissAction = if (canRemove) {
+                    CouiDialogAction(text = cancelText, onClick = onDismiss)
+                } else {
+                    null
+                },
                 placement = CouiDialogPlacement.Bottom,
                 material = rememberCouiDialogMaterial(couiDark),
                 backdrop = rememberCouiWindowBackdrop(),
@@ -2136,26 +2152,21 @@ private fun WorkspaceMoveDialog(
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = CouiPageDefaults.rowPadding)
                                 .padding(vertical = 8.dp),
                         )
                     }
-                    if (canRemove) {
-                        CouiPreference(
-                            title = removeText,
-                            onClick = { onMove(null) },
-                            showChevron = false,
-                        )
-                        CouiIconDivider()
-                    }
                     targets.forEachIndexed { index, workspace ->
-                        CouiPreference(
-                            title = workspace.name,
-                            onClick = { onMove(workspace.id) },
-                            showChevron = false,
+                        val selected = workspace.id == conversation.workspaceId
+                        WorkspaceMoveOptionRow(
+                            text = workspace.name,
+                            selected = selected,
+                            showDivider = index != targets.lastIndex,
+                            // 选中分类即落库，弹窗随之收起；点当前分类只关掉弹窗。
+                            onClick = {
+                                if (selected) onDismiss() else onMove(workspace.id)
+                            },
                         )
-                        if (index != targets.lastIndex) {
-                            CouiIconDivider()
-                        }
                     }
                 }
             }
@@ -2178,13 +2189,6 @@ private fun WorkspaceMoveDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                if (canRemove) {
-                    TextButton(
-                        text = removeText,
-                        onClick = { onMove(null) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
                 targets.forEach { workspace ->
                     TextButton(
                         text = workspace.name,
@@ -2192,13 +2196,81 @@ private fun WorkspaceMoveDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                TextButton(
-                    text = cancelText,
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (canRemove) {
+                    MiuixDialogActions(
+                        confirmText = removeText,
+                        destructive = true,
+                        onCancel = onDismiss,
+                        onConfirm = { onMove(null) },
+                    )
+                } else {
+                    TextButton(
+                        text = cancelText,
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * 「移动到工作区」的分类选项行：沿用设置页分组行的规格（16dp 内边距、48dp 行高、标题上下居中），
+ * 左侧是文件夹图标（用标题同色，不额外上色），行尾用 COUI 单选圆点标记当前分类，
+ * 与设置页「模型提供商」里选模型的选中样式一致。
+ * 选项之间的分隔线左侧按图标宽度缩进（CouiIconDividerIndent），右侧保持 16dp。
+ */
+@Composable
+private fun WorkspaceMoveOptionRow(
+    text: String,
+    selected: Boolean,
+    showDivider: Boolean,
+    onClick: () -> Unit,
+) {
+    val dark = CouiTheme.isDark
+    val colors = CouiPageDefaults.themeColors(dark)
+    val source = remember { MutableInteractionSource() }
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .couiButtonFeedback(dark, source, true, list = true)
+        .selectable(
+            selected = selected,
+            interactionSource = source,
+            indication = null,
+            enabled = true,
+            role = Role.RadioButton,
+            onClick = onClick,
+        )
+        .heightIn(min = CouiPageDefaults.rowMinHeight)
+        .padding(horizontal = CouiPageDefaults.rowPadding)
+    Row(
+        modifier = rowModifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CouiSettingsIcon(Icons.Rounded.FolderOpen, colors.title)
+        Spacer(modifier = Modifier.width(CouiPageDefaults.iconSpacing))
+        CouiText(
+            text = text,
+            kind = CouiTextKind.ItemTitle,
+            color = colors.title,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        RadioButton(
+            modifier = Modifier
+                .padding(start = 12.dp)
+                .size(24.dp),
+            selected = selected,
+            enabled = true,
+        )
+    }
+    if (showDivider) {
+        Divider(
+            startIndent = CouiIconDividerIndent,
+            endIndent = CouiPageDefaults.rowPadding,
+        )
     }
 }
 
