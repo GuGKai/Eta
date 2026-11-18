@@ -26,11 +26,10 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
-import androidx.compose.material.icons.rounded.GppMaybe
-import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.JoinLeft
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Mic
@@ -144,27 +143,18 @@ private fun SettingsIcon(
     icon: ImageVector,
     enabled: Boolean = true,
 ) {
-    val glyphSize = when (icon) {
-        Icons.AutoMirrored.Rounded.MenuBook -> 22.dp
-        else -> 24.dp
-    }
-    Box(
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
         modifier = Modifier
             .padding(end = 8.dp)
             .size(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(glyphSize),
-            tint = if (enabled) {
-                MiuixTheme.colorScheme.onBackground
-            } else {
-                MiuixTheme.colorScheme.disabledOnSecondaryVariant
-            },
-        )
-    }
+        tint = if (enabled) {
+            MiuixTheme.colorScheme.onBackground
+        } else {
+            MiuixTheme.colorScheme.disabledOnSecondaryVariant
+        },
+    )
 }
 
 /**
@@ -621,7 +611,7 @@ private fun SettingsPageContent(
                     CouiIconDivider()
                     CouiPreference(
                         title = "Subagent",
-                        icon = { CouiSettingsIcon(Icons.Rounded.Hub, SettingsIconColors.Blue) },
+                        icon = { CouiSettingsIcon(Icons.Rounded.JoinLeft, SettingsIconColors.Blue) },
                         onClick = { onNavigate(AppRoute.Subagents) },
                     )
                     CouiIconDivider()
@@ -1031,7 +1021,7 @@ private fun SettingsPageContent(
                         )
                         ArrowPreference(
                             title = "Subagent",
-                            startAction = { SettingsIcon(Icons.Rounded.Hub) },
+                            startAction = { SettingsIcon(Icons.Rounded.JoinLeft) },
                             onClick = { onNavigate(AppRoute.Subagents) },
                         )
                         ArrowPreference(
