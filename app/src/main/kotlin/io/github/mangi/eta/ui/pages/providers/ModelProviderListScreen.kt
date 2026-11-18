@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.pages.providers
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -29,9 +31,12 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
 import com.itos.coui.layout.Item
 import com.itos.coui.radiobutton.RadioButton
+import com.itos.coui.shape.CouiShape
+import com.itos.coui.theme.CouiTheme
 import com.itos.coui.text.CouiTextKind
 import com.itos.coui.text.Text as CouiText
 import io.github.mangi.eta.EtaApp
@@ -398,11 +403,18 @@ private fun ProviderListItem(
                     )
                 },
                 trailing = {
+                    val radioSource = remember { MutableInteractionSource() }
                     Box(
                         modifier = Modifier
                             .padding(start = 12.dp)
                             .size(32.dp)
+                            // 圆形按压反馈：默认 ripple 会按 32dp 方形画出一圈矩形框，
+                            // 这里 clip 成圆并走 COUI 按钮反馈。
+                            .clip(CouiShape(16.dp, 2f))
+                            .couiButtonFeedback(CouiTheme.isDark, radioSource, provider.isEnabled)
                             .clickable(
+                                interactionSource = radioSource,
+                                indication = null,
                                 enabled = provider.isEnabled,
                                 role = Role.RadioButton,
                                 onClick = onSelect,

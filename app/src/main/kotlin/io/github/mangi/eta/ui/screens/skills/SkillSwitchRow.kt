@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.screens.skills
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -15,12 +16,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.itos.coui.dialog.CouiDialogDefaults
+import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.icons.CouiIcons
 import com.itos.coui.layout.CouiPageDefaults
 import com.itos.coui.layout.Item
@@ -28,6 +31,7 @@ import com.itos.coui.menu.CouiMenuItem
 import com.itos.coui.menu.Menu
 import com.itos.coui.menu.couiMenuAnchor
 import com.itos.coui.menu.rememberCouiMenuAnchor
+import com.itos.coui.shape.CouiShape
 import com.itos.coui.switch.CouiSwitchDefaults
 import com.itos.coui.switch.Switch as CouiSwitch
 import com.itos.coui.text.CouiTextKind
@@ -104,11 +108,20 @@ internal fun SkillSwitchRow(
                 },
                 trailing = {
                     Box {
+                        val moreSource = remember { MutableInteractionSource() }
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
+                                // 圆形按压反馈：默认 indication 按 36dp 方形裁剪出矩形框，
+                                // 这里显式 clip 成圆并走 COUI 按钮反馈，与顶栏圆钮保持一致。
+                                .clip(CouiShape(18.dp, 2f))
+                                .couiButtonFeedback(dark, moreSource, true)
                                 .couiMenuAnchor(anchor)
-                                .clickable(role = Role.Button) {
+                                .clickable(
+                                    interactionSource = moreSource,
+                                    indication = null,
+                                    role = Role.Button,
+                                ) {
                                     anchor.open { showMenu = true }
                                 },
                             contentAlignment = Alignment.Center,
