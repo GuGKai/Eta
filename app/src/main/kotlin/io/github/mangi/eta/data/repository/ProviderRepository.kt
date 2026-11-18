@@ -27,9 +27,14 @@ import io.github.mangi.eta.data.provider.OfficialModelCatalog
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import io.github.mangi.eta.data.model.ProviderSourceTypes
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -41,17 +46,34 @@ internal object ProviderRepository {
     @Volatile
     private lateinit var applicationContext: Context
 
+    /** 进程内快照：界面首帧直接用它，避免先渲染「未配置」再被数据流纠正。 */
+    @Volatile
+    private var providersCache: List<ProviderSetting> = emptyList()
+
+    private var warmUpJob: Job? = null
+
     fun init(context: Context) {
         applicationContext = context.applicationContext
         ProviderCredentialRepository.init(context)
+        warmUp()
     }
+
+    fun cachedProviders(): List<ProviderSetting> = providersCache
 
     fun providersFlow(): Flow<List<ProviderSetting>> =
         dao().providersFlow().map { providers ->
             providers
                 .map { it.toDomain() }
                 .sortedBy(ProviderSetting::sortOrder)
+        }.onEach { providers -> providersCache = providers }
+
+    /** 应用启动即订阅一次，让快照提前就绪；失败不影响正常读取。 */
+    private fun warmUp() {
+        if (warmUpJob != null || !::applicationContext.isInitialized) return
+        warmUpJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching { providersFlow().collect { } }
         }
+    }
 
     fun settingsFlow(): Flow<Settings> =
         SettingsDataStore.settingsFlow()

@@ -27,10 +27,15 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
 import java.io.IOException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * 一个工作区（会话文件夹）的持久化记录。
@@ -212,9 +217,26 @@ internal object SettingsDataStore {
     @Volatile
     private lateinit var dataStore: DataStore<Preferences>
 
+    /** 进程内最近一次读到的设置：界面首帧直接用它，避免先闪「未配置 / 不支持」。 */
+    @Volatile
+    private var settingsCache: Settings? = null
+
+    private var warmUpJob: Job? = null
+
     fun init(context: Context) {
         if (!::dataStore.isInitialized) {
             dataStore = context.applicationContext.dataStore
+        }
+        warmUp()
+    }
+
+    fun cachedSettings(): Settings? = settingsCache
+
+    /** 应用启动即订阅一次，让缓存提前就绪；失败不影响正常读取。 */
+    private fun warmUp() {
+        if (warmUpJob != null || !::dataStore.isInitialized) return
+        warmUpJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching { settingsFlow().collect { } }
         }
     }
 
@@ -228,7 +250,9 @@ internal object SettingsDataStore {
                     throw cause
                 }
             }
-            .map { preferences -> preferences.toSettings() }
+            .map { preferences ->
+                preferences.toSettings().also { settingsCache = it }
+            }
     }
 
     suspend fun settings(): Settings = settingsFlow().first()

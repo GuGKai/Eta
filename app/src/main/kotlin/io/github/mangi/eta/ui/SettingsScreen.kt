@@ -241,11 +241,12 @@ private fun SettingsPageContent(
     }
 
     // Provider / Model 选中状态展示
-    val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
+    val providers by ProviderRepository.providersFlow()
+        .collectAsState(initial = ProviderRepository.cachedProviders())
     val selectedProviderId by RuntimeConfigRepository.selectedProviderIdFlow()
-        .collectAsState(initial = null)
+        .collectAsState(initial = RuntimeConfigRepository.cachedSelectedProviderId())
     val selectedModelId by RuntimeConfigRepository.selectedModelIdFlow()
-        .collectAsState(initial = null)
+        .collectAsState(initial = RuntimeConfigRepository.cachedSelectedModelId())
     val selectedProvider = remember(providers, selectedProviderId) {
         providers.find { it.id == selectedProviderId }
     }
