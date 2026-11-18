@@ -164,6 +164,7 @@ import com.itos.coui.topappbar.TopAppBarSurface
 import com.itos.coui.topappbar.TopAppBarButtonGroup
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.coui.CouiTopAppBarIconButton
@@ -443,8 +444,18 @@ internal fun ConversationPaneTopBar(
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            val progressiveBackdrop = miuixBackdrop?.takeIf { isRuntimeShaderSupported() }
+            val progressiveBlurEnabled = LocalAppearanceSettings.current.progressiveBlurEnabled
+            val progressiveBackdrop = miuixBackdrop?.takeIf {
+                progressiveBlurEnabled && isRuntimeShaderSupported()
+            }
             val progressive = progressiveBackdrop != null
+            val fallbackBandBrush = remember(containerColor) {
+                Brush.verticalGradient(
+                    0.0f to containerColor,
+                    0.8f to containerColor.copy(alpha = 0.94f),
+                    1.0f to Color.Transparent,
+                )
+            }
             val blurColors = BlurDefaults.blurColors(
                 blendColors = remember(containerColor) { listOf(BlendColorEntry(containerColor.copy(alpha = 0.3f))) },
             )
@@ -461,7 +472,7 @@ internal fun ConversationPaneTopBar(
                                 colors = blurColors,
                             )
                         } else {
-                            Modifier.background(containerColor)
+                            Modifier.background(fallbackBandBrush)
                         },
                     )
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -642,6 +653,7 @@ internal fun ConversationPaneBottomDock(
     val dockInsets = if (applyIme) safeDockInsets.union(WindowInsets.ime) else safeDockInsets
 
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    val progressiveBlurEnabled = LocalAppearanceSettings.current.progressiveBlurEnabled
     val view = LocalView.current
     val couiDark = CouiTheme.isDark
     val activeMiuixBackdrop = if (!isCoui && isRuntimeShaderSupported()) {
@@ -649,6 +661,7 @@ internal fun ConversationPaneBottomDock(
     } else {
         null
     }
+    val progressiveMiuixBackdrop = if (progressiveBlurEnabled) activeMiuixBackdrop else null
     val activeCouiBackdrop = if (isCoui && view.display != null) couiBackdrop else null
     // SearchBar 的 backdrop 形参是非空类型。canUseCouiNativeSearchBar 已经要求
     // activeCouiBackdrop 非空，这里的备用采样只是给编译器的兜底，非 COUI 主题下
@@ -665,10 +678,10 @@ internal fun ConversationPaneBottomDock(
         )
     }
 
-    val miuixOrFallbackBackdropModifier = if (activeMiuixBackdrop != null) {
+    val miuixOrFallbackBackdropModifier = if (progressiveMiuixBackdrop != null) {
         Modifier
             .progressiveTextureBlur(
-                backdrop = activeMiuixBackdrop,
+                backdrop = progressiveMiuixBackdrop,
                 shape = RectangleShape,
                 gradient = ProgressiveBlur.Bottom.copy(curve = 1.6f),
                 blurRadius = 56f,
