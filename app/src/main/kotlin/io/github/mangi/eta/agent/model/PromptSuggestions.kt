@@ -20,8 +20,8 @@ internal object PromptSuggestions {
     /** 单次最多采用的条数；超出部分丢弃，不用来引导用户做长菜单。 */
     const val MAX_ITEMS: Int = 4
 
-    /** 单条建议的最大字符数，过长说明模型写成了整段话，不适合做 chip。 */
-    const val MAX_ITEM_CHARS: Int = 120
+    /** 单条建议的最大字符数：界面按单行显示，超长会被截断，所以在上游就卡住。 */
+    const val MAX_ITEM_CHARS: Int = 24
 
     private val BLOCK = Regex("(?s)<suggestions>(.*?)</suggestions>")
 

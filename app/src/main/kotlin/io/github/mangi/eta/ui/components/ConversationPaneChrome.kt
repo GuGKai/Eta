@@ -285,7 +285,8 @@ internal fun conversationPaneEdgeShadowWidth(): Dp {
 }
 
 private val EdgeShadowLightWidth = 15.dp
-private val EdgeShadowDarkWidth = 12.dp
+/** 暗色临时关到 0（不画阴影）；要恢复改回 5.dp 即可，绘制侧对 0 已经短路。 */
+private val EdgeShadowDarkWidth = 0.dp
 
 /**
  * COUI 顶栏内部的子 backdrop（`LocalCouiToolbarBackdrop` 在源码里是 internal，只能反射拿一次）。

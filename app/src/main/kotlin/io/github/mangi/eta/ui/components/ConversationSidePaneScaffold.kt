@@ -347,7 +347,8 @@ fun ConversationSidePaneScaffold(
                                     // 单次渐变填充：外侧 alpha 按 smoothstep 平滑收束到 0，
                                     // 不再叠几十层描边（叠层的极小 alpha 写进 8 位位图会被量化成 0，
                                     // 尾部整段消失，看着就是"没渐变 + 最外侧一刀切"）。
-                                    clipPath(edgeShadowOuterPath) {
+                                    // 宽度 0（暗色临时关阴影）时整块短路，不做多余的裁剪与填充。
+                                    if (shadowWidthPx > 0f) clipPath(edgeShadowOuterPath) {
                                         clipPath(pageClipPath, clipOp = ClipOp.Difference) {
                                             val bandLeft = -shadowWidthPx
                                             // 左竖边：横向渐变，垂直于轮廓淡出。

@@ -1378,7 +1378,7 @@ private fun SuggestionChips(
                 text = prompt,
                 selected = false,
                 onClick = { onSuggestionClick(prompt) },
-                maxLines = 2,
+                maxLines = 1,
                 fontSize = chipFontSize,
             )
         }
