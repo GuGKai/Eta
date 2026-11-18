@@ -1357,6 +1357,8 @@
     <string name="auto_skills_title">Learn operation skills</string>
     <string name="auto_skills_summary">Summarize verified solutions after difficult app operations. Skills can be reviewed, disabled or deleted in Skills; makes additional API requests.</string>
     <string name="automation_title">Automatic tasks</string>
+    <string name="automation_tasks_section">Tasks</string>
+    <string name="automation_tasks_more_named">More actions for task %1$s</string>
     <string name="automation_run_count">%1$d / %2$d runs</string>
     <string name="automation_trigger_label">Trigger</string>
     <string name="automation_filters_label">Filters</string>

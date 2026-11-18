@@ -1310,6 +1310,8 @@
     <string name="auto_skills_title">自動學習操作技能</string>
     <string name="auto_skills_summary">應用操作經過反覆嘗試並成功後，總結可重用技能。可在技能頁查看、停用或刪除；會產生額外 API 請求。</string>
     <string name="automation_title">自動任務</string>
+    <string name="automation_tasks_section">任務</string>
+    <string name="automation_tasks_more_named">任務「%1$s」的更多操作</string>
     <string name="automation_run_count">已執行 %1$d / %2$d 次</string>
     <string name="automation_trigger_label">觸發方式</string>
     <string name="automation_filters_label">篩選條件</string>
