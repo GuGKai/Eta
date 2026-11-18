@@ -220,3 +220,20 @@ internal fun List<ProviderSetting>.enabledModel(modelId: String?): ProviderModel
 internal fun ProviderSetting.selectedOrFirstModel(modelId: String?): Model? =
     models.firstOrNull { it.id == modelId && it.isEnabled }
         ?: models.filter { it.isEnabled }.minByOrNull { it.sortOrder }
+
+/**
+ * 提供商列表的统一展示顺序：自行添加（非内置）的排在前面，其中最近添加的在最上面；
+ * 内置提供商之间保持各自的 sortOrder。
+ *
+ * 数据层（[io.github.mangi.eta.data.repository.ProviderRepository]）与各选择器共用这份规则，
+ * 避免出现「设置页一个顺序、模型选择弹窗又是另一个顺序」。
+ */
+internal val ProviderSettingDisplayOrder: Comparator<ProviderSetting> =
+    compareBy<ProviderSetting> { if (it.isBuiltIn) 1 else 0 }
+        .thenComparator { left, right ->
+            if (left.isBuiltIn) {
+                left.sortOrder.compareTo(right.sortOrder)
+            } else {
+                right.sortOrder.compareTo(left.sortOrder)
+            }
+        }

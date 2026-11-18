@@ -5,6 +5,7 @@ import io.github.mangi.eta.agent.subagent.SubagentActivitySnapshot
 import io.github.mangi.eta.data.model.Model
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ProviderSetting
+import io.github.mangi.eta.data.model.ProviderSettingDisplayOrder
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import java.text.NumberFormat
 import java.util.Locale
@@ -109,7 +110,7 @@ internal object AgentModelPickerProjector {
             .asSequence()
             .filter(ProviderSetting::isEnabled)
             .filter { it.authMode == ProviderAuthModes.API_KEY || ProviderAuthModes.isOAuth(it.authMode) }
-            .sortedBy(ProviderSetting::sortOrder)
+            .sortedWith(ProviderSettingDisplayOrder)
             .toList()
         val selectedProvider = enabledProviders.firstOrNull { it.id == selectedProviderId }
         val selectedModel = selectedProvider

@@ -15,6 +15,7 @@ import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ModelSource
 import io.github.mangi.eta.data.model.OpenAiCompatibleProviderSetting
 import io.github.mangi.eta.data.model.ProviderSetting
+import io.github.mangi.eta.data.model.ProviderSettingDisplayOrder
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.Settings
@@ -64,7 +65,7 @@ internal object ProviderRepository {
         dao().providersFlow().map { providers ->
             providers
                 .map { it.toDomain() }
-                .sortedBy(ProviderSetting::sortOrder)
+                .sortedWith(ProviderSettingDisplayOrder)
         }.onEach { providers -> providersCache = providers }
 
     /** 应用启动即订阅一次，让快照提前就绪；失败不影响正常读取。 */
@@ -84,7 +85,7 @@ internal object ProviderRepository {
     suspend fun allProviders(): List<ProviderSetting> =
         dao().providers()
             .map { it.toDomain() }
-            .sortedBy(ProviderSetting::sortOrder)
+            .sortedWith(ProviderSettingDisplayOrder)
 
     suspend fun providerById(id: String): ProviderSetting? =
         dao().providerById(id)?.toDomain()
@@ -243,6 +244,8 @@ internal object ProviderRepository {
         val providers = allProviders()
         val settings = SettingsDataStore.settings()
         val selectedProvider = providers.firstOrNull { it.id == settings.selectedProviderId && it.isEnabled }
+            // 兜底固定落到内置 DeepSeek：它是本机默认想用的连接。被禁用时再退回列表里第一个可用项。
+            ?: providers.firstOrNull { it.id == BuiltinProviders.DEEPSEEK_ID && it.isEnabled }
             ?: providers.firstOrNull { it.isEnabled }
         val activeModel = selectedProvider
             ?.takeIf { it.id == settings.selectedProviderId }
