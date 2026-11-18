@@ -39,9 +39,9 @@ internal object RuntimeConfigRepository {
 
     fun selectedModelIdFlow() = SettingsDataStore.selectedModelIdFlow()
 
-    fun cachedSelectedProviderId(): String? = SettingsDataStore.cachedSettings()?.selectedProviderId
+    fun cachedSelectedProviderId(): String? = SettingsDataStore.cachedSettingsOrNull()?.selectedProviderId
 
-    fun cachedSelectedModelId(): String? = SettingsDataStore.cachedSettings()?.selectedModelId
+    fun cachedSelectedModelId(): String? = SettingsDataStore.cachedSettingsOrNull()?.selectedModelId
 
     fun subagentSettingsFlow() = SettingsDataStore.subagentSettingsFlow()
 

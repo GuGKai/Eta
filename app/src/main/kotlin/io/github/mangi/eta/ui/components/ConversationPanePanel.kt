@@ -400,7 +400,7 @@ internal fun ConversationPanePanel(
     // 不再叠加 Miuix 的 LayerBackdrop 渐进模糊（两套引擎一起跑会闪、观感也对不上会话页）。
     val bodyCaptureModifier = when {
         isCoui && couiBackdrop != null -> Modifier.couiBackdrop(couiBackdrop)
-        !isCoui && miuixBackdrop != null -> Modifier.captureGlassBackdrop(miuixBackdrop)
+        !isCoui && isRevealed && miuixBackdrop != null -> Modifier.captureGlassBackdrop(miuixBackdrop)
         else -> Modifier
     }
 

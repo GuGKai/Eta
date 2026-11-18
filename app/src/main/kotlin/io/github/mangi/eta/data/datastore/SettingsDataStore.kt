@@ -242,6 +242,8 @@ internal object SettingsDataStore {
         }
     }
 
+    fun cachedSettingsOrNull(): Settings? = settingsCache
+
     fun settingsFlow(): Flow<Settings> {
         ensureInitialized()
         return dataStore.data

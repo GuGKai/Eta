@@ -86,6 +86,7 @@ internal object ProviderRepository {
         dao().providers()
             .map { it.toDomain() }
             .sortedWith(ProviderSettingDisplayOrder)
+            .also { providersCache = it }
 
     suspend fun providerById(id: String): ProviderSetting? =
         dao().providerById(id)?.toDomain()
