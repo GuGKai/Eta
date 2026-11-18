@@ -529,7 +529,11 @@ internal fun ConversationPaneBottomDock(
         null
     }
     val activeCouiBackdrop = if (isCoui && view.display != null) couiBackdrop else null
-    val couiDockBackdrop = rememberCouiBackdrop(parent = activeCouiBackdrop)
+    // SearchBar 的 backdrop 形参是非空类型。canUseCouiNativeSearchBar 已经要求
+    // activeCouiBackdrop 非空，这里的备用采样只是给编译器的兜底，非 COUI 主题下
+    // 该分支根本不渲染，不会被 couiBackdrop 挂上去，也就不参与任何录制。
+    val fallbackCouiBackdrop = rememberCouiBackdrop()
+    val dockCouiBackdrop = activeCouiBackdrop ?: fallbackCouiBackdrop
 
     val bottomScrimBrush = remember(containerColor) {
         Brush.verticalGradient(
@@ -616,7 +620,7 @@ internal fun ConversationPaneBottomDock(
             // 独立背景图层：只负责画底部渐变模糊，搜索框与圆形按钮在它上面。
             CouiBottomGradientBlurLayer(
                 backdrop = activeCouiBackdrop,
-                recordBackdrop = couiDockBackdrop,
+                recordBackdrop = activeCouiBackdrop,
                 modifier = Modifier.matchParentSize(),
             )
         }
@@ -665,7 +669,7 @@ internal fun ConversationPaneBottomDock(
                             },
                             clearDescription = clearDescription,
                             dark = couiDark,
-                            backdrop = couiDockBackdrop,
+                            backdrop = dockCouiBackdrop,
                             // COUI 的 SearchBar 把投影强度完全交给这个「滚动进度」：collapse 态下
                             // drop = (widthProgress - 0.8)/0.2，而折叠时 widthProgress 恒为 0，
                             // 于是 alphaScale 被算成 0，阴影色 alpha 也乘 0 —— 一条投影都没有。
@@ -688,7 +692,7 @@ internal fun ConversationPaneBottomDock(
                                 showBadge = false,
                                 // 恢复 COUI 材质（主题玻璃感）。材质 patch 按节点矩形铺满，
                                 // 按 COUI-Kit 规范不做裁剪，圆角由 shape 的描边与内容层决定。
-                                couiBackdrop = couiDockBackdrop,
+                                couiBackdrop = activeCouiBackdrop,
                                 appearProgress = buttonsProgress,
                                 onClick = { if (!searchExpanded) onOpenSettings() },
                             )
@@ -727,7 +731,7 @@ internal fun ConversationPaneBottomDock(
                     }
                 }
             } else {
-                val effectiveCouiBackdrop = if (activeCouiBackdrop != null) couiDockBackdrop else null
+                val effectiveCouiBackdrop = activeCouiBackdrop
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,

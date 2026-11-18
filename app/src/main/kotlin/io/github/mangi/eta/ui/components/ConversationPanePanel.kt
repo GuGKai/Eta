@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.key
 import androidx.compose.foundation.rememberScrollState
@@ -184,6 +183,7 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
 import top.yukonga.miuix.kmp.window.WindowListPopup
+import com.itos.coui.search.CouiSearchBarDefaults
 
 @Stable
 private class PaneBarInsets {
@@ -338,10 +338,11 @@ internal fun ConversationPanePanel(
                 .orEmpty()
         }
     }
-    // 搜索结果可能来自任意分类：点击后把分类 chip 归位到「全部」，
-    // 这样结束搜索时这条会话一定还在当前列表里，不会因为停留在别的文件夹而「消失」。
+    // 搜索结果可能来自任意分类：只有搜索态下才把分类 chip 归位到「全部」，
+    // 这样结束搜索时这条会话一定还在当前列表里，不会因为停留在别的文件夹而「消失」；
+    // 非搜索态点会话就留在用户当前选的分类里，不要擅自跳回「全部」。
     val selectConversationRow: (String) -> Unit = { conversationId ->
-        if (isCoui) selectWorkspace(WorkspaceChipAllKey)
+        if (isCoui && isSearching) selectWorkspace(WorkspaceChipAllKey)
         onConversationSelected(conversationId)
     }
     val groups = remember(scopedConversations) { scopedConversations.groupForDrawer() }
@@ -379,8 +380,8 @@ internal fun ConversationPanePanel(
     val couiBackdrop = if (isCoui) rememberCouiBackdrop() else null
     val miuixBackdrop = if (!isCoui) rememberTopBarBackdrop() else null
     val barInsets = remember { PaneBarInsets() }
-    // 侧栏根节点坐标：用来把按下的局部坐标换算到窗口坐标，和 dock 登记的搜索框范围比对。
-    var paneRootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // 底部遮罩要拿搜索框的窗口坐标换算到面板坐标，才能贴着胶囊顶边画渐变。
+    var bodyOriginInWindow by remember { mutableStateOf(Offset.Zero) }
     // COUI 侧只保留 COUI 自己的 backdrop 录制：顶栏、按钮、chip 全部从它采样，
     // 不再叠加 Miuix 的 LayerBackdrop 渐进模糊（两套引擎一起跑会闪、观感也对不上会话页）。
     val bodyCaptureModifier = when {
@@ -393,24 +394,7 @@ internal fun ConversationPanePanel(
         modifier = modifier
             .width(width)
             .fillMaxHeight()
-            .background(containerColor)
-            .onGloballyPositioned { paneRootCoordinates = it }
-            .pointerInput(Unit) {
-                // 只观察、不消费按下事件：列表滚动、条目点击、顶栏按钮全部照旧，
-                // 只是额外判断这一下是否落在搜索胶囊外面，是就让 dock 收起搜索态。
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        if (event.type != PointerEventType.Press) continue
-                        val searchBounds = ConversationPaneSearchDock.barBoundsInWindow ?: continue
-                        val coords = paneRootCoordinates ?: continue
-                        val position = event.changes.firstOrNull()?.position ?: continue
-                        if (!searchBounds.contains(coords.localToWindow(position))) {
-                            ConversationPaneSearchDock.dismissRequest++
-                        }
-                    }
-                }
-            },
+            .background(containerColor),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // 测量顶栏与底栏真实高度（含安全区与 IME），同步给滚动画布的 contentPadding，
@@ -426,7 +410,47 @@ internal fun ConversationPanePanel(
                         modifier = Modifier
                             .fillMaxSize()
                             .then(bodyCaptureModifier)
-                            .background(containerColor),
+                            .background(containerColor)
+                            .onGloballyPositioned { bodyOriginInWindow = it.localToWindow(Offset.Zero) }
+                            // 底部遮罩画在列表内容之上（drawContent 之后）：从搜索框胶囊顶边往上
+                            // 由透明线性渐到页面底色，把列表被 LazyColumn 裁断的那一行彻底压掉；
+                            // 胶囊顶边以下用整块纯色接到页面底部。画在面板层是因为 dock 容器的高
+                            // 度不够（渐变会被容器边界裁成一截，看起来还是一条硬线）。
+                            .drawWithContent {
+                                drawContent()
+                                val bar = ConversationPaneSearchDock.barBoundsInWindow
+                                    ?: return@drawWithContent
+                                if (bar.height <= 1f) return@drawWithContent
+                                val capsuleHeight = CouiSearchBarDefaults.surfaceHeight.toPx()
+                                val capsuleTop = bar.top - bodyOriginInWindow.y +
+                                    (bar.height - capsuleHeight) / 2f
+                                // 实色区上沿压到胶囊顶下方一点：渐变带整体下移后，淡出完全发生在
+                                // 胶囊上方的可见区里，胶囊本身及其下方由后面的实色接住。
+                                val solidTop = capsuleTop + 2.dp.toPx()
+                                val fadeHeight = 66.dp.toPx()
+                                val fadeTop = solidTop - fadeHeight
+                                // 不用 Brush.verticalGradient：这块离屏层里的 shader 渐变实测画不出
+                                // 可感知的过渡（整段等于没画，硬边就是这么来的）。改成逐条纯色矩形，
+                                // 和下面的纯色区走同一条绘制路径，alpha 线性递增。
+                                val slices = 28
+                                val sliceHeight = fadeHeight / slices
+                                for (index in 0 until slices) {
+                                    val progress = (index + 0.5f) / slices
+                                    drawRect(
+                                        color = containerColor.copy(alpha = progress),
+                                        topLeft = Offset(0f, fadeTop + index * sliceHeight),
+                                        size = Size(size.width, sliceHeight + 0.5f),
+                                    )
+                                }
+                                drawRect(
+                                    color = containerColor,
+                                    topLeft = Offset(0f, solidTop),
+                                    size = Size(
+                                        size.width,
+                                        (size.height - solidTop).coerceAtLeast(1f),
+                                    ),
+                                )
+                            },
                     ) {
                         LazyColumn(
                             state = listState,
