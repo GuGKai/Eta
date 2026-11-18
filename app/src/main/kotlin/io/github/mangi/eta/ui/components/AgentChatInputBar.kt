@@ -764,7 +764,9 @@ private fun ThinkingEffortChip(
     val menuEnabled = enabled && options.size > 1
     /** 长按切模型：这个行为由当前会话模型驱动，没有模型时无从切换。 */
     val modelSwitchEnabled = enabled && model != null
+    var chipTopPx by remember { mutableFloatStateOf(0f) }
     var chipBottomPx by remember { mutableFloatStateOf(0f) }
+    var measuredPopupHeightPx by remember { mutableFloatStateOf(0f) }
     val active = effort != ReasoningEffort.OFF
     val interactive = enabled && options.size > 1
     val binaryToggleTarget = remember(options, effort) {
@@ -822,7 +824,9 @@ private fun ThinkingEffortChip(
     val useTransformPopup = !isCoui && binaryToggleTarget == null
     val popupLayout = rememberInputBarPopupLayout(
         inputContainerTopPx = inputContainerTopPx,
+        anchorTopPx = chipTopPx,
         anchorBottomPx = chipBottomPx,
+        measuredHeightPx = measuredPopupHeightPx,
     )
     // 变形弹层的锚点内容：与输入栏里的圆形品牌图标保持同一视觉。
     val chipContent: @Composable () -> Unit = {
@@ -844,7 +848,11 @@ private fun ThinkingEffortChip(
                                 anchor = popupAnchor,
                                 cornerRadius = 20.dp,
                             )
-                            .onGloballyPositioned { chipBottomPx = it.boundsInWindow().bottom }
+                            .onGloballyPositioned {
+                                val bounds = it.boundsInWindow()
+                                chipTopPx = bounds.top
+                                chipBottomPx = bounds.bottom
+                            }
                     } else {
                         Modifier.couiMenuAnchor(anchor)
                     },
@@ -938,6 +946,7 @@ private fun ThinkingEffortChip(
                             backdrop = overlayBackdrop,
                             gap = popupLayout.gap,
                             sizing = GlassPopupSizing(maxHeight = popupLayout.maxHeight),
+                            onMeasured = { measuredPopupHeightPx = it.height },
                             anchorContent = chipContent,
                         ) {
                             options.forEach { option ->
