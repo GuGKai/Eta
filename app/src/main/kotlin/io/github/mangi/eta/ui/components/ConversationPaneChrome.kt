@@ -226,13 +226,66 @@ internal fun conversationPaneCardColor(): Color {
     return MiuixTheme.colorScheme.surfaceContainer
 }
 
+/**
+ * 侧栏推开时压在会话页上的遮罩底色：深色模式压黑、浅色模式提白。
+ * 透明度按拉开进度从 0 长到 [conversationPaneChatScrimAlpha]。
+ */
 @Composable
-internal fun conversationPaneEdgeBorderColor(): Color {
+internal fun conversationPaneChatScrimColor(): Color {
     if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
-        return if (CouiTheme.isDark) Color(0x16FFFFFF) else Color(0x10000000)
+        return if (CouiTheme.isDark) Color.Black else Color.White
     }
-    return MiuixTheme.colorScheme.dividerLine.copy(alpha = 0.42f)
+    return if (MiuixTheme.colorScheme.background.luminance() > 0.5f) Color.White else Color.Black
 }
+
+/**
+ * 遮罩满开时的透明度：浅色下会话页要压得更白才分得开；
+ * 深色不再叠遮罩，靠分界线那道阴影足够分层。
+ */
+@Composable
+internal fun conversationPaneChatScrimAlpha(): Float {
+    val dark = if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+        CouiTheme.isDark
+    } else {
+        MiuixTheme.colorScheme.background.luminance() <= 0.5f
+    }
+    return if (dark) ChatScrimAlphaDark else ChatScrimAlphaLight
+}
+
+private const val ChatScrimAlphaLight = 0.50f
+private const val ChatScrimAlphaDark = 0f
+
+/**
+ * 会话页向左投出的渐变阴影色：贴着分界最深，向外渐隐到透明。
+ * 浅色用很淡的深灰压一道，深色反过来用比面板底色亮的灰，当分界线上的高光。
+ */
+@Composable
+internal fun conversationPaneEdgeShadowColor(): Color {
+    if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+        return if (CouiTheme.isDark) Color(0x2E828282) else Color(0x0D333333)
+    }
+    return if (MiuixTheme.colorScheme.background.luminance() > 0.5f) {
+        Color(0x0D333333)
+    } else {
+        Color(0x2E828282)
+    }
+}
+
+/**
+ * 阴影带宽度：深色只留很窄的一道（比底色亮，当分界线上的高光），浅色维持原来 15dp。
+ */
+@Composable
+internal fun conversationPaneEdgeShadowWidth(): Dp {
+    val dark = if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+        CouiTheme.isDark
+    } else {
+        MiuixTheme.colorScheme.background.luminance() <= 0.5f
+    }
+    return if (dark) EdgeShadowDarkWidth else EdgeShadowLightWidth
+}
+
+private val EdgeShadowLightWidth = 15.dp
+private val EdgeShadowDarkWidth = 12.dp
 
 /**
  * COUI 顶栏内部的子 backdrop（`LocalCouiToolbarBackdrop` 在源码里是 internal，只能反射拿一次）。

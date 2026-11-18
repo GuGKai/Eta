@@ -698,14 +698,6 @@ internal fun ConversationPanePanel(
                 }
             }
 
-            // 侧栏物理右侧细微收边，保证浅/深/纯黑模式下与右侧聊天舞台始终保持利落边界。
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .width(0.5.dp)
-                    .background(conversationPaneEdgeBorderColor()),
-            )
         }
     }
 

@@ -29,9 +29,20 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
@@ -58,7 +69,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private object ConversationPaneMetrics {
     val PaneMaxWidth = 340.dp
     val PaneWidthFraction = 0.84f
-    const val ChatScrimAlpha = 0.16f
+    /** 会话页分界侧向外渐隐的阴影：横向渐变的停靠点数。宽度按明暗分开取，见 [conversationPaneEdgeShadowWidth]。 */
+    const val EdgeShadowGradientStops = 32
+    /** 遮罩机制沿用上游：侧栏拉开进度 0 → 1 时叠 0% → 满值（亮 50% / 暗 30%），亮/暗各一套底色。 */
     const val SettleDampingRatio = 1f
     const val SettleStiffness = 146f
     const val SettleVisibilityThresholdPx = 0.5f
@@ -100,6 +113,12 @@ fun ConversationSidePaneScaffold(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val density = LocalDensity.current
+        // 会话页贴住分界一侧的圆角，跟机身屏幕圆角一致。
+        val screenCornerRadius = rememberScreenCornerRadius()
+        val edgeShadowColor = conversationPaneEdgeShadowColor()
+        val chatScrimAlpha = conversationPaneChatScrimAlpha()
+        val edgeShadowWidth = conversationPaneEdgeShadowWidth()
+        val chatScrimColor = conversationPaneChatScrimColor()
         val paneWidth = minOf(maxWidth * ConversationPaneMetrics.PaneWidthFraction, ConversationPaneMetrics.PaneMaxWidth)
         val paneWidthPx = with(density) { paneWidth.toPx() }
         val anchors = remember(paneWidthPx) {
@@ -261,10 +280,137 @@ fun ConversationSidePaneScaffold(
                     )
                     Box(
                         modifier = Modifier.fillMaxSize()
-                            .drawWithContent {
-                                drawContent()
-                                val progress = conversationPaneMotion(paneDragState.offset, paneWidthPx).progress
-                                drawRect(Color.Black, alpha = ConversationPaneMetrics.ChatScrimAlpha * progress)
+                            // 侧栏推开后，聊天区是一张固定圆角的卡片：圆角恒等于机身屏幕圆角，
+                            // 收起状态下才回到直角。只在这里裁画布，不套 graphicsLayer——
+                            // 离屏合成会把内部的模糊与投影裁成硬边。
+                            .drawWithCache {
+                                // 尺寸、圆角、阴影色都不随拖动变化，只在这里算一次：
+                                // 裁剪路径建一次复用，阴影带预渲染成位图。
+                                val cornerRadiusPx = screenCornerRadius.toPx()
+                                val shadowWidthPx = edgeShadowWidth.toPx()
+                                val pageClipPath = Path().apply {
+                                    addRoundRect(
+                                        RoundRect(
+                                            rect = Rect(Offset.Zero, size),
+                                            topLeft = CornerRadius(cornerRadiusPx, cornerRadiusPx),
+                                            bottomLeft = CornerRadius(cornerRadiusPx, cornerRadiusPx),
+                                        ),
+                                    )
+                                }
+                                // 分界阴影带：把页面轮廓整体向外膨一个阴影宽度得到外圈，再用
+                                // Difference 把页面本身挖掉，剩下的正好是贴着左上圆角、左竖边、
+                                // 左下圆角的一条弯带，圆角处自然跟着弧线贴合。
+                                val edgeShadowOuterPath = Path().apply {
+                                    addRoundRect(
+                                        RoundRect(
+                                            rect = Rect(
+                                                offset = Offset(-shadowWidthPx, -shadowWidthPx),
+                                                size = Size(
+                                                    width = size.width + shadowWidthPx * 2f,
+                                                    height = size.height + shadowWidthPx * 2f,
+                                                ),
+                                            ),
+                                            cornerRadius = CornerRadius(
+                                                cornerRadiusPx + shadowWidthPx,
+                                                cornerRadiusPx + shadowWidthPx,
+                                            ),
+                                        ),
+                                    )
+                                }
+                                // 直边段用横向渐变，上下圆角用径向渐变（圆心与圆角同心），
+                                // 淡出方向始终垂直于轮廓，圆角处才真的跟着弧线走。
+                                val edgeShadowStraightBrush = conversationEdgeShadowBrush(
+                                    shadowWidthPx = shadowWidthPx,
+                                    color = edgeShadowColor,
+                                )
+                                val edgeShadowTopBrush = conversationEdgeShadowRadialBrush(
+                                    center = Offset(cornerRadiusPx, cornerRadiusPx),
+                                    cornerRadiusPx = cornerRadiusPx,
+                                    shadowWidthPx = shadowWidthPx,
+                                    color = edgeShadowColor,
+                                )
+                                val edgeShadowBottomBrush = conversationEdgeShadowRadialBrush(
+                                    center = Offset(cornerRadiusPx, size.height - cornerRadiusPx),
+                                    cornerRadiusPx = cornerRadiusPx,
+                                    shadowWidthPx = shadowWidthPx,
+                                    color = edgeShadowColor,
+                                )
+                                onDrawWithContent chatPage@{
+                                    // 只有进度相关的东西逐帧读，缓存里的一律不动，
+                                    // 否则拖动每一帧都会重建位图。
+                                    val progress =
+                                        conversationPaneMotion(paneDragState.offset, paneWidthPx).progress
+                                    if (progress <= 0f) {
+                                        drawContent()
+                                        return@chatPage
+                                    }
+                                    // 单次渐变填充：外侧 alpha 按 smoothstep 平滑收束到 0，
+                                    // 不再叠几十层描边（叠层的极小 alpha 写进 8 位位图会被量化成 0，
+                                    // 尾部整段消失，看着就是"没渐变 + 最外侧一刀切"）。
+                                    clipPath(edgeShadowOuterPath) {
+                                        clipPath(pageClipPath, clipOp = ClipOp.Difference) {
+                                            val bandLeft = -shadowWidthPx
+                                            // 左竖边：横向渐变，垂直于轮廓淡出。
+                                            clipRect(
+                                                left = bandLeft,
+                                                top = cornerRadiusPx,
+                                                right = 0f,
+                                                bottom = size.height - cornerRadiusPx,
+                                            ) {
+                                                drawRect(
+                                                    brush = edgeShadowStraightBrush,
+                                                    topLeft = Offset(bandLeft, cornerRadiusPx),
+                                                    size = Size(
+                                                        width = shadowWidthPx,
+                                                        height = size.height - cornerRadiusPx * 2f,
+                                                    ),
+                                                )
+                                            }
+                                            // 左上圆角：径向渐变，等距淡出，弧线才跟着走。
+                                            clipRect(
+                                                left = bandLeft,
+                                                top = 0f,
+                                                right = size.width,
+                                                bottom = cornerRadiusPx,
+                                            ) {
+                                                drawRect(
+                                                    brush = edgeShadowTopBrush,
+                                                    topLeft = Offset(bandLeft, 0f),
+                                                    size = Size(
+                                                        width = size.width - bandLeft,
+                                                        height = cornerRadiusPx,
+                                                    ),
+                                                )
+                                            }
+                                            // 左下圆角：同上。
+                                            clipRect(
+                                                left = bandLeft,
+                                                top = size.height - cornerRadiusPx,
+                                                right = size.width,
+                                                bottom = size.height,
+                                            ) {
+                                                drawRect(
+                                                    brush = edgeShadowBottomBrush,
+                                                    topLeft = Offset(bandLeft, size.height - cornerRadiusPx),
+                                                    size = Size(
+                                                        width = size.width - bandLeft,
+                                                        height = cornerRadiusPx,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                    }
+                                    clipPath(pageClipPath) {
+                                        this@chatPage.drawContent()
+                                        // 遮罩机制沿用上游：拉开进度 0 → 1 时叠 0% → 满值，只换底色。
+                                        // 浅色压白 50%，深色不再叠遮罩（只靠分界线阴影分层），
+                                        // 为 0 时直接跳过这次全页 mixed 填充。
+                                        val scrimAlpha = chatScrimAlpha * progress
+                                        if (scrimAlpha > 0f) {
+                                            drawRect(color = chatScrimColor, alpha = scrimAlpha)
+                                        }
+                                    }
+                                }
                             }
                             .background(MiuixTheme.colorScheme.background),
                     ) {
@@ -307,4 +453,56 @@ fun ConversationSidePaneScaffold(
             }
         }
     }
+}
+
+/**
+ * 分界阴影的横向渐变：贴轮廓处（x = 0）是满值，向外到 -shadowWidth 收干净。
+ *
+ * alpha 走 smoothstep，两端斜率都为 0：最外侧不会硬切出一道边，贴轮廓处也不会突然变亮。
+ */
+private fun conversationEdgeShadowBrush(shadowWidthPx: Float, color: Color): Brush {
+    if (shadowWidthPx <= 0f || color.alpha <= 0f) {
+        return SolidColor(Color.Transparent)
+    }
+    val stops = ConversationPaneMetrics.EdgeShadowGradientStops
+    val outerAlpha = color.alpha
+    // index 0 对应 startX（最外端，alpha 必须是 0），index stops 对应 endX（贴轮廓，满值）。
+    val colors = List(stops + 1) { index ->
+        val t = index.toFloat() / stops
+        color.copy(alpha = outerAlpha * (t * t * (3f - 2f * t)))
+    }
+    return Brush.horizontalGradient(
+        colors = colors,
+        startX = -shadowWidthPx,
+        endX = 0f,
+    )
+}
+
+/**
+ * 圆角处的径向渐变：圆心与屏幕圆角同心，从圆角半径处（贴轮廓，满值）向外
+ * 扩散 [shadowWidthPx]，alpha 同样按 smoothstep 收束到 0。
+ */
+private fun conversationEdgeShadowRadialBrush(
+    center: Offset,
+    cornerRadiusPx: Float,
+    shadowWidthPx: Float,
+    color: Color,
+): Brush {
+    if (cornerRadiusPx <= 0f || shadowWidthPx <= 0f || color.alpha <= 0f) {
+        return SolidColor(Color.Transparent)
+    }
+    val stops = ConversationPaneMetrics.EdgeShadowGradientStops
+    val outerAlpha = color.alpha
+    val outerRadius = cornerRadiusPx + shadowWidthPx
+    val colorStops = Array(stops + 1) { index ->
+        val u = index.toFloat() / stops
+        val t = 1f - u
+        val position = (cornerRadiusPx + u * shadowWidthPx) / outerRadius
+        position to color.copy(alpha = outerAlpha * (t * t * (3f - 2f * t)))
+    }
+    return Brush.radialGradient(
+        colorStops = colorStops,
+        center = center,
+        radius = outerRadius,
+    )
 }
