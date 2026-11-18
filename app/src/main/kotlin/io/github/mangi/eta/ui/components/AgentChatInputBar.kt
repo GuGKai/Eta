@@ -58,6 +58,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -126,10 +127,14 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.Backdrop
-import top.yukonga.miuix.kmp.glass.GlassPopup
 import top.yukonga.miuix.kmp.glass.GlassPopupItem
+import top.yukonga.miuix.kmp.glass.GlassPopupSizing
+import top.yukonga.miuix.kmp.glass.GlassTransformPopup
 import top.yukonga.miuix.kmp.glass.glassPanel
+import top.yukonga.miuix.kmp.glass.glassPopupAnchor
+import top.yukonga.miuix.kmp.glass.glassPopupAnchorContent
 import top.yukonga.miuix.kmp.glass.glassPress
+import top.yukonga.miuix.kmp.glass.rememberGlassPopupAnchor
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.material.GlassDefaults
@@ -428,8 +433,13 @@ internal fun AgentChatInputBar(
             MiuixTheme.colorScheme.outline.copy(alpha = 0.5f)
         }
         val miuixInputShape = remember { GlassShape(24.dp) }
+        var inputContainerTopPx by remember { mutableFloatStateOf(0f) }
         Box(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { coordinates ->
+                    inputContainerTopPx = coordinates.boundsInWindow().top
+                },
         ) {
             Column(
                 modifier = Modifier
@@ -557,6 +567,7 @@ internal fun AgentChatInputBar(
                         } else {
                             AgentAttachmentPickerButton(
                                 glassBackdrop = glassBackdrop,
+                                inputContainerTopPx = inputContainerTopPx,
                                 onAttachImage = onAttachImage,
                                 onAttachFiles = onAttachFiles,
                                 onAttachFolder = onAttachFolder,
@@ -565,17 +576,18 @@ internal fun AgentChatInputBar(
 
                             Spacer(modifier = Modifier.width(2.dp))
 
-                        if (isCoui || availableReasoningEfforts.isNotEmpty()) {
-                            ThinkingEffortChip(
-                                effort = reasoningEffort,
-                                options = availableReasoningEfforts,
-                                model = modelPickerState.selectedModel,
-                                enabled = !isStreaming,
-                                glassBackdrop = glassBackdrop,
-                                onEffortChange = onReasoningEffortChange,
-                                onRequestModelSheet = { showModelSheet = true },
-                            )
-                        }
+                            if (isCoui || availableReasoningEfforts.isNotEmpty()) {
+                                ThinkingEffortChip(
+                                    effort = reasoningEffort,
+                                    options = availableReasoningEfforts,
+                                    model = modelPickerState.selectedModel,
+                                    enabled = !isStreaming,
+                                    glassBackdrop = glassBackdrop,
+                                    inputContainerTopPx = inputContainerTopPx,
+                                    onEffortChange = onReasoningEffortChange,
+                                    onRequestModelSheet = { showModelSheet = true },
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.weight(1f))
@@ -742,6 +754,7 @@ private fun ThinkingEffortChip(
     model: AgentModelOptionUi?,
     enabled: Boolean,
     glassBackdrop: Backdrop?,
+    inputContainerTopPx: Float,
     onEffortChange: (ReasoningEffort) -> Unit,
     onRequestModelSheet: () -> Unit,
     modifier: Modifier = Modifier,
@@ -751,7 +764,7 @@ private fun ThinkingEffortChip(
     val menuEnabled = enabled && options.size > 1
     /** 长按切模型：这个行为由当前会话模型驱动，没有模型时无从切换。 */
     val modelSwitchEnabled = enabled && model != null
-    var chipBounds by remember { mutableStateOf(Rect.Zero) }
+    var chipBottomPx by remember { mutableFloatStateOf(0f) }
     val active = effort != ReasoningEffort.OFF
     val interactive = enabled && options.size > 1
     val binaryToggleTarget = remember(options, effort) {
@@ -762,6 +775,7 @@ private fun ThinkingEffortChip(
         }
     }
     val anchor = rememberCouiMenuAnchor()
+    val popupAnchor = rememberGlassPopupAnchor()
     LaunchedEffect(menuEnabled) {
         if (!menuEnabled) showPopup = false
     }
@@ -805,13 +819,36 @@ private fun ThinkingEffortChip(
     }
     val accessibilityLabel = stringResource(R.string.chat_reasoning_effort, effort.displayName)
     val interactionSource = remember { MutableInteractionSource() }
+    val useTransformPopup = !isCoui && binaryToggleTarget == null
+    val popupLayout = rememberInputBarPopupLayout(
+        inputContainerTopPx = inputContainerTopPx,
+        anchorBottomPx = chipBottomPx,
+    )
+    // 变形弹层的锚点内容：与输入栏里的圆形品牌图标保持同一视觉。
+    val chipContent: @Composable () -> Unit = {
+        ModelBrandMark(
+            modelId = model?.modelId,
+            sourceType = model?.providerSourceType,
+            size = ThinkingIconSize,
+        )
+    }
 
     Box(modifier = modifier) {
         // 图标跟随会话当前模型：单击仍是思考强度，长按切模型。
         Box(
             modifier = Modifier
-                .onGloballyPositioned { chipBounds = it.boundsInWindow() }
-                .couiMenuAnchor(anchor)
+                .then(
+                    if (useTransformPopup) {
+                        Modifier
+                            .glassPopupAnchor(
+                                anchor = popupAnchor,
+                                cornerRadius = 20.dp,
+                            )
+                            .onGloballyPositioned { chipBottomPx = it.boundsInWindow().bottom }
+                    } else {
+                        Modifier.couiMenuAnchor(anchor)
+                    },
+                )
                 .size(ChatInputActionSize)
                 .clip(CircleShape)
                 .then(
@@ -842,7 +879,9 @@ private fun ThinkingEffortChip(
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onEffortChange(binaryToggleTarget)
                             }
-                            menuEnabled -> anchor.open { showPopup = true }
+                            // COUI 走自己的锚点菜单；MIUIX 多档位直接展开变形弹层。
+                            menuEnabled && isCoui -> anchor.open { showPopup = true }
+                            menuEnabled -> showPopup = true
                             modelSwitchEnabled -> onRequestModelSheet()
                         }
                     },
@@ -856,11 +895,16 @@ private fun ThinkingEffortChip(
                 .semantics { contentDescription = accessibilityLabel },
             contentAlignment = Alignment.Center,
         ) {
-            ModelBrandMark(
-                modelId = model?.modelId,
-                sourceType = model?.providerSourceType,
-                size = ThinkingIconSize,
-            )
+            Box(
+                modifier = if (useTransformPopup) {
+                    Modifier.glassPopupAnchorContent(popupAnchor)
+                } else {
+                    Modifier
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                chipContent()
+            }
         }
         when (LocalUiStyle.current) {
             AppearanceUiStyle.COUI -> {
@@ -887,11 +931,14 @@ private fun ThinkingEffortChip(
                 AppearanceUiStyle.MIUIX -> {
                     val overlayBackdrop = currentGlassOverlayBackdrop() ?: glassBackdrop
                     EtaTopLayer {
-                        GlassPopup(
+                        GlassTransformPopup(
                             show = showPopup && interactive,
                             onDismissRequest = { showPopup = false },
-                            anchorBounds = chipBounds,
+                            anchor = popupAnchor,
                             backdrop = overlayBackdrop,
+                            gap = popupLayout.gap,
+                            sizing = GlassPopupSizing(maxHeight = popupLayout.maxHeight),
+                            anchorContent = chipContent,
                         ) {
                             options.forEach { option ->
                                 GlassPopupItem(
@@ -910,9 +957,6 @@ private fun ThinkingEffortChip(
         }
     }
 
-/**
- * 横向跟随 Chip，竖向则避开整个输入面板；默认下拉定位只会避开 Chip 自身。
- */
 @Composable
 private fun PendingImageStrip(
     images: List<PendingImageUi>,
