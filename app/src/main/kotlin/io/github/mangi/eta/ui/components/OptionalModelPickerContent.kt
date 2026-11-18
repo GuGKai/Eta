@@ -43,6 +43,16 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+/**
+ * 弹窗内容区的高度上限。
+ *
+ * COUI 底部弹窗卡片最高 632dp（`CouiDialogDefaults.maxHeight`）；扣掉标题区
+ * （titleTop 24 + 标题行 + titleBottom 6）和底部按钮区（约 12 + 44 + 16）后，
+ * 内容槽实际可用约 500dp。超过可用高度，内容就会交给 Dialog 内容槽自己的
+ * verticalScroll 滚动，搜索框、提供商那一排会连带被滚走。留 60dp 余量取 440dp。
+ */
+private val PickerContentMaxHeight = 440.dp
+
 @Composable
 internal fun OptionalModelPickerContent(
     pickerState: AgentModelPickerUiState,
@@ -58,7 +68,11 @@ internal fun OptionalModelPickerContent(
             .filter { providerFilter == null || it.providerId == providerFilter }
     }
     val density = LocalDensity.current
-    val sheetHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() } * 0.68f
+    val screenHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() }
+    // 固定高度：不论模型列表里是 2 个还是 40 个，弹窗都保持同一高度（列表很长时的那一档）。
+    // 这样 Dialog 内容槽的 verticalScroll 永远不会被触发，标题、搜索框和提供商那一排就钉在原位，
+    // 滚动只发生在下面的模型列表里；列表短时下方留白，不再忽高忽低。
+    val sheetHeight = minOf(screenHeight * 0.68f, PickerContentMaxHeight)
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
 
     Column(

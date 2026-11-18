@@ -206,6 +206,10 @@ internal fun ConversationTitleSettingsScreen(
                             selectedIndex = selectedEffortIndex,
                             enabled = titleSettings.enabled,
                             onSelectedIndexChange = onEffortChange,
+                            // 「自动（优先关闭或最低）」这类值比默认的 162dp 宽，两行会占掉半行高度；
+                            // 这一排左边留白很多，放宽到 220dp 并锁成单行，长值才走省略号。
+                            valueMaxLines = 1,
+                            valueMaxWidth = 240.dp,
                         )
                     } else {
                         CouiPreference(

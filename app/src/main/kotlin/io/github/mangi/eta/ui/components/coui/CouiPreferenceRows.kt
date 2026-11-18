@@ -339,6 +339,8 @@ internal fun <T> CouiPopupPreference(
     summary: String? = null,
     enabled: Boolean = true,
     icon: (@Composable () -> Unit)? = null,
+    valueMaxLines: Int = 2,
+    valueMaxWidth: Dp = 162.dp,
 ) {
     val dark = CouiTheme.isDark
     val colors = CouiPageDefaults.themeColors(dark)
@@ -360,9 +362,9 @@ internal fun <T> CouiPopupPreference(
             BasicText(
                 text = value,
                 modifier = Modifier
-                    .widthIn(max = 162.dp)
+                    .widthIn(max = valueMaxWidth)
                     .padding(start = 16.dp),
-                maxLines = 2,
+                maxLines = valueMaxLines,
                 overflow = TextOverflow.Ellipsis,
                 style = rememberCouiTextStyle(CouiTextKind.ItemValue).copy(
                     color = if (enabled) colors.summary else colors.disabled,
@@ -402,6 +404,8 @@ internal fun CouiDropdownPreference(
     summary: String? = null,
     enabled: Boolean = true,
     icon: (@Composable () -> Unit)? = null,
+    valueMaxLines: Int = 2,
+    valueMaxWidth: Dp = 162.dp,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val safeIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
@@ -426,6 +430,8 @@ internal fun CouiDropdownPreference(
         summary = summary,
         enabled = enabled,
         icon = icon,
+        valueMaxLines = valueMaxLines,
+        valueMaxWidth = valueMaxWidth,
     )
 }
 
