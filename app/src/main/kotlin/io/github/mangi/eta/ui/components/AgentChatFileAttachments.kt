@@ -276,6 +276,7 @@ internal fun AgentAttachmentPickerButton(
                         value = pathInput,
                         onValueChange = { pathInput = it },
                         label = stringResource(R.string.ui_absolute_path_9ac6fc),
+                        colors = glassOverlayTextFieldColors(),
                         useLabelAsPlaceholder = true,
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),

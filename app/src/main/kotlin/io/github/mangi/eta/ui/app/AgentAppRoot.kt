@@ -61,6 +61,7 @@ import io.github.mangi.eta.ui.IncomingShareRequest
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
+import io.github.mangi.eta.ui.components.glassOverlayTextFieldColors
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiInputDialog
 import io.github.mangi.eta.ui.components.coui.CouiNoticeDialog
@@ -1057,6 +1058,7 @@ fun AgentAppRoot(
                         value = renameInput,
                         onValueChange = { renameInput = it },
                         label = stringResource(R.string.conversation_rename_hint),
+                        colors = glassOverlayTextFieldColors(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
