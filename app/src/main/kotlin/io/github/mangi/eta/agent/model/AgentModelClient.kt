@@ -361,7 +361,7 @@ internal object AgentModelClient {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && when (providerType) {
                 ProviderTypes.OPENAI_COMPATIBLE -> openAiEndpointMode == OpenAiEndpointMode.RESPONSES
-                ProviderTypes.GEMINI ->
+                ProviderTypes.GEMINI -> GeminiEndpointMode.normalize(geminiEndpointMode) == GeminiEndpointMode.AI_STUDIO &&
                     supportsSearchSuggestions && GeminiModelCapabilities.supportsHostedSearch(model)
                 else -> false
             }
