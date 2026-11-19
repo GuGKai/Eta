@@ -2453,22 +2453,33 @@ private fun EmptyChatState(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (character != null) {
+                val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
                 CharacterAvatar(
                     name = character.characterName,
                     avatarPath = character.avatarPath,
-                    size = 88.dp,
+                    size = 68.dp,
                     shape = CircleShape,
+                    borderWidth = 0.5.dp,
+                    borderColor = if (isDark) {
+                        Color.White.copy(alpha = 0.14f)
+                    } else {
+                        Color.Black.copy(alpha = 0.08f)
+                    },
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = character.characterName,
-                    style = MiuixTheme.textStyles.title2,
+                    style = MiuixTheme.textStyles.title2.copy(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.2).sp,
+                    ),
                     color = MiuixTheme.colorScheme.onSurface,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = stringResource(R.string.chat_character_story_start),
-                    style = MiuixTheme.textStyles.body2,
+                    style = MiuixTheme.textStyles.footnote1,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
             } else {
@@ -2480,6 +2491,43 @@ private fun EmptyChatState(
                     lineHeight = titleStyle.lineHeight.scaleIfSpecified(EmptyGreetingFontScale),
                     color = MiuixTheme.colorScheme.onSurface,
                 )
+                Spacer(modifier = Modifier.height(26.dp))
+            }
+
+            AnimatedVisibility(
+                visible = showSuggestions && !isCharacterConversation,
+                enter = fadeIn(
+                    animationSpec = tween(durationMillis = 220)
+                ) + slideInVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    initialOffsetY = { it / 3 },
+                ),
+                exit = fadeOut(
+                    animationSpec = tween(durationMillis = 130)
+                ) + slideOutVertically(
+                    animationSpec = tween(durationMillis = 180),
+                    targetOffsetY = { it / 4 },
+                ),
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    suggestions.chunked(2).forEach { rowItems ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowItems.forEach { item ->
+                                SuggestionCard(
+                                    item = item,
+                                    onClick = { onSuggestionClick(item.prompt) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
