@@ -23,4 +23,12 @@
     <string name="execution_background_task">Background task</string>
     <string name="execution_background_more">%1$s and %2$d more</string>
     <string name="execution_background_since">Background command running since %1$s</string>
+    <string name="execution_bg_cmd_channel">Background command results</string>
+    <string name="execution_bg_cmd_completed">Background command completed</string>
+    <string name="execution_bg_cmd_timed_out">Background command timed out</string>
+    <string name="execution_bg_cmd_stopped">Background command stopped</string>
+    <string name="execution_bg_cmd_interrupted">Background command interrupted</string>
+    <string name="execution_bg_cmd_failed">Background command failed</string>
+    <string name="execution_bg_cmd_open_hint">View status and logs under background tasks in Terminal</string>
+    <string name="execution_bg_cmd_exit_code">Exit code %1$d</string>
 </resources>

@@ -45,6 +45,7 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ProviderSourceTypes
 import io.github.mangi.eta.data.model.typeLabel
+import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
@@ -88,11 +89,17 @@ internal fun ModelProviderListScreen(
     }
 
     // 顺序由数据层统一（自建在前、最近添加的更靠前），这里只做过滤。
-    val filteredProviders = remember(providers, searchQuery) {
+    val displayNames = providers.associate { provider ->
+        val nameRes = BuiltinProviders.defaultNameRes(provider.id, provider.name)
+        provider.id to (if (nameRes != null) stringResource(nameRes) else provider.name)
+    }
+    val filteredProviders = remember(providers, searchQuery, displayNames) {
         val query = searchQuery.trim()
         providers.filter { provider ->
+            val localizedName = displayNames[provider.id] ?: provider.name
             query.isBlank() ||
                 provider.name.contains(query, ignoreCase = true) ||
+                localizedName.contains(query, ignoreCase = true) ||
                 provider.baseUrl.contains(query, ignoreCase = true) ||
                 provider.typeLabel.contains(query, ignoreCase = true)
         }
@@ -110,8 +117,8 @@ internal fun ModelProviderListScreen(
 
                 ProviderSection(title = stringResource(R.string.ui_add_new_provider_74df54)) {
                     CouiPreference(
-                        title = "从 models.dev 添加",
-                        summary = "浏览 models.dev 社区目录并选择模型",
+                        title = stringResource(R.string.catalog_i18n_title),
+                        summary = stringResource(R.string.catalog_i18n_entry_summary),
                         icon = {
                             CouiSettingsIcon(
                                 icon = Icons.Rounded.TravelExplore,
@@ -136,8 +143,8 @@ internal fun ModelProviderListScreen(
                     )
                     CouiIconDivider()
                     CouiPreference(
-                        title = "新增 Gemini",
-                        summary = "支持 Google AI Studio 与 Vertex AI",
+                        title = stringResource(R.string.provider_i18n_add_gemini),
+                        summary = stringResource(R.string.provider_i18n_add_gemini_summary),
                         icon = { ProviderBrandIcon(ProviderSourceTypes.GEMINI) },
                         onClick = { onNavigate(AppRoute.ModelProviderNew(NewProviderType.Gemini)) },
                     )
@@ -171,6 +178,7 @@ internal fun ModelProviderListScreen(
                         filteredProviders.forEachIndexed { index, provider ->
                             ProviderListItem(
                                 provider = provider,
+                                displayName = displayNames[provider.id] ?: provider.name,
                                 isSelected = provider.id == selectedProviderId,
                                 onOpen = { onNavigate(AppRoute.ModelProviderDetail(provider.id)) },
                                 onDelete = if (!provider.isBuiltIn) {
@@ -216,8 +224,8 @@ internal fun ModelProviderListScreen(
                 item(key = "create_section") {
                     ProviderSection(title = stringResource(R.string.ui_add_new_provider_74df54)) {
                         ArrowPreference(
-                            title = "从 models.dev 添加",
-                            summary = "浏览 models.dev 社区目录并选择模型",
+                            title = stringResource(R.string.catalog_i18n_title),
+                            summary = stringResource(R.string.catalog_i18n_entry_summary),
                             startAction = {
                                 Box(
                                     modifier = Modifier
@@ -252,8 +260,8 @@ internal fun ModelProviderListScreen(
                             onClick = { onNavigate(AppRoute.ModelProviderNew(NewProviderType.Anthropic)) },
                         )
                         ArrowPreference(
-                            title = "新增 Gemini",
-                            summary = "支持 Google AI Studio 与 Vertex AI",
+                            title = stringResource(R.string.provider_i18n_add_gemini),
+                            summary = stringResource(R.string.provider_i18n_add_gemini_summary),
                             startAction = { ProviderBrandIcon(ProviderSourceTypes.GEMINI) },
                             onClick = { onNavigate(AppRoute.ModelProviderNew(NewProviderType.Gemini)) },
                         )
@@ -281,6 +289,7 @@ internal fun ModelProviderListScreen(
                             filteredProviders.forEach { provider ->
                                 ProviderListItem(
                                     provider = provider,
+                                    displayName = displayNames[provider.id] ?: provider.name,
                                     isSelected = provider.id == selectedProviderId,
                                     onOpen = { onNavigate(AppRoute.ModelProviderDetail(provider.id)) },
                                     onDelete = if (!provider.isBuiltIn) {
@@ -304,6 +313,9 @@ internal fun ModelProviderListScreen(
     }
 
     val activeDeleteTarget = providerToDelete ?: retainedProviderToDelete
+    val activeDeleteName = activeDeleteTarget?.let { target ->
+        displayNames[target.id] ?: target.name
+    }.orEmpty()
     val onConfirmDelete: () -> Unit = {
         scope.launch {
             activeDeleteTarget?.let { provider ->
@@ -319,7 +331,7 @@ internal fun ModelProviderListScreen(
                 CouiConfirmDialog(
                     visible = true,
                     title = stringResource(R.string.ui_remove_provider_9f848f),
-                    message = stringResource(R.string.provider_delete_summary, activeDeleteTarget?.name.orEmpty()),
+                    message = stringResource(R.string.provider_delete_summary, activeDeleteName),
                     confirmText = stringResource(R.string.ui_delete_3755f5),
                     destructive = true,
                     onConfirm = onConfirmDelete,
@@ -332,7 +344,7 @@ internal fun ModelProviderListScreen(
                 show = providerToDelete != null,
                 backdrop = currentGlassOverlayBackdrop(),
                 title = stringResource(R.string.ui_remove_provider_9f848f),
-                summary = stringResource(R.string.provider_delete_summary, activeDeleteTarget?.name.orEmpty()),
+                summary = stringResource(R.string.provider_delete_summary, activeDeleteName),
                 onDismissRequest = { providerToDelete = null },
                 onDismissFinished = { if (providerToDelete == null) retainedProviderToDelete = null },
             ) {
@@ -351,6 +363,7 @@ internal fun ModelProviderListScreen(
 @Composable
 private fun ProviderListItem(
     provider: ProviderSetting,
+    displayName: String,
     isSelected: Boolean,
     onOpen: () -> Unit,
     onDelete: (() -> Unit)?,
@@ -379,7 +392,7 @@ private fun ProviderListItem(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         CouiText(
-                            text = provider.name,
+                            text = displayName,
                             kind = CouiTextKind.ItemTitle,
                             color = if (isSelected) colors.accent else colors.title,
                             maxLines = 1,
@@ -456,7 +469,7 @@ private fun ProviderListItem(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = provider.name,
+                        text = displayName,
                         fontSize = MiuixTheme.textStyles.headline1.fontSize,
                         fontWeight = FontWeight.Medium,
                         color = if (isSelected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
