@@ -43,6 +43,7 @@ internal object AgentRuntimeWire {
 
     const val AGENT_UI_HANDOFF_SOURCE = "agent_ui"
     const val ETA_VOICE_HANDOFF_SOURCE = "eta_voice"
+    const val SCHEDULED_TASK_HANDOFF_SOURCE = "scheduled_task"
 
     /**
      * 客户端「等待被中断」的结果标记：界面走了，但任务没有被取消，runtime 侧仍在继续，

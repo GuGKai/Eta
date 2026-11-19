@@ -18,6 +18,7 @@ internal data class MainActivityLaunchRequests(
     val assistantConversationKey: String? = null,
     val conversationId: String? = null,
     val archivedConversation: ArchivedConversationRequest? = null,
+    val scheduledTaskId: String? = null,
     val sharedContent: IncomingShareRequest? = null,
     val speechSettings: Boolean = false,
     /** 执行通知的「补充」：回到主界面后把输入框拉起键盘，用户直接插话。 */
@@ -30,6 +31,9 @@ internal data class MainActivityLaunchRequests(
         MainActivity.ACTION_INTERJECT -> copy(interject = true)
         MainActivity.ACTION_OPEN_CONVERSATION_ID -> copy(
             conversationId = intent.nonBlankExtra(MainActivity.EXTRA_CONVERSATION_ID),
+        )
+        MainActivity.ACTION_OPEN_SCHEDULED_TASK_DETAIL -> copy(
+            scheduledTaskId = intent.nonBlankExtra(MainActivity.EXTRA_SCHEDULED_TASK_ID),
         )
         MainActivity.ACTION_OPEN_ARCHIVED_CONVERSATION -> {
             val source = intent.nonBlankExtra(MainActivity.EXTRA_HANDOFF_SOURCE)
@@ -57,6 +61,7 @@ internal data class MainActivityLaunchRequests(
             putString("conversation_id", conversationId)
             putString("archive_source", archivedConversation?.source)
             putString("archive_conversation_key", archivedConversation?.conversationKey)
+            putString("scheduled_task_id", scheduledTaskId)
             sharedContent?.let { share ->
                 putStringArrayList("share_uris", ArrayList(share.uris))
                 putString("share_mime_type", share.mimeType)
@@ -89,6 +94,7 @@ internal data class MainActivityLaunchRequests(
                 archivedConversation = if (source != null && key != null) {
                     ArchivedConversationRequest(source, key)
                 } else null,
+                scheduledTaskId = saved.getString("scheduled_task_id"),
                 sharedContent = if (shareUris.isNotEmpty() || shareText != null) {
                     IncomingShareRequest(
                         uris = shareUris,

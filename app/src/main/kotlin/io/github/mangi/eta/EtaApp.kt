@@ -19,6 +19,7 @@ import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.update.LaunchUpdateNotice
+import io.github.mangi.eta.data.repository.ScheduledTaskRepository
 import io.github.mangi.eta.ui.app.PredictiveBackController
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
@@ -66,12 +67,28 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         AgentMemoryRepository.init(this)
         ProviderRepository.init(this)
         McpServerRepository.init(this)
+        // 本地 automation（事件触发）恢复
         applicationScope.launch(Dispatchers.IO) {
             runCatching {
                 io.github.mangi.eta.data.db.EtaDatabase.get(this@EtaApp).agentTaskDao().recoverInterrupted(System.currentTimeMillis())
                 io.github.mangi.eta.agent.automation.AgentTaskScheduler.enqueueDue(this@EtaApp)
                 io.github.mangi.eta.agent.automation.AgentTaskScheduler.refresh(this@EtaApp)
             }.onFailure { AndroidAgentLogger.warn("Automation recovery unavailable") }
+        }
+        // 上游 scheduler（时间驱动）恢复
+        ScheduledTaskRepository.init(this)
+        applicationScope.launch {
+            runCatching {
+                ScheduledTaskRepository.reconcileAfterRestartOrClockChange(
+                    recomputeAllSchedules = false,
+                    rescheduleAlarm = true,
+                    context = this@EtaApp,
+                )
+            }.onFailure { throwable ->
+                AndroidAgentLogger.warn(
+                    "Scheduled task reconcile failed: type=${throwable.safeLogType()}"
+                )
+            }
         }
         XposedServiceHelper.registerListener(this)
         applicationScope.launch {

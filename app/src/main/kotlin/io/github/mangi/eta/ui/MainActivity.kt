@@ -114,6 +114,11 @@ class MainActivity : ComponentActivity() {
                             launchRequests = launchRequests.copy(archivedConversation = null)
                             intent?.action = null
                         },
+                        requestedScheduledTaskId = launchRequests.scheduledTaskId,
+                        onScheduledTaskOpened = {
+                            launchRequests = launchRequests.copy(scheduledTaskId = null)
+                            intent?.action = null
+                        },
                         sharedContent = launchRequests.sharedContent,
                         onSharedContentAccepted = {
                             launchRequests = launchRequests.copy(sharedContent = null)
@@ -238,5 +243,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_CONVERSATION_KEY = "io.github.mangi.eta.extra.CONVERSATION_KEY"
         /** 执行通知的「补充」：回到主聊天舞台并把输入框拉起键盘，用户直接插话。 */
         const val ACTION_INTERJECT = "io.github.mangi.eta.action.INTERJECT"
+        const val ACTION_OPEN_SCHEDULED_TASK_DETAIL = "io.github.mangi.eta.action.OPEN_SCHEDULED_TASK_DETAIL"
+        const val EXTRA_SCHEDULED_TASK_ID = "io.github.mangi.eta.extra.SCHEDULED_TASK_ID"
     }
 }

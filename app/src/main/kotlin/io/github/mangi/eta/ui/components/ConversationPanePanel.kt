@@ -264,6 +264,7 @@ internal fun ConversationPanePanel(
     onOpenModelProviders: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
+    onOpenScheduledTasks: () -> Unit = {},
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
     isRevealed: Boolean = true,
@@ -483,6 +484,19 @@ internal fun ConversationPanePanel(
                             verticalArrangement = Arrangement.spacedBy(ConversationPanelMetrics.RowGap),
                             overscrollEffect = null,
                         ) {
+                            // 工作台段（含定时任务入口）：搜索时隐藏，置于最前。
+                            if (!isSearching) {
+                                item(key = "pane_workbench") {
+                                    PaneWorkbenchSection(
+                                        activeModelLabel = activeModelLabel,
+                                        onOpenModelProviders = onOpenModelProviders,
+                                        onOpenCharacters = onOpenCharacters,
+                                        onOpenTools = onOpenTools,
+                                        onOpenSkills = onOpenSkills,
+                                        onOpenScheduledTasks = onOpenScheduledTasks,
+                                    )
+                                }
+                            }
                             // 顶部不再有任何选择框/工作台卡片，第一条就是工作区段或会话分组。
                             if (!isCoui && showWorkspacesSection) {
                                 item(key = "section-workspaces") {
@@ -765,19 +779,6 @@ internal fun ConversationPanePanel(
 /** 工作区 chip 浮动材质外半影预留的纵向余量：亮色灰影比暗色明显，按最亮的一档留。 */
 private val WorkspaceChipShadowRoom = 20.dp
 
-/** chip 之间、以及 chip 与面板内边距之间的固定间隔。 */
-private val WorkspaceChipGap = 8.dp
-
-/** chip 行两端溢出时的渐隐宽度，超出面板边框的 chip 在这段距离内淡到透明。 */
-private val WorkspaceChipEdgeFade = 30.dp
-
-/**
- * 工作区 chip 行两端的渐隐遮罩：把整个图层与一张水平渐变图做 DST_IN。
- *
- * 只能用图层后处理做：chip 的玻璃、阴影、按压材质各画在自己的 RenderNode 里，父层在
- * canvas 上混 DST_IN 读不到（实测两版都没效果）；逐 chip 设 alpha 又只能整块变淡，
- * 做不出「同一个 chip 左实右虚」。滚到头的一侧不淡化，否则末尾 chip 会一直发灰。
- */
 private fun buildChipEdgeFadeEffect(
     widthPx: Float,
     fadeStartPx: Float,
@@ -823,6 +824,120 @@ private fun buildChipEdgeFadeEffect(
     return AndroidRenderEffect
         .createBlendModeEffect(content, mask, AndroidBlendMode.DST_IN)
         .asComposeRenderEffect()
+}
+
+@Composable
+private fun PaneWorkbenchSection(
+    activeModelLabel: String?,
+    onOpenModelProviders: () -> Unit,
+    onOpenCharacters: () -> Unit,
+    onOpenTools: () -> Unit,
+    onOpenSkills: () -> Unit,
+    onOpenScheduledTasks: () -> Unit = {},
+) {
+    val modelSummary = activeModelLabel?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.conversation_model_unconfigured)
+    val entries = listOf(
+        WorkbenchEntry(
+            icon = ConversationPaneIcons.Model,
+            title = stringResource(R.string.conversation_dock_models),
+            trailingValue = modelSummary,
+            onClick = onOpenModelProviders,
+        ),
+        WorkbenchEntry(
+            icon = ConversationPaneIcons.Character,
+            title = stringResource(R.string.conversation_dock_characters),
+            onClick = onOpenCharacters,
+        ),
+        WorkbenchEntry(
+            icon = ConversationPaneIcons.Tools,
+            title = stringResource(R.string.route_tools),
+            onClick = onOpenTools,
+        ),
+        WorkbenchEntry(
+            icon = ConversationPaneIcons.Skills,
+            title = stringResource(R.string.route_skills),
+            onClick = onOpenSkills,
+        ),
+        WorkbenchEntry(
+            icon = ConversationPaneIcons.Schedule,
+            title = stringResource(R.string.route_scheduled_tasks),
+            onClick = onOpenScheduledTasks,
+        ),
+    )
+
+    val cardColor = conversationPaneCardColor()
+    val dividerIndent = ConversationPanelMetrics.WorkbenchRowHorizontalPadding +
+        ConversationPanelMetrics.WorkbenchIconSize +
+        ConversationPanelMetrics.WorkbenchIconGap
+
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            val shape = remember { CouiShape(ConversationPanelMetrics.WorkbenchCornerRadius, 2.5f) }
+            val dark = CouiTheme.isDark
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding)
+                    .then(
+                        if (!dark) {
+                            Modifier.dropShadow(
+                                shape = shape,
+                                shadow = Shadow(
+                                    radius = 10.dp,
+                                    color = Color.Black,
+                                    alpha = 0.025f,
+                                ),
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .clip(shape)
+                    .background(cardColor, shape)
+                    .then(
+                        if (!dark) {
+                            Modifier.border(0.5.dp, Color(0x0A000000), shape)
+                        } else {
+                            Modifier.border(0.5.dp, Color(0x12FFFFFF), shape)
+                        },
+                    ),
+            ) {
+                entries.forEachIndexed { index, entry ->
+                    CouiWorkbenchRow(entry = entry, dark = dark)
+                    if (index < entries.lastIndex) {
+                        CouiDivider(
+                            startIndent = dividerIndent,
+                            endIndent = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
+                        )
+                    }
+                }
+            }
+        }
+        AppearanceUiStyle.MIUIX -> {
+            val colors = MiuixTheme.colorScheme
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
+                colors = CardDefaults.defaultColors(color = cardColor),
+            ) {
+                entries.forEachIndexed { index, entry ->
+                    MiuixWorkbenchRow(entry = entry)
+                    if (index < entries.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(
+                                start = dividerIndent,
+                                end = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
+                            ),
+                            thickness = 0.5.dp,
+                            color = colors.dividerLine.copy(alpha = 0.45f),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**

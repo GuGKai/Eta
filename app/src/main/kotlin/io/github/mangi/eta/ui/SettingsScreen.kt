@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.SwipeUp
@@ -699,6 +700,17 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
+                        title = stringResource(R.string.route_scheduled_tasks),
+                        icon = {
+                            CouiSettingsIcon(
+                                Icons.Rounded.Schedule,
+                                SettingsIconColors.Blue,
+                            )
+                        },
+                        onClick = { onNavigate(AppRoute.ScheduledTasks) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
                         title = "角色",
                         icon = {
                             CouiSettingsIcon(
@@ -1114,6 +1126,11 @@ private fun SettingsPageContent(
                             title = stringResource(R.string.route_mcp_servers),
                             startAction = { SettingsIcon(Icons.Rounded.AccountTree) },
                             onClick = { onNavigate(AppRoute.McpServers) },
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.route_scheduled_tasks),
+                            startAction = { SettingsIcon(Icons.Rounded.Schedule) },
+                            onClick = { onNavigate(AppRoute.ScheduledTasks) },
                         )
                         ArrowPreference(
                             title = "角色",
