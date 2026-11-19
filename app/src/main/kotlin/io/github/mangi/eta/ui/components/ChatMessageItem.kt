@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.horizontalScroll
 import android.graphics.BitmapFactory
 import android.util.Base64
+import android.util.LruCache
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -106,6 +107,7 @@ import com.itos.coui.shape.CouiCapsuleShape
 import com.itos.coui.shape.CouiShape
 import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.imagegen.ImageGenToolCatalog
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.model.PromptSuggestions
 import io.github.mangi.eta.agent.overlay.toolDisplayName
@@ -131,7 +133,10 @@ import io.github.mangi.eta.ui.model.UserMessageUi
 import io.github.mangi.eta.ui.voice.LocalSpeechPlayback
 import io.github.mangi.eta.ui.voice.SpeechReadAloudButton
 import io.github.mangi.eta.ui.voice.rememberSpeechSentences
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.io.File
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.RichTooltip
@@ -144,9 +149,46 @@ import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+private val chatImageBitmapCache = object : LruCache<String, ImageBitmap>(48 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int =
+        (value.width * value.height * 4).coerceAtLeast(1)
+}
+
 @Composable
-internal fun rememberDataUrlBitmap(dataUrl: String) = remember(dataUrl) {
-    decodeDataUrlBitmap(dataUrl)
+internal fun rememberDataUrlBitmap(dataUrl: String): ImageBitmap? =
+    rememberChatImageBitmap(source = dataUrl, maxDimensionPx = 1600)
+
+/**
+ * 统一聊天图片解码器：
+ * - `data:image/...;base64,...` 同步命中/写入 LRU 缓存，保持现有用户预览图零首帧闪烁；
+ * - 本地原图文件（含 AI 生图 1K~4K 高清图）在 IO 线程按 [maxDimensionPx] 采样解码，避免主线程卡顿与 OOM。
+ */
+@Composable
+internal fun rememberChatImageBitmap(
+    source: String,
+    maxDimensionPx: Int = 1600,
+): ImageBitmap? {
+    val cacheKey = remember(source, maxDimensionPx) { "$maxDimensionPx|$source" }
+    val cached = remember(cacheKey) {
+        chatImageBitmapCache.get(cacheKey)
+            ?: if (source.startsWith("data:", ignoreCase = true)) {
+                decodeDataUrlBitmap(source)?.also { chatImageBitmapCache.put(cacheKey, it) }
+            } else {
+                null
+            }
+    }
+    var asyncBitmap by remember(cacheKey) { mutableStateOf(cached) }
+    LaunchedEffect(cacheKey) {
+        if (asyncBitmap != null || source.isBlank() || source.startsWith("data:", ignoreCase = true)) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            decodeLocalFileBitmap(source, maxDimensionPx)
+        }
+        if (decoded != null) {
+            chatImageBitmapCache.put(cacheKey, decoded)
+            asyncBitmap = decoded
+        }
+    }
+    return asyncBitmap
 }
 
 internal fun decodeDataUrlBitmap(dataUrl: String): ImageBitmap? {
@@ -155,6 +197,27 @@ internal fun decodeDataUrlBitmap(dataUrl: String): ImageBitmap? {
     return runCatching {
         val bytes = Base64.decode(base64, Base64.NO_WRAP)
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    }.getOrNull()
+}
+
+private fun decodeLocalFileBitmap(source: String, maxDimensionPx: Int): ImageBitmap? {
+    val file = File(source.removePrefix("file://").trim())
+    if (!file.isFile) return null
+    return runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w <= 0 || h <= 0) return null
+        var sample = 1
+        val limit = maxDimensionPx.coerceAtLeast(256)
+        while ((w / sample) > limit || (h / sample) > limit) {
+            sample *= 2
+        }
+        BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sample },
+        )?.asImageBitmap()
     }.getOrNull()
 }
 
@@ -236,6 +299,7 @@ internal fun ChatMessageItem(
     onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
     /** 正文首行字顶相对本条消息顶边的偏移（px）：只有最后一条消息需要，用于正文停靠。 */
     onAnswerFirstLineTop: ((Float) -> Unit)? = null,
+    onEditGeneratedImage: ((String) -> Unit)? = null,
 ) {
     when (message) {
         is UserMessageUi -> UserMessageBubble(
@@ -309,13 +373,22 @@ internal fun ChatMessageItem(
             compact = compact,
         )
         is RunTraceMessageUi -> RunTraceRow(message = message, onClick = onRunTraceClick, modifier = modifier)
-        is ToolActivityMessageUi -> ToolActivityInline(
-            message = message,
-            onOpenBrowser = onOpenBrowser,
-            showBrowserShortcut = showBrowserShortcut,
-            modifier = modifier,
-            compact = compact,
-        )
+        is ToolActivityMessageUi -> if (message.toolName == ImageGenToolCatalog.TOOL_NAME) {
+            GeneratedImageMessageCard(
+                message = message,
+                assistantOverlay = assistantOverlay,
+                onEditImage = onEditGeneratedImage,
+                modifier = modifier,
+            )
+        } else {
+            ToolActivityInline(
+                message = message,
+                onOpenBrowser = onOpenBrowser,
+                showBrowserShortcut = showBrowserShortcut,
+                modifier = modifier,
+                compact = compact,
+            )
+        }
         is ToolSummaryMessageUi -> ToolSummaryInline(message = message, modifier = modifier, compact = compact)
         is SuggestionChipsMessageUi -> SuggestionChipsRow(message = message, onSuggestionClick = onSuggestionClick, modifier = modifier)
     }

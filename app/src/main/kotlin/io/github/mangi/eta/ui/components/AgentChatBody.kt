@@ -112,6 +112,7 @@ import com.itos.coui.text.Text as CouiText
 import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.browser.BrowserSessionSnapshot
+import io.github.mangi.eta.agent.imagegen.ImageGenToolCatalog
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.ConversationBranchBoundary
@@ -514,6 +515,7 @@ private fun AgentChatScaffold(
                     onRegenerateMessage = onRegenerateMessage,
                     onBranchMessage = onBranchMessage,
                     onSelectReplyCandidate = onSelectReplyCandidate,
+                    onEditGeneratedImage = onAttachImage,
                     messageActionsEnabled = !isStreaming && !isCompacting && !isBranching && messageEdit == null,
                     editTargetMessageId = messageEdit?.targetMessageId,
                     currentBrowserMessageId = currentBrowserMessageId,
@@ -550,6 +552,7 @@ internal fun AgentConversationMessages(
     onRegenerateMessage: (String) -> Unit = {},
     onBranchMessage: (String) -> Unit = {},
     onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
+    onEditGeneratedImage: ((String) -> Unit)? = null,
     messageActionsEnabled: Boolean = false,
     editTargetMessageId: String? = null,
     currentBrowserMessageId: String? = null,
@@ -1902,6 +1905,7 @@ internal fun AgentConversationMessages(
                                 } else {
                                     null
                                 },
+                                onEditGeneratedImage = if (!assistantOverlay) onEditGeneratedImage else null,
                                 modifier = itemModifier,
                             )
                         }
@@ -2187,7 +2191,9 @@ private fun AgentTimelineEntry.contentType(): Any = when (this) {
 }
 
 private fun AgentChatMessageUi.isWorkProcessMessage(): Boolean =
-    this is ThinkingMessageUi || this is ToolActivityMessageUi || this is ToolSummaryMessageUi
+    this is ThinkingMessageUi ||
+        this is ToolSummaryMessageUi ||
+        (this is ToolActivityMessageUi && toolName != ImageGenToolCatalog.TOOL_NAME)
 
 /**
  * 一轮对话（两条用户消息之间）里最后一条 Agent 正文视为最终结果，其余为中间步骤。

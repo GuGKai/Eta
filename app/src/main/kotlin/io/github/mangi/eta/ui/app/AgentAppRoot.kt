@@ -108,6 +108,8 @@ import io.github.mangi.eta.ui.screens.terminal.LinuxFilesScreen
 import io.github.mangi.eta.ui.screens.terminal.SharedFoldersScreen
 import io.github.mangi.eta.ui.screens.terminal.TerminalEntryScreen
 import io.github.mangi.eta.ui.screens.terminal.WorkspaceScreen
+import io.github.mangi.eta.ui.screens.imagegen.ImageGenGalleryScreen
+import io.github.mangi.eta.ui.screens.imagegen.ImageGenSettingsScreen
 import io.github.mangi.eta.ui.screens.tools.AgentToolsScreen
 import io.github.mangi.eta.ui.screens.tools.WebToolsSettingsScreen
 import io.github.mangi.eta.ui.voice.SpeechOssScreen
@@ -557,6 +559,7 @@ fun AgentAppRoot(
                                     AgentToolsAction.NavigateBack -> popRoute()
                                     AgentToolsAction.OpenBrowser -> openConversationBrowser()
                                     AgentToolsAction.OpenWebToolsSettings -> pushRoute(AppRoute.WebToolsSettings)
+                                    AgentToolsAction.OpenImageGenSettings -> pushRoute(AppRoute.ImageGenSettings)
                                     AgentToolsAction.OpenEnhancements -> pushRoute(AppRoute.SystemEnhance)
                                     AgentToolsAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
                                 }
@@ -565,6 +568,15 @@ fun AgentAppRoot(
                     }
                     entry<AppRoute.WebToolsSettings>(swipeDismiss = activeSwipeDismiss) {
                         WebToolsSettingsScreen(onBack = ::popRoute)
+                    }
+                    entry<AppRoute.ImageGenSettings>(swipeDismiss = activeSwipeDismiss) {
+                        ImageGenSettingsScreen(
+                            onBack = ::popRoute,
+                            onOpenGallery = { pushRoute(AppRoute.ImageGenGallery) },
+                        )
+                    }
+                    entry<AppRoute.ImageGenGallery>(swipeDismiss = activeSwipeDismiss) {
+                        ImageGenGalleryScreen(onBack = ::popRoute)
                     }
                     entry<AppRoute.Subagents>(swipeDismiss = activeSwipeDismiss) {
                         SubagentSettingsScreen(onBack = ::popRoute)

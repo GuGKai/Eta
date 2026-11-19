@@ -213,6 +213,16 @@
             android:exported="true"
             android:grantUriPermissions="false"
             android:permission="android.permission.MANAGE_ACCESSIBILITY" />
+
+        <provider
+            android:name=".agent.imagegen.EtaFileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/eta_file_paths" />
+        </provider>
     </application>
 
 </manifest>
