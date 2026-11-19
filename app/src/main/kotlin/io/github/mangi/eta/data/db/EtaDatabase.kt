@@ -30,7 +30,7 @@ import androidx.room.migration.Migration
         ScheduledTaskEntity::class,
         ScheduledTaskRunEntity::class,
     ],
-    version = 39,
+    version = 40,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -88,6 +88,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_36_37,
                         MIGRATION_37_38,
                         MIGRATION_38_39,
+                        MIGRATION_39_40,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -467,6 +468,18 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 "CREATE INDEX IF NOT EXISTS index_scheduled_task_runs_status " +
                     "ON scheduled_task_runs (status)"
             )
+        }
+
+        /**
+         * 39 → 40：定时任务「运行时显示进度通知」开关列（上游 #265；上游编为 29→30，本地版本号更高，改名续接）。
+         * 幂等：若列已存在（例如从上游包直接升级）则跳过。
+         */
+        internal val MIGRATION_39_40 = Migration(39, 40) { database ->
+            if (!database.columnExists("scheduled_tasks", "show_running_notification")) {
+                database.execSQL(
+                    "ALTER TABLE scheduled_tasks ADD COLUMN show_running_notification INTEGER NOT NULL DEFAULT 0"
+                )
+            }
         }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {

@@ -66,6 +66,8 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.overlay.applyEvent
+import io.github.mangi.eta.agent.scheduler.ScheduledTaskRunContext
+import io.github.mangi.eta.agent.scheduler.ScheduledTaskRunner
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplaySnapshot
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
@@ -491,15 +493,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         // Root 入口保留原有绑定服务生命周期；新增 FGS 不能成为厂商后台入口的新前置权限。
-        // 自动任务由调度器发起，需要绑定服务回退才能后台执行。
-        val automated = io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId)
-        val allowBoundFallback = RootAccess.isGranted || automated
-        val executionHeld = AgentExecutionService.acquire(
-            this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
-        ) { mainHandler.post { cancelRun(request.runId) } }
-        if (!executionHeld && !allowBoundFallback) {
-            failBeforeExecution(run, "无法启动后台执行服务，请返回 Eta 后重试")
-            return null
+        // 定时任务显式关闭运行进度通知且设备具备后台豁免时，跳过 FGS，做到运行时 0 通知。
+        val silentScheduledRun = isSilentScheduledRun(request)
+        val skipForegroundLease = silentScheduledRun &&
+            ScheduledTaskRunner.canRunSilentlyWithoutForegroundService(this)
+        if (!skipForegroundLease) {
+            // 自动任务由调度器发起，需要绑定服务回退才能后台执行。
+            val automated = io.github.mangi.eta.agent.automation.AgentTaskScheduler.isRegistered(request.runId)
+            val allowBoundFallback = RootAccess.isGranted || automated
+            val executionHeld = AgentExecutionService.acquire(
+                this, "run:${request.runId}", allowBoundFallback = allowBoundFallback,
+            ) { mainHandler.post { cancelRun(request.runId) } }
+            if (!executionHeld && !allowBoundFallback) {
+                failBeforeExecution(run, "无法启动后台执行服务，请返回 Eta 后重试")
+                return null
+            }
         }
         admission.replacedRuns.forEach { cancelRun(it.runId) }
         runCatching {
@@ -1158,6 +1166,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val notices = ArrayList<ExecutionRunNotice>()
         for (active in runs.all()) {
             if (active.session.isTerminal) continue
+            // 定时任务关闭运行进度通知时，不为它出卡片（与上游「静默运行」语义一致）。
+            if (isSilentScheduledRun(active.request)) continue
             // 暂停是全局开关，只落到持有 GUI 所有权的那个任务上，避免别的任务被误标成「暂停中」。
             val paused = guiState.userPaused && active.runId == ownerRunId
             notices.add(
@@ -1177,6 +1187,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun taskLabelOf(run: RuntimeRunRegistry.Run): String {
         val firstLine = run.request.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
         return firstLine.take(12)
+    }
+
+    private fun isSilentScheduledRun(request: AgentRuntimeWire.RunRequest): Boolean {
+        val handoff = request.handoff ?: return false
+        if (handoff.source != AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE) return false
+        val scheduled = AgentExternalArchivePayload.from(handoff.payload)
+            ?.adapterPayload
+            ?.let(ScheduledTaskRunContext::fromAdapterPayload)
+            ?: return false
+        return !scheduled.showRunningNotification
     }
 
     @SuppressLint("WakelockTimeout")
