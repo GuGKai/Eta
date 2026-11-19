@@ -1,5 +1,8 @@
 package io.github.mangi.eta.ui.app
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -152,6 +157,8 @@ internal fun AgentAppShell(
                 val isHome = currentRoute is AppRoute.Home
                 // Home 路由优先显示当前会话标题；没有标题（新会话、空对话）时回退到路由名（Home 为空串）。
                 val homeTitle = conversationTitle?.takeIf { it.isNotBlank() }
+                // 会话标题由无到有、或换成新名字时淡入；路由名不做动画。
+                val conversationTitleAlpha = rememberConversationTitleFade(homeTitle)
                 val couiTextStyle = LocalCouiTextStyle.current
                 // 标题不再上移：回到与左侧按钮、右侧操作钮同一水平中线，并加粗。
                 // 标题左距完全交给 COUI 顶栏自带的标题起点间距：再补空格或 padding 都会叠宽。
@@ -168,7 +175,11 @@ internal fun AgentAppShell(
                                 title = {
                                     BasicText(
                                         text = barTitle,
-                                        modifier = Modifier,
+                                        modifier = if (homeTitle != null) {
+                                            Modifier.alpha(conversationTitleAlpha)
+                                        } else {
+                                            Modifier
+                                        },
                                         // COUI 的正文样式自带固定深色，暗色模式下会黑字压深底，这里显式跟随主题前景色。
                                         style = couiTextStyle.copy(
                                             color = MiuixTheme.colorScheme.onSurface,
@@ -428,6 +439,7 @@ private fun AgentTopBar(
                 // 超出交给 Compose 加省略号：英文、数字、空格本来就比中文窄，
                 // 按字符个数截断会把半个标题白白砍掉。
                 conversationTitle?.takeIf { it.isNotBlank() }?.let { title ->
+                    val titleAlpha = rememberConversationTitleFade(title)
                     val titleMeasurer = rememberTextMeasurer()
                     val titleStyle = MiuixTheme.textStyles.body1
                     val density = LocalDensity.current
@@ -446,7 +458,7 @@ private fun AgentTopBar(
                     // 与 COUI 一致：不再上移，回到顶栏按钮的水平中线，并加粗。
                     Text(
                         text = title,
-                        modifier = Modifier.widthIn(max = titleMaxWidth),
+                        modifier = Modifier.widthIn(max = titleMaxWidth).alpha(titleAlpha),
                         style = titleStyle,
                         fontWeight = FontWeight.Bold,
                         color = MiuixTheme.colorScheme.onSurface,
@@ -624,6 +636,32 @@ private fun TopBarOverflowMenu(
 
 /** 顶栏会话标题的宽度上限：按当前字号实测出的 11 个中文字符宽度。 */
 private const val TOP_BAR_TITLE_CJK_WIDTH = 11
+
+/** 会话标题透明度渐显时长：够看出「淡出来」，又不至于让人等标题。 */
+private const val TOP_BAR_TITLE_FADE_MS = 320
+
+/**
+ * 会话标题的透明度渐显。
+ *
+ * 标题由无到有、或换成新名字时从 0 淡到 1；空标题直接把透明度压到 0，
+ * 这样「发完消息、命名还没落地」的那一瞬间不会闪出旧的占位文案。
+ */
+@Composable
+private fun rememberConversationTitleFade(title: String?): Float {
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(title) {
+        if (title.isNullOrBlank()) {
+            alpha.snapTo(0f)
+        } else {
+            alpha.snapTo(0f)
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = TOP_BAR_TITLE_FADE_MS, easing = LinearOutSlowInEasing),
+            )
+        }
+    }
+    return alpha.value
+}
 
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {

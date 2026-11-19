@@ -160,8 +160,10 @@ internal class AgentAppState(
         private set
     val isLoadingEarlierMessages: Boolean get() = historyLoadState == ConversationHistoryLoadState.Loading
 
-    /** 第一轮还没命名完的会话：顶栏在这期间显示「新任务」。 */
-    private val autoNamingPending = mutableSetOf<String>()
+    /** 第一轮还没命名完的会话：这期间顶栏不显示标题，等按提问起的名字落地再淡入。 */
+    private var autoNamingPending by mutableStateOf(emptySet<String>())
+    /** 首轮已经按提问起过名的会话：回答结束后不再用完整问答重复命名。 */
+    private val promptTitleRequested = mutableSetOf<String>()
     /** 正在补命名的外部入口会话（语音浮窗／小布／小爱／定时任务）：同一会话不重复请求。 */
     private val externalNamingInFlight = mutableSetOf<String>()
     /** 正在补命名的恢复/导入会话：重复恢复时避免同一会话并发请求。 */
@@ -169,7 +171,9 @@ internal class AgentAppState(
 
     private var selectedConversationId: String? = initialConversations.selectedConversationId
     private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
-    private var conversationTitles: Map<String, String> = initialConversations.titles
+    // 顶栏标题直接读这张表：必须挂在 Compose 状态上，否则写完标题不会触发重组，
+    // 要等别的状态变化（开合侧栏、切会话、流式 tick）才连带刷新出来。
+    private var conversationTitles by mutableStateOf(initialConversations.titles)
     private var conversationUpdatedAt: Map<String, Long> = initialConversations.updatedAt
     private var conversationPinnedIds: Set<String> = initialConversations.pinnedIds
     /** 侧栏工作区（会话文件夹）：列表即展示顺序，折叠状态随之持久化。 */
@@ -1880,11 +1884,20 @@ internal class AgentAppState(
             pendingAutoTitleFallbacks[conversationId] = title
         }
 
-        // 这个会话还没有正式名字：等第一轮回答完整结束后按语义命名，期间顶栏显示占位。
-        if (currentTitle.isNullOrBlank()) autoNamingPending += conversationId
+        // 这个会话还没有正式名字：发出去就按提问起名，命名落地前顶栏保持空白。
+        if (currentTitle.isNullOrBlank()) autoNamingPending = autoNamingPending + conversationId
         conversationTitles = conversationTitles + (conversationId to title)
         if (selectedConversationId == conversationId) {
             conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
+        }
+        // 首轮一发出就起名：不等回答结束，顶栏一两秒内就能拿到名字。
+        if (isInitialTurn || isEditingFirstTurnWithAutoTitle) {
+            launchPromptTitleGeneration(
+                conversationId = conversationId,
+                userPrompt = prompt,
+                fileReferences = fileReferences,
+                conversationModelId = state.modelId,
+            )
         }
         launchConversationRun(
             conversationId = conversationId,
@@ -2706,13 +2719,17 @@ internal class AgentAppState(
             val pendingNaming = withContext(Dispatchers.Main.immediate) {
                 conversationId in autoNamingPending
             }
+            // 发送时已经按提问起过名了：这里不再用完整问答二次命名，只做收尾。
             val needsNaming = answer.isNotBlank() &&
+                conversationId !in promptTitleRequested &&
                 (pendingNaming || isPlaceholderTitle(conversationId))
             if (!needsNaming) {
                 if (answer.isBlank()) {
                     AndroidAgentLogger.info("Conversation naming skipped: empty answer")
                 }
-                withContext(Dispatchers.Main.immediate) { autoNamingPending.remove(conversationId) }
+                withContext(Dispatchers.Main.immediate) {
+                    autoNamingPending = autoNamingPending - conversationId
+                }
             } else {
                 try {
                     val title = ConversationTitleGenerator().generate(prompt, answer)
@@ -2726,10 +2743,9 @@ internal class AgentAppState(
                         AndroidAgentLogger.info("Conversation auto named by model: chars=${title.length}")
                     }
                 } finally {
-                    // 命名真的结束（成功或失败）才解除占位。提前解除会让顶栏在「新任务」和
-                    // 最终标题之间闪一下本轮提问的原文——列表里的占位标题就是那句原文。
+                    // 命名真的结束（成功或失败）才解除占位，避免顶栏先闪一下本轮提问原文。
                     withContext(Dispatchers.Main.immediate + NonCancellable) {
-                        autoNamingPending.remove(conversationId)
+                        autoNamingPending = autoNamingPending - conversationId
                     }
                 }
             }
@@ -3072,10 +3088,73 @@ internal class AgentAppState(
         }
     }
 
+    /**
+     * 首轮消息一发出就按提问起名，不等回答结束。
+     *
+     * 只用 prompt：标题质量取决于首句信息量，换来的是发完消息一两秒内就有名字。
+     * 每个会话的首轮只请求一次；失败就退回第一句提问的占位标题，不再用完整问答重试，
+     * 所以 [finishRound] 与 [maybeGenerateConversationTitle] 会看 [promptTitleRequested] 跳过二次命名。
+     */
+    private fun launchPromptTitleGeneration(
+        conversationId: String,
+        userPrompt: String,
+        fileReferences: List<AgentFileReference>,
+        conversationModelId: String?,
+    ) {
+        if (conversationId in manuallyRenamedConversationIds ||
+            conversationId in pendingConversationDeletes ||
+            conversationId.isReadOnlyExternalArchiveConversation()
+        ) {
+            return
+        }
+        val namingPrompt = AgentFileReferencePolicy.titleSource(userPrompt, fileReferences).trim()
+        if (namingPrompt.isBlank()) return
+        promptTitleRequested += conversationId
+        titleGenerationJobs.remove(conversationId)?.cancel()
+        val job = scope.launch {
+            val title = try {
+                ConversationTitleGenerator().generate(
+                    userPrompt = namingPrompt,
+                    assistantReply = "",
+                    conversationModelId = conversationModelId,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                AndroidAgentLogger.warnThrottled("prompt_conversation_title_failed") {
+                    "Prompt conversation title generation failed: type=${failure.safeLogType()}"
+                }
+                null
+            }
+            val applied = withContext(Dispatchers.Main.immediate) {
+                if (conversationId !in conversationsById || conversationId in pendingConversationDeletes) {
+                    return@withContext false
+                }
+                if (!title.isNullOrBlank() && conversationId !in manuallyRenamedConversationIds) {
+                    autoGeneratedTitleIds += conversationId
+                    pendingAutoTitleFallbacks.remove(conversationId)
+                    conversationTitles = conversationTitles + (conversationId to title)
+                }
+                // 成功写标题、失败退回占位原文：两种情况都要解除占位，否则顶栏一直是空白。
+                autoNamingPending = autoNamingPending - conversationId
+                refreshConversationSummaries()
+                !title.isNullOrBlank()
+            }
+            if (applied) persistConversations()
+        }
+        titleGenerationJobs[conversationId] = job
+        job.invokeOnCompletion {
+            if (titleGenerationJobs[conversationId] === job) {
+                titleGenerationJobs.remove(conversationId)
+            }
+        }
+    }
+
     private fun maybeGenerateConversationTitle(
         conversationId: String,
         assistantReply: String,
     ) {
+        if (conversationId in promptTitleRequested) return
         if (conversationId in pendingConversationDeletes ||
             conversationId in manuallyRenamedConversationIds ||
             conversationId.isReadOnlyExternalArchiveConversation()
@@ -3128,6 +3207,7 @@ internal class AgentAppState(
             pendingAutoTitleFallbacks.remove(conversationId)
             autoGeneratedTitleIds.add(conversationId)
             conversationTitles = conversationTitles + (conversationId to generatedTitle)
+            autoNamingPending = autoNamingPending - conversationId
             refreshConversationSummaries()
             persistConversations()
         }

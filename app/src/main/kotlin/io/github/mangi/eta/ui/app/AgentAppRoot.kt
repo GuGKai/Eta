@@ -354,10 +354,11 @@ fun AgentAppRoot(
             conversationPaneState = agentState.conversationPaneState,
             isConversationPaneOpen = conversationPaneOpen,
             // 顶栏状态位：余额胶囊已移到输入栏正中；标题走 conversationTitle。
+            // 命名还没落地时这里是 null，顶栏保持空白（不再显示「新任务」占位）。
             conversationStatus = {},
             conversationTitle = agentState.topBarConversationTitle(
                 agentState.conversationPaneState.selectedConversationId,
-            ) ?: stringResource(R.string.conversation_top_bar_placeholder),
+            ),
             onBack = { popRoute() },
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
