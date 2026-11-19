@@ -23,7 +23,16 @@ internal data class AgentOverlayState(
     val thought: String = "",
     /** 本轮已完成的操作次数，供执行通知第二行「已完成 N 个步骤」使用。 */
     val completedSteps: Int = 0,
+    /** 当前在途的工具调用，保证多 Subagent 并发时不会因首个完成而提前切回思考态。 */
+    val activeTools: List<ActiveTool> = emptyList(),
 ) {
+    @Immutable
+    data class ActiveTool(
+        val callId: String,
+        val name: String,
+        val argsPreview: String = "",
+    )
+
     companion object {
         val Initial = AgentOverlayState(status = AgentOverlayStatus.Reasoning)
     }
@@ -52,7 +61,12 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         GuiControlStatus.Acquired -> copy(phase = AgentOverlayPhase.RUNNING, status = AgentOverlayStatus.Continuing)
         GuiControlStatus.Waiting, GuiControlStatus.Released -> this
     }
-    is AgentEvent.RunStarted -> copy(phase = AgentOverlayPhase.RUNNING, status = AgentOverlayStatus.Reasoning, detailText = "")
+    is AgentEvent.RunStarted -> copy(
+        phase = AgentOverlayPhase.RUNNING,
+        status = AgentOverlayStatus.Reasoning,
+        detailText = "",
+        activeTools = emptyList(),
+    )
     is AgentEvent.RoundStarted -> copy(round = event.round).thinkingUnlessWorking()
     is AgentEvent.ProviderRequestStarted -> copy(round = event.round).thinkingUnlessWorking()
     is AgentEvent.ModelRetryScheduled -> copy(round = event.round, detailText = event.displayMessage).thinkingUnlessWorking()
@@ -67,14 +81,36 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
     // 新一轮思考从空白开始，避免把上一轮的尾句当成当前想法。
     is AgentEvent.AssistantBlockStart -> if (event.kind == AgentEvent.AssistantBlockKind.THINKING) copy(thought = "") else this
 
-    is AgentEvent.ToolStarted -> running(AgentOverlayStatus.RunningTool(event.name), event.round)
-        .copy(thought = event.argsPreview.trim())
+    is AgentEvent.ToolStarted -> {
+        val preview = event.argsPreview.trim()
+        val updatedTools = activeTools.filterNot { event.toolCallId.isNotBlank() && it.callId == event.toolCallId } +
+            AgentOverlayState.ActiveTool(
+                callId = event.toolCallId,
+                name = event.name,
+                argsPreview = preview,
+            )
+        running(AgentOverlayStatus.RunningTool(event.name), event.round)
+            .copy(thought = preview, activeTools = updatedTools)
+    }
     is AgentEvent.HostedToolStarted -> running(AgentOverlayStatus.HostedToolRunning(event.name), event.round)
 
-    // 工具结束后模型马上开始下一轮思考；直接回到思考态，由下一次工具调用切换文字。
+    // 多个工具并发（如并行 Subagent）时，仅当全部在途工具都结束后才切回思考态。
     // 每完成一次工具调用计一步，执行通知的第二行据此正向累计。
-    is AgentEvent.ToolFinished -> running(AgentOverlayStatus.Reasoning, event.round)
-        .copy(thought = "", completedSteps = completedSteps + 1)
+    is AgentEvent.ToolFinished -> {
+        val remaining = if (event.toolCallId.isNotBlank() && activeTools.any { it.callId == event.toolCallId }) {
+            activeTools.filterNot { it.callId == event.toolCallId }
+        } else {
+            emptyList()
+        }
+        val nextTool = remaining.lastOrNull()
+        if (nextTool != null) {
+            running(AgentOverlayStatus.RunningTool(nextTool.name), event.round)
+                .copy(thought = nextTool.argsPreview, activeTools = remaining)
+        } else {
+            running(AgentOverlayStatus.Reasoning, event.round)
+                .copy(thought = "", activeTools = emptyList(), completedSteps = completedSteps + 1)
+        }
+    }
     is AgentEvent.HostedToolFinished -> running(AgentOverlayStatus.Reasoning, event.round)
         .copy(thought = "", completedSteps = completedSteps + 1)
 
@@ -92,12 +128,14 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         phase = AgentOverlayPhase.FINISHED,
         round = event.round,
         status = AgentOverlayStatus.ResultReady,
+        activeTools = emptyList(),
     )
 
     is AgentEvent.RunFailed -> copy(
         phase = AgentOverlayPhase.FAILED,
         status = AgentOverlayStatus.RunFailed,
         detailText = event.reason,
+        activeTools = emptyList(),
     )
 
     is AgentEvent.SearchSuggestions,
