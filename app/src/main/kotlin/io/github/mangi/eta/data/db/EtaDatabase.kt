@@ -28,7 +28,7 @@ import androidx.room.migration.Migration
         AgentTaskEntity::class,
         AgentTaskRunEntity::class,
     ],
-    version = 37,
+    version = 38,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -83,6 +83,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_34_35,
                         MIGRATION_35_36,
                         MIGRATION_36_37,
+                        MIGRATION_37_38,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -378,17 +379,25 @@ internal abstract class EtaDatabase : RoomDatabase() {
             database.execSQL("ALTER TABLE mcp_servers ADD COLUMN tools_truncation_reason TEXT")
         }
 
-        /**
-         * 36 → 37：回答末尾的下一步建议落库。
-         *
-         * 只加列、不回填：老消息拿到 "[]"，界面按「没有建议」处理；
-         * 之前只存在内存里的 chips 也补不回来，但之后切换会话不再丢。
-         */
         internal val MIGRATION_36_37 = Migration(36, 37) { database ->
             if (!database.columnExists("conversation_messages", "prompt_suggestions_json")) {
                 database.execSQL(
                     "ALTER TABLE conversation_messages ADD COLUMN prompt_suggestions_json TEXT NOT NULL DEFAULT '[]'",
                 )
+            }
+        }
+
+        /**
+         * 37 → 38：Gemini Vertex AI 接入配置（上游 #265；上游编为 27→28，本地版本号更高，改名续接）。
+         *
+         * 只加列、幂等：若列已存在（例如从上游包直接升级）则跳过，避免重复 ALTER 报错。
+         */
+        internal val MIGRATION_37_38 = Migration(37, 38) { database ->
+            if (!database.columnExists("model_providers", "vertex_project")) {
+                database.execSQL("ALTER TABLE model_providers ADD COLUMN vertex_project TEXT NOT NULL DEFAULT ''")
+            }
+            if (!database.columnExists("model_providers", "vertex_location")) {
+                database.execSQL("ALTER TABLE model_providers ADD COLUMN vertex_location TEXT NOT NULL DEFAULT 'global'")
             }
         }
 
