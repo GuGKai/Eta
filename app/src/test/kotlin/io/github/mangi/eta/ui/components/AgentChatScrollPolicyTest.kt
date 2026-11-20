@@ -222,6 +222,21 @@ class AgentChatScrollPolicyTest {
     }
 
     @Test
+    fun streamingAnswerCatchUpUsesSmoothDistanceInsteadOfJumpingToBottom() {
+        assertEquals(
+            BottomFollowDecision(scrollByPx = 1000),
+            resolveBottomFollowDecision(
+                enabled = true,
+                bottomItemIndex = 8,
+                sentinelBottom = null,
+                viewportEnd = 1000,
+                lastVisibleIndex = 6,
+                allowMissingSentinelJump = false,
+            ),
+        )
+    }
+
+    @Test
     fun disabledFollowingNeverMovesTheList() {
         assertEquals(
             BottomFollowDecision(),

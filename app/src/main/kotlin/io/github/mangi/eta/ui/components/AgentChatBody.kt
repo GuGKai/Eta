@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.components
 
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -58,6 +59,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -693,6 +695,12 @@ internal fun AgentConversationMessages(
     var hasStreamed by remember { mutableStateOf(false) }
     // 停靠之后用户碰过屏幕：看门狗本轮彻底放手，不许再把视口拽回顶栏。
     var dockUserInterrupted by remember { mutableStateOf(false) }
+    // 上面这个标记的置位时刻（elapsedRealtime）。它只按时间衰减，不再挂满整次 run：
+    // 以前唯一的清除点是 LaunchedEffect(isStreaming) 里 false→true 那一下，而同一次 run
+    // 的多段回答（-16-1 / -18-1 / -29-0 …）期间 isStreaming 一直为 true、该 effect 不重跑，
+    // 于是一次拖动 / 一次键盘抬升就把后面每一轮的停靠全部关掉 —— 表现就是「一路跟到底、
+    // 压根不停靠」。现在手指离开并静置 DockUserInterruptTtlMs 之后自动恢复。
+    var dockInterruptAtMs by remember { mutableLongStateOf(0L) }
     var wasUserDragging by remember { mutableStateOf(false) }
     // 本轮回答已结束、但用户当时没有跟底（滚走了 / 停在会话页上方）：记下这条回答。
     // 收尾阶段不做任何自动滚动，只在「回到底部」圆钮右上角亮一个蓝点，并震一下。
@@ -709,6 +717,11 @@ internal fun AgentConversationMessages(
     val streamingAnswerId = tailMessage
         ?.takeIf { message -> message.content.isNotBlank() }
         ?.id
+    // 正在流式输出、且位于时间线末尾的正式回答。跟底协程是常驻的，必须通过
+    // rememberUpdatedState 读取，不能捕获 effect 启动那一轮的旧值。
+    val handoffStreamingAnswerId by rememberUpdatedState(
+        streamingAnswerId?.takeIf { id -> isStreaming && timelineEntries.lastOrNull()?.key == id }
+    )
     // 历史会话的首帧落点：在 LazyColumn 第一次测量之前就把视口请求到正文条目上。
     // 之前只在 LaunchedEffect 里跳：首帧先按 rememberLazyListState 的初值画在列表底部，
     // 随后再整体上移一大截——那就是用户看到的「突然向上抽动」。
@@ -762,6 +775,7 @@ internal fun AgentConversationMessages(
             pendingTailSettleKey = null
             hasStreamed = true
             dockUserInterrupted = false
+            dockInterruptAtMs = 0L
             wasUserDragging = false
             autoScrollFrozen = false
             answerFirstLineWindowY = null
@@ -782,7 +796,18 @@ internal fun AgentConversationMessages(
             if (id != null && !finalAnswerAnchored) {
                 finalAnswerAnchored = true
                 pendingTailSettleKey = id
+            } else if (id != null) {
+                // 流式期间已经停靠到位：收尾不再判定落点，这里直接给本轮收口。
+                ChatScrollDiag.endRound(id, "stream_docked")
+            } else {
+                // 兜底：本轮从未拿到正文 id（停靠 effect 早早 return），也要留下结论。
+                ChatScrollDiag.endRound(null, "stream_end_no_answer_id")
             }
+            ChatScrollDiag.event(
+                "STREAM_END",
+                "id=" + id + " anchored=" + finalAnswerAnchored +
+                    " handled=" + finalAnswerHandledId + " interrupted=" + dockUserInterrupted,
+            )
         }
     }
 
@@ -832,6 +857,7 @@ internal fun AgentConversationMessages(
     // 基准是首行的窗口 y（屏幕坐标），不是条目顶边：条目内边距、列表 contentPadding、
     // 行高留白都不参与计算，逐帧重新量一次差距闭环，不做一次性位移。
     suspend fun dockAnswerToTop(key: String, itemIndex: Int): Boolean {
+        ChatScrollDiag.event("DOCK_ENTER", "key=" + key + " itemIndex=" + itemIndex)
         if (scrollState.layoutInfo.visibleItemsInfo.none { item -> item.key == key }) {
             scrollState.animateScrollToItem(itemIndex)
             withFrameNanos { }
@@ -864,7 +890,14 @@ internal fun AgentConversationMessages(
         }
         while (frames < 900 && waitedFrames < growthFrameBudget) {
             // 用户正在手动滑动，或下方又冒出工具链（这段只是过渡文本）：立刻放弃停靠，交回默认跟底。
-            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
+            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) {
+                ChatScrollDiag.dockResult(
+                    success = false,
+                    reason = if (isUserDragging) "user_drag" else "tail_changed",
+                    frames = frames,
+                )
+                return false
+            }
             val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it2 -> it2.key == key }
             if (item == null) {
                 // 计帧：条目取不到时不能无限循环，否则每帧一次 scrollToItem 就是可见的抖动。
@@ -875,6 +908,16 @@ internal fun AgentConversationMessages(
             }
             // 首块不是文本块（代码/表格/引用）时拿不到首行字顶，退化为「条目顶边贴顶栏」。
             val delta = (answerFirstLineWindowY ?: item.offset.toFloat()) - target
+            ChatScrollDiag.dockFrame(
+                frame = frames,
+                delta = delta,
+                firstLineY = answerFirstLineWindowY,
+                itemOffset = item.offset,
+                canForward = scrollState.canScrollForward,
+                canBackward = scrollState.canScrollBackward,
+                fromText = answerFirstLineWindowY != null,
+                streaming = latestIsStreaming,
+            )
             // 断点追赶：App 在后台时帧停了，正文却继续长高，视口还停在离开时那一屏。
             // 回到前台后的第一次测量，残差常常有半屏以上；这种「用户根本没看到中间过程」
             // 的追赶绝不能播缓出曲线，否则恢复后第一秒整段正文会自己往下滑一段 ——
@@ -908,9 +951,11 @@ internal fun AgentConversationMessages(
                         scrollState.scroll { scrollBy(delta) }
                     } catch (cancelled: CancellationException) {
                         if (!currentCoroutineContext().isActive) throw cancelled
+                        ChatScrollDiag.dockResult(true, "snap_cancelled", frames)
                         return true
                     }
                 }
+                ChatScrollDiag.dockResult(true, "snap", frames)
                 return true
             }
             // 还要往下沉却已经到底：没有可滚空间，等正文继续长高再收口，不空转报错。
@@ -923,13 +968,17 @@ internal fun AgentConversationMessages(
             // 内容长度刚好卡在一屏时落点在物理上就到不了，照旧每帧发一次 scrollBy 会被
             // 夹成 0 位移，而边界上的回弹动画每帧被重启一次，屏幕上就是正文上下高频抽动。
             // 上方也已到顶（首行越过落点）说明停靠不可达，交回跟底，别把循环空转到帧预算。
-            if (delta < 0f && !scrollState.canScrollBackward) return false
+            if (delta < 0f && !scrollState.canScrollBackward) {
+                ChatScrollDiag.dockResult(false, "no_backward_room", frames)
+                return false
+            }
             // 残差在变小才算推进；连续若干帧毫无进展就收手，别把循环空转到帧预算上限。
             if (abs(delta) < bestAbsDelta - 0.5f) {
                 bestAbsDelta = abs(delta)
                 stalledFrames = 0
             } else if (++stalledFrames >= DockStallFrameLimit) {
                 Log.w(ScrollJitterTag, "dock stalled: delta=" + delta + " frames=" + frames)
+                ChatScrollDiag.dockResult(false, "stalled", frames)
                 finalAnswerHandledId = key
                 return false
             }
@@ -952,11 +1001,16 @@ internal fun AgentConversationMessages(
                 return true
             }
         }
+        ChatScrollDiag.dockResult(
+            success = false,
+            reason = if (waitedFrames >= growthFrameBudget) "growth_budget" else "frame_budget",
+            frames = frames,
+        )
         return false
     }
 
-    // 历史会话打开时的落点：直接把视口放到「首行贴顶栏」，不播位移曲线。
-    // 起步交给结构对齐（条目顶贴顶栏，一次到位），再按首行实测补掉条目内部的上边距。
+    // 历史会话打开时的落点：沿用当前结构对齐位置，不再按首行实测二次补偿。
+    // 用户已确认这个视觉落点合适；这里只把「条目位置稳定」作为成功判据。
     suspend fun snapAnswerToTop(key: String, itemIndex: Int): Boolean {
         val target = topInsetPx + dockGapPx
         // 列表顶部留白（顶栏高度 + ChatTopContentPadding）正好被吃掉时，条目顶就落在顶栏底边上。
@@ -964,56 +1018,92 @@ internal fun AgentConversationMessages(
         // 必须用 scrollToItem：requestScrollToItem 只是登记请求，等下一次测量才采用，
         // 中间那几帧列表还停在原处，随后再被拉正，看上去就是「往上抽一下」。
         scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
-        // 等这一跳被布局采用、首行重新测量（测量回调比帧回调晚一帧，多等一帧更保险）。
+        // 等这一跳被布局采用；首行测量只用于诊断，不参与落点判定。
         repeat(2) { withFrameNanos { } }
         var rounds = 0
+        var previousItemOffset: Int? = null
+        var stableFrames = 0
+        var lastFirstLineY: Float? = null
+        var lastItemOffset: Int? = null
+        var lastDelta: Float? = null
         while (rounds < 10 && currentCoroutineContext().isActive) {
-            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) return false
-            val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { info -> info.key == key }
-            if (item == null) {
-                scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
-                rounds++
-                withFrameNanos { }
-                continue
-            }
-            // 首行字顶必须和条目实测顶边对得上，这一帧的测量才算可信。
-            val firstLineY = answerFirstLineWindowY
-                ?.takeIf { answerFirstLineOwnerKey == key }
-                ?.takeIf { y -> y - item.offset.toFloat() in -4f..FirstLineTopPlausibleSlackPx }
-            // 关键：拿不到可信的首行测量时，绝不能拿「条目顶边」当成已到位就收工。
-            // 条目顶边本来就贴着顶栏，那样会在首行真正测出来之前结束，落点比目标低一截——
-            // 低出来的正是条目内部的上边距，用户看到的就是「停靠位置往下掉了」。
-            if (firstLineY == null) {
-                rounds++
-                withFrameNanos { }
-                continue
-            }
-            val delta = firstLineY - target
-            if (abs(delta) <= 1f) return true
-            // 方向余量守卫：落点在物理上到不了时（正文长度刚好卡一屏或更短），
-            // 连续 10 轮 scrollBy 都会被夹成 0 位移，每帧重启一次边界回弹动画——
-            // 屏幕上同样是正文上下高频抽动。这里一次收手：回到底部，交回默认跟底。
-            val hasRoom = if (delta > 0f) {
-                scrollState.canScrollForward
-            } else {
-                scrollState.canScrollBackward
-            }
-            if (!hasRoom) {
-                if (delta > 0f) scrollState.scrollToItem(bottomItemIndex)
+            if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) {
+                ChatScrollDiag.snapExit(
+                    reason = if (isUserDragging) "dragging" else "tail_changed",
+                    rounds = rounds,
+                    firstLineY = lastFirstLineY,
+                    itemOffset = lastItemOffset,
+                    delta = lastDelta,
+                )
                 return false
             }
-            rounds++
-            try {
-                // 一次挪到底：分步挪会在屏幕上留下看得见的一段上移。
-                scrollState.scroll { scrollBy(delta) }
-            } catch (cancelled: CancellationException) {
-                if (!currentCoroutineContext().isActive) throw cancelled
+            val item = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { info -> info.key == key }
+            if (item == null) {
+                // 这一帧连条目都还没进可视区：重新请求同一个结构落点。
+                ChatScrollDiag.snapProbe(
+                    label = "no_item",
+                    rounds = rounds,
+                    rawFirstLineY = null,
+                    ownerMatched = false,
+                    itemOffset = null,
+                )
+                scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
+                previousItemOffset = null
+                stableFrames = 0
+                lastItemOffset = null
+                rounds++
+                withFrameNanos { }
+                continue
+            }
+
+            val rawFirstLineY = answerFirstLineWindowY
+            val ownerMatched = answerFirstLineOwnerKey == key
+            lastFirstLineY = rawFirstLineY?.takeIf { ownerMatched }
+            lastItemOffset = item.offset
+            // 仅记录首行与旧目标的关系，绝不能据此再移动视口。
+            lastDelta = lastFirstLineY?.let { firstLineY -> firstLineY - target }
+
+            // 条目连续两帧保持同一位置，就说明结构落点已被布局采用。
+            // 不再交叉校验首行与 item.offset：两者还隔着条目内部上边距，
+            // 旧校验会把当前可用落点误判为测量无效，空转十轮后才退出。
+            if (previousItemOffset == item.offset) {
+                stableFrames++
+            } else {
+                previousItemOffset = item.offset
+                stableFrames = 1
+            }
+            if (stableFrames >= 2) {
+                ChatScrollDiag.snapExit(
+                    reason = "structural_stable",
+                    rounds = rounds,
+                    firstLineY = lastFirstLineY,
+                    itemOffset = lastItemOffset,
+                    delta = lastDelta,
+                )
                 return true
             }
+
+            ChatScrollDiag.snapProbe(
+                label = "settling",
+                rounds = rounds,
+                rawFirstLineY = rawFirstLineY,
+                ownerMatched = ownerMatched,
+                itemOffset = item.offset,
+            )
+            rounds++
             withFrameNanos { }
         }
-        // 到头来还是没拿到可信首行：停在「条目顶贴顶栏」这个保底位置，不要再挪。
-        return true
+
+        // 即使排版仍在微调，也保留当前结构落点，不做首行补偿或回到底部。
+        val reachedStructure = lastItemOffset != null
+        ChatScrollDiag.snapExit(
+            reason = if (reachedStructure) "structural_timeout" else "item_missing",
+            rounds = rounds,
+            firstLineY = lastFirstLineY,
+            itemOffset = lastItemOffset,
+            delta = lastDelta,
+        )
+        return reachedStructure
     }
 
     // 停靠守卫：跟着跟底引擎逐帧盯正文首行的窗口 y，一旦首行逼近顶栏就立刻返回 true，
@@ -1022,6 +1112,7 @@ internal fun AgentConversationMessages(
     // 门槛满足后只能大幅回拉，看起来就是「先滚过头再突然拉回来」。
     // 矮正文的首行永远到不了顶栏，这里就一直等到本轮结束，保持默认跟底行为。
     suspend fun awaitAnswerReachTop(key: String): Boolean {
+        var lastFirstLineY: Float? = null
         // 门槛必须就是落点本身。以前这里额外加 dockLookaheadPx（16dp）提前放行，
         // 结果一进停靠循环就必然还差 16dp 要往下滚；而流式跟底此刻通常已经在最底部，
         // 只能「等正文继续长高」，等不到就整轮放弃停靠 —— 那就是「一路跟到底、首行
@@ -1029,23 +1120,56 @@ internal fun AgentConversationMessages(
         val threshold = topInsetPx + dockGapPx
         var waited = 0
         while (currentCoroutineContext().isActive) {
-            if (isUserDragging) return false
+            // streamingAnswerId 在流式结束后还会保留，单靠 LaunchedEffect 的 key 不会取消本协程。
+            // 以前这里继续等到 900 帧上限，收尾判定早已完成，守卫还在空转采样。
+            if (!latestIsStreaming) {
+                ChatScrollDiag.reachTopResult(false, waited, lastFirstLineY)
+                return false
+            }
+            if (isUserDragging) {
+                ChatScrollDiag.reachTopResult(false, waited, lastFirstLineY)
+                return false
+            }
             // 下方又冒出工具链：这段只是过渡正文，交给默认跟底。
-            if (latestTimelineEntries.lastOrNull()?.key != key) return false
+            if (latestTimelineEntries.lastOrNull()?.key != key) {
+                ChatScrollDiag.reachTopResult(false, waited, lastFirstLineY)
+                return false
+            }
             val firstLineY = answerFirstLineWindowY
                 ?.takeIf { answerFirstLineOwnerKey == key }
             if (firstLineY != null) {
-                if (firstLineY <= threshold) return true
+                lastFirstLineY = firstLineY
+                if (firstLineY <= threshold) {
+                    ChatScrollDiag.reachTopResult(true, waited, firstLineY)
+                    return true
+                }
             } else {
                 // 首块不是文本块（代码/表格/引用）时量不到首行字顶，退化成看条目顶边。
                 val item = scrollState.layoutInfo.visibleItemsInfo
                     .firstOrNull { info -> info.key == key }
-                if (item != null && item.offset <= threshold) return true
+                if (item != null && item.offset <= threshold) {
+                    ChatScrollDiag.reachTopResult(true, waited, null)
+                    return true
+                }
             }
             // 死等上限：落点物理不可达时不要一直挂在这里，交回外层重试。
-            if (++waited >= AwaitReachTopFrameBudget) return false
+            if (++waited >= AwaitReachTopFrameBudget) {
+                ChatScrollDiag.reachTopResult(false, waited, lastFirstLineY)
+                return false
+            }
+            // 纯观测：定期采样这一帧的几何，区分「正文没长高」与「跟底把首行推出去了」。
+            ChatScrollDiag.guardSample(
+                waited = waited,
+                firstLineY = lastFirstLineY,
+                itemOffset = scrollState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { info -> info.key == key }?.offset,
+                canForward = scrollState.canScrollForward,
+                atBottom = !scrollState.canScrollForward,
+                streaming = latestIsStreaming,
+            )
             withFrameNanos { }
         }
+        ChatScrollDiag.guardCancelled(waited, lastFirstLineY)
         return false
     }
 
@@ -1062,13 +1186,22 @@ internal fun AgentConversationMessages(
         // 时间线最后一条不是它：下方还有工具链，交给默认跟底，等收尾正文再停。
         if (entries.lastOrNull()?.key != answerId) return@LaunchedEffect
         val itemIndex = answerIndex + earlierMessagesItemCount
+        ChatScrollDiag.beginRound(
+            answerId = answerId,
+            streaming = isStreaming,
+            topInsetPx = topInsetPx,
+            targetY = topInsetPx + dockGapPx,
+        )
         if (!isStreaming) {
             // 历史会话：打开就该停在「首行贴顶栏」的位置，不要先停在底部、再当面上移一次。
             // 所以这里跳过守卫和缓出曲线，直接把视口跳到落点（没有可见的上移动画）。
             // 两种情况都算处理完：true = 停靠到位并冻结跟底；false = 落点不可达/被用户打断，
             // 视口留在跟底位置。标记成已处理，避免同一个回答反复重跳、来回抽动。
-            finalAnswerAnchored = snapAnswerToTop(key = answerId, itemIndex = itemIndex)
+            val snapped = snapAnswerToTop(key = answerId, itemIndex = itemIndex)
+            ChatScrollDiag.snapResult(snapped, itemIndex)
+            finalAnswerAnchored = snapped
             finalAnswerHandledId = answerId
+            ChatScrollDiag.endRound(answerId, "history_snap")
             return@LaunchedEffect
         }
         // 首行逼近顶栏就立刻冻结跟底（矮正文到不了顶栏，始终走默认跟底）。
@@ -1076,7 +1209,10 @@ internal fun AgentConversationMessages(
         // 只试一次的话，任何一次提前失败都会变成「一路跟到底、完全不停靠」。
         // 用户碰过屏幕（滚走了 / 停在会话页上方）：流式跟顶与收尾停靠一律不做，
         // 免得收尾最后一帧又把正文拉回顶栏。
-        if (dockUserInterrupted) return@LaunchedEffect
+        if (dockUserInterrupted) {
+            ChatScrollDiag.dockSkipped("dock_user_interrupted")
+            return@LaunchedEffect
+        }
         // 重试不再有次数上限。以前 4 次用完就收摊，可这个 LaunchedEffect 的 key
         // （streamingAnswerId 与时间线末尾条目）在流式期间都不变，不会重组重跑 ——
         // 于是这一轮就静默地一路跟到底了。现在改成「直到真正停住、被标记处理、
@@ -1084,14 +1220,19 @@ internal fun AgentConversationMessages(
         var attempts = 0
         var backoffFrames = 6
         while (currentCoroutineContext().isActive) {
+            // 流式已结束：不再启动新一轮守卫，也不进入退避等待。
+            if (!latestIsStreaming) return@LaunchedEffect
             // 停靠循环判定落点物理不可达时会自己写 handled：尊重那个结论，别再重来。
             if (finalAnswerHandledId == answerId) return@LaunchedEffect
             if (isUserDragging) return@LaunchedEffect
             if (latestTimelineEntries.lastOrNull()?.key != answerId) return@LaunchedEffect
             attempts++
+            ChatScrollDiag.dockAttemptStart(attempts, itemIndex)
             val reached = awaitAnswerReachTop(key = answerId)
             // await 返回 false 有三种原因：用户接管、末尾换了条目、死等超时。
             // 前两种必须立刻退场；超时只是「这一轮落点还没到」，退避后再来一轮。
+            // 流式结束同样立即退场，交给 pendingTailSettleKey 做收尾判定。
+            if (!latestIsStreaming) return@LaunchedEffect
             if (isUserDragging) return@LaunchedEffect
             if (latestTimelineEntries.lastOrNull()?.key != answerId) return@LaunchedEffect
             if (reached) {
@@ -1101,6 +1242,7 @@ internal fun AgentConversationMessages(
                     finalAnswerHandledId = answerId
                     streamDockedAnswerId = answerId
                     dockUserInterrupted = false
+                    ChatScrollDiag.event("DOCK_OK", "attempts=" + attempts)
                     return@LaunchedEffect
                 }
                 finalAnswerAnchored = false
@@ -1108,7 +1250,11 @@ internal fun AgentConversationMessages(
             if (attempts >= DockRetryBackoffStart) {
                 backoffFrames = (backoffFrames * 2).coerceAtMost(DockRetryMaxBackoffFrames)
             }
-            repeat(backoffFrames) { withFrameNanos { } }
+            // 退避期间也可能收到 STREAM_END；逐帧检查，避免再空等最长 60 帧。
+            repeat(backoffFrames) {
+                if (!latestIsStreaming) return@LaunchedEffect
+                withFrameNanos { }
+            }
         }
     }
 
@@ -1129,22 +1275,30 @@ internal fun AgentConversationMessages(
         val atBottomNow = !scrollState.canScrollForward && bottomContentVisible
         if (atBottomNow) {
             // 就在底部：还原跟底，什么都不动。
+            ChatScrollDiag.tailSettle("at_bottom")
+            ChatScrollDiag.endRound(id)
             finalAnswerAnchored = false
             return@LaunchedEffect
         }
         val entries = latestTimelineEntries
         val answerIndex = entries.indexOfLast { entry -> entry.key == id }
         if (answerIndex < 0) {
+            ChatScrollDiag.tailSettle("answer_missing")
+            ChatScrollDiag.endRound(id)
             finalAnswerAnchored = false
             return@LaunchedEffect
         }
         if (entries.lastOrNull()?.key != id) {
             // 下方还有工具链：这条不是收尾正文，交回跟底。
+            ChatScrollDiag.tailSettle("tail_is_not_answer")
+            ChatScrollDiag.endRound(id)
             finalAnswerAnchored = false
             return@LaunchedEffect
         }
         if (dockUserInterrupted) {
             // 用户自己滚走的：绝不抢滚动，只在圆钮上加蓝点、轻震一次，等用户自己点。
+            ChatScrollDiag.tailSettle("user_interrupted_badge")
+            ChatScrollDiag.endRound(id)
             finalAnswerAnchored = false
             pendingAnswerDockKey = id
             hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
@@ -1155,9 +1309,13 @@ internal fun AgentConversationMessages(
         finalAnswerAnchored = true
         if (dockAnswerToTop(key = id, itemIndex = answerIndex + earlierMessagesItemCount)) {
             streamDockedAnswerId = id
+            ChatScrollDiag.tailSettle("docked_to_first_line", "index=" + answerIndex)
+            ChatScrollDiag.endRound(id)
             Log.i(ScrollJitterTag, "dock tail settle: docked to first line")
         } else {
             finalAnswerAnchored = false
+            ChatScrollDiag.tailSettle("unreachable_keep_viewport", "index=" + answerIndex)
+            ChatScrollDiag.endRound(id)
             Log.i(ScrollJitterTag, "dock tail settle: unreachable, keep viewport")
         }
     }
@@ -1240,14 +1398,39 @@ internal fun AgentConversationMessages(
         if (isUserDragging) {
             wasUserDragging = true
             dockUserInterrupted = true
+            dockInterruptAtMs = SystemClock.elapsedRealtime()
+            ChatScrollDiag.userInterrupted("drag")
             // 用户一动手就解除抖动熔断：视口交还给人，自动滚动不再抢。
             autoScrollFrozen = false
         } else if (wasUserDragging && isAtBottom) {
             // 用户主动滑回底部：放弃本轮停靠，恢复跟底；提示点也就没意义了。
+            // 接管状态一并解除：人都自己回到最底了，再挂着它只会把后面几轮的自动停靠
+            // 一起关掉 —— 那正是「一路跟到底、压根不停靠」的另一条入口。
             wasUserDragging = false
             finalAnswerAnchored = false
             pendingAnswerDockKey = null
+            dockUserInterrupted = false
+            dockInterruptAtMs = 0L
         }
+    }
+
+    // 接管状态只在「仍等本轮停靠交接」时按时间衰减。用户已经滚到别处看旧内容时，
+    // dockUserInterrupted 必须留到收尾，蓝点/震动才走「不抢滚动、只提示」的分支。
+    LaunchedEffect(dockInterruptAtMs) {
+        val stamp = dockInterruptAtMs
+        if (stamp == 0L) return@LaunchedEffect
+        delay(DockUserInterruptTtlMs)
+        if (dockInterruptAtMs != stamp || isUserDragging) return@LaunchedEffect
+        val id = handoffStreamingAnswerId ?: return@LaunchedEffect
+        if (finalAnswerHandledId == id) return@LaunchedEffect
+        if (latestTimelineEntries.lastOrNull()?.key != id) return@LaunchedEffect
+        val itemVisible = scrollState.layoutInfo.visibleItemsInfo
+            .any { info -> info.key == id }
+        if (!itemVisible) return@LaunchedEffect
+        // 流式正文还在视口里：把接管理解成「这帧短暂接管一下」，恢复自动停靠；
+        // 正文不在视口：用户已经离开回答区，保持接管状态，等收尾亮蓝点。
+        dockUserInterrupted = false
+        ChatScrollDiag.event("DOCK_INTERRUPT_EXPIRED", "heldMs=" + DockUserInterruptTtlMs)
     }
 
     // 在消息列表上滑动（上翻或下翻）就自动收起键盘；键盘本来没弹着时什么也不做。
@@ -1325,14 +1508,19 @@ internal fun AgentConversationMessages(
             if (finalAnswerAnchored) {
                 finalAnswerAnchored = false
                 dockUserInterrupted = true
+                dockInterruptAtMs = SystemClock.elapsedRealtime()
+                ChatScrollDiag.userInterrupted("keyboard_lift")
             }
             return@LaunchedEffect
         }
         // 视口确实停在底部：残留的停靠状态一律作废，然后直接贴到新的底部。
         // 不再只靠跟底引擎——它可能被锚点判定或抖动熔断挡着，抬一半就停住。
         // IME inset 逐帧变化时这里逐帧贴底，看上去就是正文跟着键盘一起平移。
+        // 这里绝不能标「用户接管」：只是弹了下键盘、视口本来就在底部，用户要的仍是跟底。
+        // 以前这里置 true，于是一次打字就把后面每一轮的自动停靠全部关掉。
         finalAnswerAnchored = false
-        dockUserInterrupted = true
+        dockUserInterrupted = false
+        dockInterruptAtMs = 0L
         if (!keepBottomAnchored) onBottomAnchorChanged(true)
         scrollState.scrollToItem(bottomItemIndex)
         keyboardLiftSettling = true
@@ -1409,6 +1597,7 @@ internal fun AgentConversationMessages(
             finalAnswerAnchored = false
             isBottomSettling = false
             keyboardLiftSettling = false
+            ChatScrollDiag.jitterFrozen(first.index, first.offset)
             Log.w(ScrollJitterTag, "jitter guard tripped: index=" + first.index + " offset=" + first.offset)
         }
     }
@@ -1438,6 +1627,7 @@ internal fun AgentConversationMessages(
         suppressAutoReanchor,
     ) {
         // 停靠持有期间一律不登记跳底：任何滚动都要给它让路（手动除外）。
+        // 正式回答已经出现时也不在这里硬跳，交给平滑追赶与停靠守卫交接。
         if (isStreaming && keepBottomAnchored) {
             suppressAutoReanchor = false
         }
@@ -1445,8 +1635,12 @@ internal fun AgentConversationMessages(
                 isStreaming = isStreaming,
                 keepBottomAnchored = keepBottomAnchored,
                 isUserDragging = isUserDragging,
-            ) && !finalAnswerAnchored
+            ) && !finalAnswerAnchored && handoffStreamingAnswerId == null
         ) {
+            ChatScrollDiag.event(
+                "BOTTOM_REQUEST",
+                "source=initial index=" + currentBottomItemIndex,
+            )
             scrollState.requestScrollToItem(currentBottomItemIndex)
         }
     }
@@ -1462,6 +1656,13 @@ internal fun AgentConversationMessages(
             BottomFollowLayout(
                 enabled = shouldFollowBottom,
                 bottomItemIndex = currentBottomItemIndex,
+                // 正式回答正在等待停靠交接时，底部哨兵一旦离开视口，绝不能直接
+                // requestScrollToItem(底部)：那会把首行瞬间推过顶栏，再由停靠拉回。
+                allowMissingSentinelJump = handoffStreamingAnswerId == null,
+                // 哨兵不可见时，offset 变化也要让 snapshotFlow 持续发追赶目标；
+                // 否则一个视口的代理距离走完后，长正文可能停在半路上。
+                missingSentinelScrollOffset = scrollState.firstVisibleItemScrollOffset
+                    .takeIf { sentinel == null },
                 sentinelBottom = sentinel?.let { it.offset + it.size },
                 // 输入器高度属于滚动内容的 bottom inset，而不是滚动容器高度。
                 // 跟底目标应是 afterContentPadding 之前的正文边界。
@@ -1477,6 +1678,7 @@ internal fun AgentConversationMessages(
                     sentinelBottom = layout.sentinelBottom,
                     viewportEnd = layout.viewportEnd,
                     lastVisibleIndex = layout.lastVisibleIndex,
+                    allowMissingSentinelJump = layout.allowMissingSentinelJump,
                 )
                 bottomFollowDecisions.trySend(decision)
             }
@@ -1494,6 +1696,32 @@ internal fun AgentConversationMessages(
             requestIndex = decision.requestIndex
         }
 
+        // shouldFollowBottom 来自 rememberUpdatedState，要等下一次重组才刷新。
+        // 停靠接管的那一帧它可能仍是 true，跟底协程便会再补一次向前滚动，
+        // 随后 dockAnswerToTop 又把正文拉回来 —— 实测就是首行先多冲 18～35px 再回弹。
+        // 这里同时直读快照状态，并在真正执行 scrollBy 的 ScrollScope 内再查一次，
+        // 连「检查通过后才被挂起、恢复时已切到停靠」的排队写入也一起挡住。
+        // 首行已经到达守卫门槛时，跟底必须在同一帧停笔，不能等外层协程
+        // 设置 finalAnswerAnchored。否则从测量到接管之间仍可能再推进一次。
+        // 若停靠已经判定不可达（handled），或用户/键盘正在接管，则不在此拦截。
+        fun waitingForDockHandoff(): Boolean {
+            if (dockUserInterrupted || keyboardLiftSettling) return false
+            val id = handoffStreamingAnswerId ?: return false
+            if (finalAnswerHandledId == id) return false
+            if (latestTimelineEntries.lastOrNull()?.key != id) return false
+            // 这里只认首行字顶门槛。条目 item.offset 与 firstLineY 不是同一坐标基准：
+            // 用 item.offset <= topInsetPx 会提前几百像素停笔，而 awaitAnswerReachTop
+            // 仍在等首行到线，结果画面停住，直到收尾才突然跳到答首行。
+            val firstLineY = answerFirstLineWindowY
+                ?.takeIf { answerFirstLineOwnerKey == id }
+                ?: return false
+            return firstLineY <= topInsetPx + dockGapPx
+        }
+
+        fun canFollowNow(): Boolean =
+            shouldFollowBottom && (!finalAnswerAnchored || keyboardLiftSettling) &&
+                !autoScrollFrozen && !waitingForDockHandoff()
+
         while (currentCoroutineContext().isActive) {
             if (remainingDistancePx <= 0f && requestIndex == null) {
                 accept(bottomFollowDecisions.receive())
@@ -1504,7 +1732,7 @@ internal fun AgentConversationMessages(
                 accept(latest)
             }
 
-            if (!shouldFollowBottom) {
+            if (!canFollowNow()) {
                 remainingDistancePx = 0f
                 requestIndex = null
                 continue
@@ -1512,6 +1740,10 @@ internal fun AgentConversationMessages(
 
             val targetIndex = requestIndex
             if (targetIndex != null) {
+                ChatScrollDiag.event(
+                    "BOTTOM_REQUEST",
+                    "source=missing_sentinel index=" + targetIndex,
+                )
                 scrollState.requestScrollToItem(targetIndex)
                 requestIndex = null
                 remainingDistancePx = 0f
@@ -1531,7 +1763,7 @@ internal fun AgentConversationMessages(
                 val latest = bottomFollowDecisions.tryReceive().getOrNull() ?: break
                 accept(latest)
             }
-            if (!shouldFollowBottom || requestIndex != null || remainingDistancePx <= 0f) continue
+            if (!canFollowNow() || requestIndex != null || remainingDistancePx <= 0f) continue
 
             val step = if (keyboardLiftActive) {
                 smoothBottomFollowStep(
@@ -1551,8 +1783,12 @@ internal fun AgentConversationMessages(
             var consumedStep = 0f
             try {
                 scrollState.scroll {
-                    scrollBy(step)
-                    consumedStep = step
+                    // scrollState.scroll 可能先排队挂起；恢复时必须按此刻的停靠状态决定，
+                    // 不能把挂起前算出的那一步继续写进视口。
+                    if (canFollowNow()) {
+                        scrollBy(step)
+                        consumedStep = step
+                    }
                 }
                 remainingDistancePx = if (consumedStep > 0f) {
                     (remainingDistancePx - consumedStep).coerceAtLeast(0f)
@@ -1731,6 +1967,7 @@ internal fun AgentConversationMessages(
                     // 残留的 finalAnswerAnchored 会让下一次弹键盘被当成「还停在顶栏」而不抬。
                     finalAnswerAnchored = false
                     dockUserInterrupted = true
+                    dockInterruptAtMs = SystemClock.elapsedRealtime()
                     autoScrollFrozen = false
                     val pending = pendingAnswerDockKey
                     val pendingIndex = if (pending == null) {
@@ -1829,6 +2066,8 @@ internal fun AgentConversationMessages(
 private data class BottomFollowLayout(
     val enabled: Boolean,
     val bottomItemIndex: Int,
+    val allowMissingSentinelJump: Boolean,
+    val missingSentinelScrollOffset: Int?,
     val sentinelBottom: Int?,
     val viewportEnd: Int,
     val lastVisibleIndex: Int?,
@@ -1845,6 +2084,7 @@ internal fun resolveBottomFollowDecision(
     sentinelBottom: Int?,
     viewportEnd: Int,
     lastVisibleIndex: Int?,
+    allowMissingSentinelJump: Boolean = true,
 ): BottomFollowDecision {
     if (!enabled) return BottomFollowDecision()
     val overflow = sentinelBottom?.minus(viewportEnd)
@@ -1852,7 +2092,14 @@ internal fun resolveBottomFollowDecision(
         overflow != null && overflow > 0 -> BottomFollowDecision(scrollByPx = overflow)
         sentinelBottom == null &&
             lastVisibleIndex != null &&
-            lastVisibleIndex < bottomItemIndex -> BottomFollowDecision(requestIndex = bottomItemIndex)
+            lastVisibleIndex < bottomItemIndex && allowMissingSentinelJump ->
+            BottomFollowDecision(requestIndex = bottomItemIndex)
+        sentinelBottom == null &&
+            lastVisibleIndex != null &&
+            lastVisibleIndex < bottomItemIndex ->
+            // 不知道离底部还有多远时，用一个视口高度作为追赶距离代理。
+            // smoothBottomFollowStep 会限速；等哨兵重新进入视口后再改用精确 overflow。
+            BottomFollowDecision(scrollByPx = viewportEnd.coerceAtLeast(0))
         else -> BottomFollowDecision()
     }
 }
@@ -2108,7 +2355,6 @@ private const val DockTimeConstantSeconds = 0.085f
 // 看上去就是整段正文高频上下抽动。
 private const val DockSnapPx = 3f
 // 首行字顶相对条目顶边的合理上限（px）：超过说明这一帧的测量还是上一屏的旧值，不能用。
-private const val FirstLineTopPlausibleSlackPx = 200f
 // 「等正文继续长高」的帧预算：约 0.4 秒。首行在跟底冻结后不会再动，长等无意义。
 private const val WaitForGrowthFrameBudget = 24
 // 流式期间的同一份预算：正文一定还在长，这里只防死循环（约 5 秒）。
@@ -2122,6 +2368,11 @@ private const val DockExceedTolerancePx = 2f
 // 停靠重试的退避：前几次快速重来，之后指数放大到上限，避免空转烧帧。
 private const val DockRetryBackoffStart = 4
 private const val DockRetryMaxBackoffFrames = 60
+// 「用户接管」状态的存活时间：手指离开并静置这么久之后就恢复自动停靠。
+// 取 8 秒：连续阅读时会不断拖动、每次拖动都刷新计时，等于一直保护；读完停手后自然恢复。
+// 以前这个状态只在 isStreaming false→true 时清除，同一次 run 的多段回答期间根本不清，
+// 于是一次拖动 / 一次打字就把后续每一轮都变成「一路跟到底」。
+private const val DockUserInterruptTtlMs = 8_000L
 
 
 // 停靠看门狗：间隔、偏离容差与纠正次数上限。
