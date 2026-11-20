@@ -11,7 +11,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.MainActivity
-import android.os.Build
+import io.github.mangi.eta.ui.conversationHandoffStartMode
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -52,7 +52,6 @@ import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
-import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
@@ -90,9 +89,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.darkColorScheme
-import top.yukonga.miuix.kmp.theme.lightColorScheme
 
 /**
  * 模块进程内的通用 Agent Runtime。
@@ -1556,14 +1552,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 }
             }
         val options = ActivityOptions.makeBasic().apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                pendingIntentBackgroundActivityStartMode = if (Build.VERSION.SDK_INT >= 36) {
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE
-                } else {
-                    @Suppress("DEPRECATION")
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                }
-            }
+            pendingIntentBackgroundActivityStartMode = conversationHandoffStartMode()
         }
         val launched = runCatching {
             PendingIntent.getActivity(

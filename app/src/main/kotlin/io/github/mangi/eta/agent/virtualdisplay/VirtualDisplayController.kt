@@ -12,7 +12,6 @@ import android.hardware.display.VirtualDisplay
 import android.hardware.display.VirtualDisplayConfig
 import android.media.Image
 import android.media.ImageReader
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
@@ -105,7 +104,7 @@ internal object VirtualDisplayController {
     }
 
     fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
-        CanvasRoutingPolicy.supportsBackgroundDisplay(Build.VERSION.SDK_INT) && (rootAvailable || lsposedAvailable)
+        rootAvailable || lsposedAvailable
 
     fun setStageExpanded(expanded: Boolean) {
         highFrequencyPreview = expanded
@@ -150,7 +149,6 @@ internal object VirtualDisplayController {
         context: Context,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
-        if (!CanvasRoutingPolicy.supportsBackgroundDisplay(Build.VERSION.SDK_INT)) return null
         val appContext = context.applicationContext
         activeContext = appContext
         // 建屏前先屏蔽系统的 size-compat（letterbox）判定：
@@ -965,32 +963,18 @@ internal object VirtualDisplayController {
         height: Int,
         densityDpi: Int,
     ): VirtualDisplay? = runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            runCatching { HiddenApiBypass.addHiddenApiExemptions("Landroid/hardware/display/") }
-        }
+        runCatching { HiddenApiBypass.addHiddenApiExemptions("Landroid/hardware/display/") }
         val dm = appContext.getSystemService(DisplayManager::class.java) ?: return@runCatching null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val builder = VirtualDisplayConfig.Builder(
-                CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
-                width,
-                height,
-                densityDpi,
-            )
-                .setSurface(surface)
-                .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
-            val config = builder.build()
-            AndroidAgentLogger.info("[vd] in-process 虚拟屏创建：size=${width}x$height")
-            dm.createVirtualDisplay(config)
-        } else {
-            dm.createVirtualDisplay(
-                CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
-                width,
-                height,
-                densityDpi,
-                surface,
-                CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS,
-            )
-        }
+        val config = VirtualDisplayConfig.Builder(
+            CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
+            width,
+            height,
+            densityDpi,
+        )
+            .setSurface(surface)
+            .setFlags(CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS)
+            .build()
+        dm.createVirtualDisplay(config)
     }.getOrNull()
 
     /** 破壁过渡：位图放大到全屏所需时间，与 overlay 的弹簧时长同量级。 */
@@ -1169,9 +1153,7 @@ internal object VirtualDisplayController {
     ): Boolean {
         // 1. 尝试进程内通过 system_server Hook 放行的 moveRootTaskToDisplay 迁移
         val movedInProcess = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                HiddenApiBypass.addHiddenApiExemptions("Landroid/app/ActivityTaskManager", "Landroid/app/IActivityTaskManager")
-            }
+            HiddenApiBypass.addHiddenApiExemptions("Landroid/app/ActivityTaskManager", "Landroid/app/IActivityTaskManager")
             val atmClass = Class.forName("android.app.ActivityTaskManager")
             val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching false
             val getTasks = service.javaClass.methods.firstOrNull { it.name == "getTasks" && it.parameterCount >= 1 }

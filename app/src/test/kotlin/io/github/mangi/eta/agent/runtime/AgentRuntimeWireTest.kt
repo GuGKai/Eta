@@ -27,7 +27,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 // Wire/image transport does not need EtaApp's background database/automation workers.
-@Config(sdk = [33, 36], application = android.app.Application::class)
+@Config(sdk = [34, 36], application = android.app.Application::class)
 class AgentRuntimeWireTest {
     @Test
     fun oauthWireCarriesOnlyAuthenticationModeAndDropsLegacySecrets() {

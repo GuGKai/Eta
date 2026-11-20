@@ -1257,10 +1257,6 @@ class AgentAccessibilityService : AccessibilityService() {
                 runCatching { onWindowsSubmitted?.invoke() }
             }
         }
-        // 旧系统没有逐窗口截图，不能用全屏截图绕过入口包与 Eta 浮层排除合同。
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            return ScreenshotCaptureResult.unavailable().also { signalWindowsSubmitted() }
-        }
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return ScreenshotCaptureResult.unavailable().also { signalWindowsSubmitted() }
         }
@@ -1661,8 +1657,7 @@ class AgentAccessibilityService : AccessibilityService() {
                 AccessibilityNodeInfo.ACTION_SCROLL_FORWARD in actions ||
                     AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD in actions
                 ) -> 2
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-                AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_IN_DIRECTION.id in actions -> 1
+            AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_IN_DIRECTION.id in actions -> 1
             else -> 0
         }
     }
@@ -1728,17 +1723,15 @@ class AgentAccessibilityService : AccessibilityService() {
                 )
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val inDirection = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_IN_DIRECTION.id
-            if (inDirection in actionIds) {
-                val args = Bundle().apply {
-                    putInt(
-                        AccessibilityNodeInfo.ACTION_ARGUMENT_DIRECTION_INT,
-                        direction.focusDirection(),
-                    )
-                }
-                return ScrollMethod(inDirection, "ACTION_SCROLL_IN_DIRECTION", args)
+        val inDirection = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_IN_DIRECTION.id
+        if (inDirection in actionIds) {
+            val args = Bundle().apply {
+                putInt(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_DIRECTION_INT,
+                    direction.focusDirection(),
+                )
             }
+            return ScrollMethod(inDirection, "ACTION_SCROLL_IN_DIRECTION", args)
         }
         return null
     }
@@ -2763,13 +2756,8 @@ class AgentAccessibilityService : AccessibilityService() {
             AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_DOWN.id,
             AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_LEFT.id,
             AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_RIGHT.id,
-        ).let { actions ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                actions + AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_IN_DIRECTION.id
-            } else {
-                actions
-            }
-        }
+            AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_IN_DIRECTION.id,
+        )
         private val VERTICAL_DIRECTION_ACTION_IDS = setOf(
             AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id,
             AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id,

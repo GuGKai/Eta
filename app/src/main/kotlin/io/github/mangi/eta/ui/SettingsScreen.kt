@@ -943,7 +943,7 @@ private fun SettingsPageContent(
                             }
                         },
                     )
-                    if (AccessibilityProtectionClient.isSupported() && (prefs != null || hasConnectedFramework)) {
+                    if (prefs != null || hasConnectedFramework) {
                         CouiIconDivider()
                         CouiSwitchPreference(
                             title = stringResource(R.string.ui_enforce_accessibility_55e838),
@@ -1362,7 +1362,7 @@ private fun SettingsPageContent(
                                 }
                             },
                         )
-                        if (AccessibilityProtectionClient.isSupported() && (prefs != null || hasConnectedFramework)) {
+                        if (prefs != null || hasConnectedFramework) {
                             SwitchPreference(
                                 title = stringResource(R.string.ui_enforce_accessibility_55e838),
                                 checked = accessibilityProtectionEnabled,
