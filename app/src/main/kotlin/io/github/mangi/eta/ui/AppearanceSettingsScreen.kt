@@ -104,11 +104,13 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
         update { current -> current.copy(chatTextScale = scale) }
     }
 
-    val uiStyles = AppearanceUiStyle.entries
-    val uiStyleLabels = listOf(
-        stringResource(R.string.appearance_ui_style_coui),
-        stringResource(R.string.appearance_ui_style_miuix),
-    )
+    val uiStyles = remember { AppearanceUiStyle.entries.sortedBy { it != AppearanceUiStyle.Default } }
+    val uiStyleLabels = uiStyles.map { style ->
+        when (style) {
+            AppearanceUiStyle.MIUIX -> stringResource(R.string.appearance_ui_style_miuix)
+            AppearanceUiStyle.COUI -> stringResource(R.string.appearance_ui_style_coui)
+        }
+    }
     val themeModes = AppearanceThemeMode.entries
     val themeModeLabels = listOf(
         stringResource(R.string.appearance_theme_system),
@@ -152,7 +154,7 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                     CouiDropdownPreference(
                         title = stringResource(R.string.appearance_ui_style),
                         items = uiStyleLabels,
-                        selectedIndex = appearance.uiStyle.ordinal,
+                        selectedIndex = uiStyles.indexOf(appearance.uiStyle),
                         onSelectedIndexChange = { index ->
                             uiStyles.getOrNull(index)?.let(::selectUiStyle)
                         },
@@ -292,7 +294,7 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                         GlassDropdownPreference(
                             title = stringResource(R.string.appearance_ui_style),
                             items = uiStyleLabels,
-                            selectedIndex = appearance.uiStyle.ordinal,
+                            selectedIndex = uiStyles.indexOf(appearance.uiStyle),
                             backdrop = backdrop,
                             onSelectedIndexChange = { index ->
                                 uiStyles.getOrNull(index)?.let(::selectUiStyle)
