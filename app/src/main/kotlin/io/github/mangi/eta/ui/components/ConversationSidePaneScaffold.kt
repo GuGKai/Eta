@@ -1,6 +1,9 @@
 package io.github.mangi.eta.ui.components
 
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
@@ -73,7 +76,21 @@ private object ConversationPaneMetrics {
     const val SettleStiffness = 146f
     const val SettleVisibilityThresholdPx = 0.5f
     const val SettlePositionThresholdFraction = 0.5f
+    /** 点击开/合的固定时长：侧栏一次打开或收起都由同一条曲线走完，不再有弹簧尾巴。 */
+    const val ClickDurationMillis = 400
 }
+
+/**
+ * 「点击」触发的侧栏开合动画，开与合共用。
+ *
+ * 原来走 spring：临界阻尼的指数尾巴让最后 1% 行程（约 12px）磨掉近 300ms，
+ * 观感是「滑到一半停住、再突然贴齐」。这里换成有明确终点的贝塞尔缓出，
+ * 400ms 到点即止；拖动松手后的 fling settle 仍走 spring，保留手指速度的承接。
+ */
+private val ConversationPaneClickSpec: AnimationSpec<Float> = tween(
+    durationMillis = ConversationPaneMetrics.ClickDurationMillis,
+    easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f),
+)
 
 @Composable
 fun ConversationSidePaneScaffold(
@@ -198,7 +215,9 @@ fun ConversationSidePaneScaffold(
             }
             val target = if (visible) ConversationPaneAnchor.Open else ConversationPaneAnchor.Closed
             if (paneDragState.targetValue != target || paneDragState.settledValue != target) {
-                paneDragState.animateTo(target, settleAnimation)
+                // 点击触发的开与合都是静止起点，统一走固定时长曲线，400ms 到点即止；
+                // 拖动松手后的 fling settle 仍走 settleAnimation 的弹簧，保留速度承接。
+                paneDragState.animateTo(target, ConversationPaneClickSpec)
             }
         }
 

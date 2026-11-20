@@ -1,10 +1,18 @@
 package io.github.mangi.eta.ui.screens.home
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.ui.components.AgentChatBody
@@ -19,6 +27,11 @@ import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.AgentHomeAction
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.roleplayChatUi
+
+/** 打开历史会话时，内容整体的「淡入 + 上浮」出现动画。 */
+private const val ConversationEnterDurationMillis = 300
+private const val ConversationEnterRiseDp = 16f
+private val ConversationEnterEasing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
 
 /**
  * AgentChatHome：首屏为聊天主舞台。
@@ -58,6 +71,19 @@ internal fun AgentHomeScreen(
             val browser = remember(conversationKey) {
                 BrowserSessionRegistry.get(conversationKey ?: BrowserSessionRegistry.MANUAL_SESSION_KEY)
             }
+            // 打开历史会话时内容整体淡入 + 轻微上浮；草稿页没有历史内容，
+            // 正在回答的会话要保持流式追加的既有节奏，两者都不走这段动画。
+            val playEnterAnimation = conversationKey != null && !state.isStreaming
+            var enterStarted by remember { mutableStateOf(!playEnterAnimation) }
+            val enterProgress by animateFloatAsState(
+                targetValue = if (enterStarted) 1f else 0f,
+                animationSpec = tween(
+                    durationMillis = ConversationEnterDurationMillis,
+                    easing = ConversationEnterEasing,
+                ),
+                label = "conversationEnterProgress",
+            )
+            LaunchedEffect(Unit) { enterStarted = true }
             CompositionLocalProvider(
                 LocalRoleplayChat provides state.roleplayChatUi(),
                 LocalAgentBrowserSession provides browser,
@@ -117,7 +143,10 @@ internal fun AgentHomeScreen(
                     isDrawerOpen = isDrawerOpen,
                     focusInputRequest = focusInputRequest,
                     onFocusInputHandled = onFocusInputHandled,
-                    modifier = modifier,
+                    modifier = modifier.graphicsLayer {
+                        alpha = enterProgress
+                        translationY = (1f - enterProgress) * ConversationEnterRiseDp.dp.toPx()
+                    },
                 )
             }
         }
