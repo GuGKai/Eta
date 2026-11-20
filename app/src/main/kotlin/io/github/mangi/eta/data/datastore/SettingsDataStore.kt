@@ -223,11 +223,11 @@ internal object SettingsDataStore {
 
     private var warmUpJob: Job? = null
 
-    fun init(context: Context) {
+    fun init(context: Context, prewarm: Boolean = true) {
         if (!::dataStore.isInitialized) {
             dataStore = context.applicationContext.dataStore
         }
-        warmUp()
+        if (prewarm) warmUp()
     }
 
     fun cachedSettings(): Settings? = settingsCache

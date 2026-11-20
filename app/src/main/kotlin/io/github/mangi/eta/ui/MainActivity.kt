@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
@@ -25,11 +26,20 @@ import io.github.mangi.eta.ui.app.PredictiveBackController
 import io.github.mangi.eta.ui.app.installStartupSplash
 import java.util.Collections
 import java.util.IdentityHashMap
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var launchRequests by mutableStateOf(MainActivityLaunchRequests())
-    private var appliedPredictiveBackEnabled = true
+
+    /**
+     * 当前进程里 ApplicationInfo 的实际状态；null 表示还没有成功应用过。
+     * 不能用设置值初始化，否则首次组合会误判为"已应用"，进程内标志与设置脱节时无法自愈。
+     */
+    private var appliedPredictiveBackEnabled: Boolean? = null
+
+    /** 本次 Activity 里已经处理过的设置值，用于忽略首次组合、只响应真实切换。 */
+    private var handledPredictiveBackSetting: Boolean? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,7 +50,17 @@ class MainActivity : ComponentActivity() {
         launchRequests = MainActivityLaunchRequests.restore(savedInstanceState, intent)
         lifecycleScope.launch {
             val initialAppearance = AppearanceSettingsRepository.settings()
-            appliedPredictiveBackEnabled = initialAppearance.predictiveBackEnabled
+            val initialPredictiveBack = initialAppearance.predictiveBackEnabled
+            appliedPredictiveBackEnabled = if (
+                PredictiveBackController.apply(applicationInfo, initialPredictiveBack)
+            ) {
+                initialPredictiveBack
+            } else {
+                null
+            }
+            AndroidAgentLogger.info(
+                "Predictive back init: setting=$initialPredictiveBack applied=$appliedPredictiveBackEnabled",
+            )
             setContent {
                 val appearance by AppearanceSettingsRepository.settingsFlow()
                     .collectAsState(initial = initialAppearance)
@@ -51,11 +71,23 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(appearance.predictiveBackEnabled) {
                     val enabled = appearance.predictiveBackEnabled
-                    if (enabled != appliedPredictiveBackEnabled &&
-                        PredictiveBackController.apply(applicationInfo, enabled)
-                    ) {
+                    // 首次组合时的值由 onCreate 里那次 apply 处理，这里只响应后续变化。
+                    if (handledPredictiveBackSetting == null) {
+                        handledPredictiveBackSetting = enabled
+                        return@LaunchedEffect
+                    }
+                    if (enabled == handledPredictiveBackSetting) return@LaunchedEffect
+                    // 等开关的过渡动画播完再重建，避免动画被 recreate 硬切断。
+                    delay(PREDICTIVE_BACK_APPLY_DELAY_MS)
+                    if (enabled != appearance.predictiveBackEnabled) return@LaunchedEffect
+                    handledPredictiveBackSetting = enabled
+                    if (PredictiveBackController.apply(applicationInfo, enabled)) {
                         appliedPredictiveBackEnabled = enabled
-                        recreateWithoutTransition()
+                        AndroidAgentLogger.info("Predictive back changed: applied=$enabled")
+                        // 只在界面可见时重建；后台时不打断，等下次窗口重建自然生效。
+                        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                            recreateWithoutTransition()
+                        }
                     }
                 }
 
@@ -186,6 +218,9 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** 开关过渡动画播完后再应用预测性返回设置，单位毫秒。 */
+        private const val PREDICTIVE_BACK_APPLY_DELAY_MS = 320L
+
         private val startedInstances = Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
 
         @Volatile

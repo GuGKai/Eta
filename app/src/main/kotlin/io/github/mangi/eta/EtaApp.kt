@@ -49,9 +49,11 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         super.onCreate()
         Prefs.initLocal(this)
         if (!AppProcessPolicy.shouldInitializeFullRuntime(Application.getProcessName(), packageName)) {
+            applyPredictiveBackForAuxiliaryProcess()
             return
         }
         AppForegroundState.install(this)
+        io.github.mangi.eta.ui.components.ChatScrollDiag.install(java.io.File(filesDir, "scroll-diag"))
         LaunchUpdateNotice.install(this)
         TerminalRuntime.initialize(this)
         RootAccess.initialize(this)
@@ -90,6 +92,20 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
                 )
             }
         }
+    }
+
+    /**
+     * :voice / :recognition 等子进程里也有 Activity（例如语音助手界面），
+     * 它们的窗口同样要在创建前读到 ApplicationInfo 上的预测性返回标志，
+     * 所以这些进程不初始化完整 runtime，也要单独应用一次设置。
+     */
+    private fun applyPredictiveBackForAuxiliaryProcess() {
+        SettingsDataStore.init(this, prewarm = false)
+        val enabled = runBlocking(Dispatchers.IO) {
+            runCatching { AppearanceSettingsRepository.settings().predictiveBackEnabled }
+                .getOrDefault(true)
+        }
+        PredictiveBackController.apply(applicationInfo, enabled)
     }
 
     override fun onTrimMemory(level: Int) {
