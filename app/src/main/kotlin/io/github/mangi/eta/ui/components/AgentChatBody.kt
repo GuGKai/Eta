@@ -87,6 +87,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -2498,42 +2499,6 @@ private fun EmptyChatState(
                     color = MiuixTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(26.dp))
-            }
-
-            AnimatedVisibility(
-                visible = showSuggestions && !isCharacterConversation,
-                enter = fadeIn(
-                    animationSpec = tween(durationMillis = 220)
-                ) + slideInVertically(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                    initialOffsetY = { it / 3 },
-                ),
-                exit = fadeOut(
-                    animationSpec = tween(durationMillis = 130)
-                ) + slideOutVertically(
-                    animationSpec = tween(durationMillis = 180),
-                    targetOffsetY = { it / 4 },
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    suggestions.chunked(2).forEach { rowItems ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            rowItems.forEach { item ->
-                                SuggestionCard(
-                                    item = item,
-                                    onClick = { onSuggestionClick(item.prompt) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
     }
