@@ -7,12 +7,15 @@ import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
+import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.parser.MarkdownParser
 
 internal object SpeechText {
-    fun readable(markdown: String): String {
-        val root = MarkdownParser(GFMFlavourDescriptor())
-            .buildMarkdownTreeFromString(markdown)
+    fun readable(markdown: CharSequence): String {
+        val root = MarkdownParser(
+            flavour = GFMFlavourDescriptor(),
+            cancellationToken = CancellationToken.NonCancellable,
+        ).buildMarkdownTreeFromString(markdown)
         fun StringBuilder.appendNode(node: ASTNode) {
             when (node.type) {
                 MarkdownElementTypes.LINK_DEFINITION,
