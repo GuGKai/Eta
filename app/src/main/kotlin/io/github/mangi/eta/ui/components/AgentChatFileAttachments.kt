@@ -8,6 +8,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -158,6 +160,17 @@ internal fun AgentAttachmentPickerButton(
 
     val uiStyle = LocalUiStyle.current
     val isCoui = uiStyle == AppearanceUiStyle.COUI
+    // COUI 的附件按钮补一块与输入栏操作区同风格的浅色圆底；
+    // 直径跟随发送按钮的可视圆形，图标则沿用发送按钮的 18dp 视觉尺寸。
+    val attachmentCircleModifier = if (isCoui) {
+        val dark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
+        Modifier.background(
+            color = MiuixTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.06f else 0.038f),
+            shape = CircleShape,
+        )
+    } else {
+        Modifier
+    }
     Box(modifier = modifier) {
         IconButton(
             onClick = { anchor.open { showPopup = true } },
@@ -167,12 +180,20 @@ internal fun AgentAttachmentPickerButton(
                 .onGloballyPositioned { buttonBounds = it.boundsInWindow() }
                 .couiMenuAnchor(anchor),
         ) {
-            Icon(
-                imageVector = if (isCoui) Icons.Rounded.Add else MiuixIcons.Glass.Add,
-                contentDescription = stringResource(R.string.ui_add_attachment_dba9e8),
-                modifier = Modifier.size(if (isCoui) ChatInputActionIconSize else 23.dp),
-                tint = if (isCoui) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-            )
+            Box(
+                modifier = Modifier
+                    .size(if (isCoui) 32.dp else 23.dp)
+                    .clip(CircleShape)
+                    .then(attachmentCircleModifier),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (isCoui) Icons.Rounded.Add else MiuixIcons.Glass.Add,
+                    contentDescription = stringResource(R.string.ui_add_attachment_dba9e8),
+                    modifier = Modifier.size(if (isCoui) 18.dp else 23.dp),
+                    tint = if (isCoui) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                )
+            }
         }
         when (uiStyle) {
             AppearanceUiStyle.COUI -> {

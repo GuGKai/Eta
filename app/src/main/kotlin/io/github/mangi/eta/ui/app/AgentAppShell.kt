@@ -37,7 +37,6 @@ import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.MapsUgc
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -266,7 +265,6 @@ internal fun AgentAppShell(
                                             CouiTopBarOverflowMenu(
                                                 dark = dark,
                                                 colors = colors,
-                                                onNewConversation = onNewConversation,
                                                 onOpenTerminal = onOpenTerminal,
                                                 onOpenBrowser = onOpenBrowser,
                                                 onOpenTasks = onOpenTasks,
@@ -379,7 +377,6 @@ internal fun AgentAppShell(
 private fun CouiTopBarOverflowMenu(
     dark: Boolean,
     colors: com.itos.coui.layout.CouiPageColors,
-    onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenTasks: () -> Unit,
@@ -391,7 +388,6 @@ private fun CouiTopBarOverflowMenu(
     val autoReadEnabled = speechSettings?.chatAutoSpeak == true
     val anchor = rememberCouiMenuAnchor()
 
-    val newConversationText = stringResource(R.string.action_new_conversation)
     val openTerminalText = stringResource(R.string.action_open_terminal)
     val openBrowserText = stringResource(R.string.action_open_browser)
     val openTasksText = stringResource(R.string.automation_title)
@@ -399,7 +395,6 @@ private fun CouiTopBarOverflowMenu(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
     )
     val menuItems = remember(
-        newConversationText,
         openTerminalText,
         openBrowserText,
         openTasksText,
@@ -408,7 +403,6 @@ private fun CouiTopBarOverflowMenu(
         autoReadEnabled,
     ) {
         buildList {
-            add(CouiMenuItem(value = 0, text = newConversationText, icon = Icons.Rounded.MapsUgc))
             add(CouiMenuItem(value = 1, text = openTerminalText, icon = Icons.Rounded.Terminal))
             add(CouiMenuItem(value = 3, text = openBrowserText, icon = Icons.Rounded.Language))
             // 与设置页同一个入口，直接跳到自动任务列表。

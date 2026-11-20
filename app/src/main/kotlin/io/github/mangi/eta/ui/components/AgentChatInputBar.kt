@@ -145,7 +145,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private val SendButtonVisualSize = ChatInputActionIconSize
 private val SendIconSize = 16.dp
 private val StopIconSize = 10.dp
-private val ThinkingIconSize = 21.dp
+private val ThinkingIconSize = ChatInputActionIconSize
 /** 输入栏正中的余额胶囊：由外壳页面注入，避免把余额状态一路透传进输入栏。 */
 internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
 
@@ -814,8 +814,16 @@ private fun ThinkingEffortChip(
                 .couiMenuAnchor(anchor)
                 .size(ChatInputActionSize)
                 .clip(CircleShape)
-                .background(bgColor, CircleShape)
-                .border(0.5.dp, borderColor, CircleShape)
+                .then(
+                    if (isCoui) {
+                        // COUI 下只保留模型图标本体；圆形浅色底和细描边移给左侧附件按钮。
+                        Modifier
+                    } else {
+                        Modifier
+                            .background(bgColor, CircleShape)
+                            .border(0.5.dp, borderColor, CircleShape)
+                    },
+                )
                 .then(
                     if (isCoui) {
                         Modifier.couiButtonFeedback(isDark, interactionSource, enabled = interactive)
