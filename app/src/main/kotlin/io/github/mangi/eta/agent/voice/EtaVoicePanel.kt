@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -108,7 +109,7 @@ private val CouiExitEasing = CubicBezierEasing(0.30f, 0f, 1f, 1f)
 internal fun EtaVoicePanel(
     speechLevel: () -> Float,
     state: EtaVoiceUiState,
-    input: String,
+    input: TextFieldState,
     speech: EtaSpeechState,
     recognitionEnabled: Boolean?,
     entranceComplete: Boolean,
@@ -124,7 +125,8 @@ internal fun EtaVoicePanel(
     canOpenConversation: Boolean,
     handoffRunning: Boolean,
     exitRequested: Boolean,
-    onInputChange: (String) -> Unit,
+    onInputEdited: () -> Unit,
+    onSuggestionClick: (String) -> Unit,
     onSubmit: () -> Unit,
     onStop: () -> Unit,
     onClose: () -> Unit,
@@ -312,7 +314,11 @@ internal fun EtaVoicePanel(
                 ),
                 maxContentHeightPx = maxContentHeightPx,
                 imeOverlapPx = imeOverlap,
-                onInputChange = onInputChange,
+                onInputEdited = onInputEdited,
+                onSuggestionClick = { suggestion ->
+                    keyboard?.hide()
+                    onSuggestionClick(suggestion)
+                },
                 keyboardVisible = keyboardVisible,
                 onSubmit = {
                     keyboard?.hide()
@@ -329,7 +335,7 @@ internal fun EtaVoicePanel(
 @Composable
 private fun BoxScope.AssistantPanel(
     state: EtaVoiceUiState,
-    input: String,
+    input: TextFieldState,
     speech: EtaSpeechState,
     speechLevel: () -> Float,
     recognitionEnabled: Boolean,
@@ -346,7 +352,8 @@ private fun BoxScope.AssistantPanel(
     baseContentHeightPx: Float,
     maxContentHeightPx: Float,
     imeOverlapPx: Int,
-    onInputChange: (String) -> Unit,
+    onInputEdited: () -> Unit,
+    onSuggestionClick: (String) -> Unit,
     keyboardVisible: Boolean,
     onSubmit: () -> Unit,
     onStop: () -> Unit,
@@ -730,6 +737,11 @@ private fun BoxScope.AssistantPanel(
                 }
             }
         }
+        EtaAssistantSuggestions(
+            onSuggestionClick = onSuggestionClick,
+            colors = colors,
+            visible = !hasMessages && !speech.hasFeedback,
+        )
         AssistantComposer(
             state = state,
             input = input,
@@ -745,7 +757,7 @@ private fun BoxScope.AssistantPanel(
             onKeyboard = onKeyboard,
             keyboardVisible = keyboardVisible,
             colors = colors,
-            onInputChange = onInputChange,
+            onInputEdited = onInputEdited,
             onSubmit = onSubmit,
             onStop = onStop,
             modifier = Modifier
