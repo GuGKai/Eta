@@ -793,6 +793,14 @@ private fun AgentMessageBlock(
     } else {
         null
     }
+    // 朗读一旦开始，正文会被强制切成静态渲染（见下方 when 分支），StreamingMarkdown 会离开组合，
+    // 它的 onRevealCompleteChange 再也不会回来。显现标记一直是 false 的话，回答底部那行操作
+    // （朗读/复制/重新生成…）就会一直藏着，非要等朗读停下才出现。这里在朗读接管时直接补完标记。
+    LaunchedEffect(speakingIndex, message.isStreaming) {
+        if (speakingIndex != null && !message.isStreaming) {
+            streamingRevealComplete = true
+        }
+    }
 
     val character = LocalRoleplayChat.current.takeUnless { assistantOverlay }
     val isGreeting = character != null && message.id.startsWith(GreetingMessagePrefix)
