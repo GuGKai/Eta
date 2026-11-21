@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -270,6 +271,7 @@ internal fun AgentAppShell(
                                                 onOpenTerminal = onOpenTerminal,
                                                 onOpenBrowser = onOpenBrowser,
                                                 onOpenTasks = onOpenTasks,
+                                                onOpenScheduledTasks = onOpenScheduledTasks,
                                             )
                                         }
                                     }
@@ -366,6 +368,7 @@ internal fun AgentAppShell(
                 onOpenTools = onOpenTools,
                 onOpenSkills = onOpenSkills,
                 onOpenScheduledTasks = onOpenScheduledTasks,
+                activeModelLabel = homeModelPickerState?.selectedModel?.displayName,
                 onOpenCharacters = onOpenCharacters,
                 onOpenPermissions = onOpenPermissions,
             ) {
@@ -384,6 +387,7 @@ private fun CouiTopBarOverflowMenu(
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenTasks: () -> Unit,
+    onOpenScheduledTasks: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -395,6 +399,7 @@ private fun CouiTopBarOverflowMenu(
     val openTerminalText = stringResource(R.string.action_open_terminal)
     val openBrowserText = stringResource(R.string.action_open_browser)
     val openTasksText = stringResource(R.string.automation_title)
+    val openScheduledText = stringResource(R.string.route_scheduled_tasks)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
     )
@@ -402,6 +407,7 @@ private fun CouiTopBarOverflowMenu(
         openTerminalText,
         openBrowserText,
         openTasksText,
+        openScheduledText,
         autoReadText,
         hasSpeechPlayback,
         autoReadEnabled,
@@ -411,6 +417,8 @@ private fun CouiTopBarOverflowMenu(
             add(CouiMenuItem(value = 3, text = openBrowserText, icon = Icons.Rounded.Language))
             // 与设置页同一个入口，直接跳到自动任务列表。
             add(CouiMenuItem(value = 4, text = openTasksText, icon = Icons.Rounded.FilterAlt))
+            // 定时任务（时间驱动）排在自动任务下面，与设置页入口一致。
+            add(CouiMenuItem(value = 6, text = openScheduledText, icon = Icons.Rounded.Schedule))
             if (hasSpeechPlayback) {
                 add(
                     CouiMenuItem(
@@ -442,6 +450,7 @@ private fun CouiTopBarOverflowMenu(
                     1 -> onOpenTerminal()
                     3 -> onOpenBrowser()
                     4 -> onOpenTasks()
+                    6 -> onOpenScheduledTasks()
                     5 -> speechSettings?.let { current ->
                         scope.launch {
                             SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !current.chatAutoSpeak))

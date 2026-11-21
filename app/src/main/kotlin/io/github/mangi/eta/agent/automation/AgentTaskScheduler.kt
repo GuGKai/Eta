@@ -1,9 +1,7 @@
 package io.github.mangi.eta.agent.automation
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.KeyguardManager
-import android.app.PendingIntent
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.content.ComponentName
@@ -80,35 +78,10 @@ internal object AgentTaskScheduler {
     fun refresh(context: Context) = runBlocking {
         val dao = EtaDatabase.get(context).agentTaskDao()
         val tasks = dao.tasks().filter { it.enabled && it.runCount < it.maxRuns }
-        val now = System.currentTimeMillis()
-        val currentState = state(context)
-        val earliest = tasks.mapNotNull { task ->
-            task.nextRunAt?.let { due ->
-                if (due <= now && !AgentTaskRules.conditionsMatch(
-                        JSONObject(task.triggerJson),
-                        currentState
-                    )
-                ) now + 15 * 60_000 else due
-            }
-        }.minOrNull()
-        val alarms = context.getSystemService(AlarmManager::class.java)
-        val alarm = PendingIntent.getBroadcast(
-            context,
-            JOB_ID,
-            Intent(context, AgentTaskReceiver::class.java).setAction(AgentTaskReceiver.ACTION_TICK),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        alarms.cancel(alarm)
-        if (earliest != null) alarms.setAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            maxOf(earliest, System.currentTimeMillis() + 60_000),
-            alarm
-        )
         val queued = dao.nextQueued() != null
         synchronized(jobLock) {
             if (!jobRunning.get()) {
                 if (queued) requestJob(context)
-                else if (earliest != null) requestJob(context, (earliest - now).coerceAtLeast(0))
                 else context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
             }
         }
@@ -147,27 +120,24 @@ internal object AgentTaskScheduler {
         )
     }
 
-    fun enqueueDue(context: Context, now: Long = System.currentTimeMillis()) = runBlocking {
+    /**
+     * 存量时间计划类任务只保留记录：关闭并清空下次时间。
+     * 时间驱动已统一由调度模块（scheduled_tasks）负责，避免两套机制重复触发。
+     */
+    fun retireTimeTasks(context: Context) = runBlocking {
         val dao = EtaDatabase.get(context).agentTaskDao()
-        val state = state(context)
-        dao.tasks().filter { it.enabled && it.nextRunAt?.let { due -> due <= now } == true }
+        dao.tasks()
+            .filter { JSONObject(it.triggerJson).optString("type") in AgentTaskRules.retiredTimeTypes }
             .forEach { task ->
-                val rule = JSONObject(task.triggerJson)
-                if (AgentTaskRules.conditionsMatch(rule, state)) {
-                    dao.enqueue(
-                        task,
-                        AgentTaskRunEntity(
-                            UUID.randomUUID().toString(),
-                            task.id,
-                            "time:${task.nextRunAt}",
-                            queuedAt = now
-                        ),
-                        AgentTaskRules.nextTime(rule, now, false)
+                runCatching {
+                    dao.updateTask(
+                        task.copy(
+                            enabled = false,
+                            nextRunAt = null,
+                            updatedAt = maxOf(System.currentTimeMillis(), task.updatedAt + 1)
+                        )
                     )
-                } else {
-                    // 保留原定时点用于去重；稍后由普通调度再检查条件，不提前执行。
-                    requestJob(context, 15 * 60_000)
-                }
+                }.onFailure { AndroidAgentLogger.warn("Retire legacy time task failed") }
             }
     }
 
@@ -236,14 +206,13 @@ internal object AgentTaskScheduler {
 
     fun capabilities(context: Context): JSONObject {
         val triggers = JSONArray()
-        (AgentTaskRules.timeTypes + AgentTaskRules.eventTypes).forEach { type ->
+        AgentTaskRules.eventTypes.forEach { type ->
             val available = available(context, type)
             val scope = when (type) {
                 "notification_posted", "notification_removed" -> "需要系统通知读取授权；不回放连接前通知，忽略 Eta 自身通知"
                 "app_foreground" -> "需要 Eta 无障碍服务连接；按窗口事件触发"
                 "bluetooth_connected", "bluetooth_disconnected" -> "需要蓝牙连接授权"
                 "memory_updated", "task_completed", "task_failed" -> "Eta 本地事件；任务结果触发需要 filters.taskId 防止循环"
-                in AgentTaskRules.timeTypes -> "AlarmManager + JobScheduler；可能延迟，不保证准点"
                 else -> "事件监控前台服务运行期间接收；系统结束服务时不补发"
             }
             triggers.put(
@@ -265,25 +234,16 @@ internal object AgentTaskScheduler {
         return JSONObject().put("triggers", triggers)
             .put("monitorRunning", AgentTriggerMonitorService.isRunning)
             .put("conditions", JSONArray(listOf("charging", "unlocked", "networkConnected")))
-            .put(
-                "timeExamples", JSONArray(
-                    listOf(
-                        JSONObject().put("type", "once").put("at", "2026-10-10T09:00:00+08:00"),
-                        JSONObject().put("type", "interval").put("seconds", 3600),
-                        JSONObject().put("type", "daily").put("time", "09:00")
-                            .put("timeZone", "Asia/Shanghai")
-                    )
-                )
-            )
     }
 
     fun requireTriggerAvailable(context: Context, rule: JSONObject) {
-        require(
-            available(
-                context,
-                rule.getString("type")
-            )
-        ) { "触发来源未授权，请先 tasks_triggers；也可 enabled=false 保存" }
+        val type = rule.getString("type")
+        require(type !in AgentTaskRules.retiredTimeTypes) {
+            "时间计划类触发器已下线，请改用定时任务（scheduled_tasks 工具）"
+        }
+        require(available(context, type)) {
+            "触发来源未授权，请先 tasks_triggers；也可 enabled=false 保存"
+        }
         if (rule.getString("type") in setOf(
                 "task_completed",
                 "task_failed"
@@ -300,7 +260,7 @@ internal object AgentTaskScheduler {
 
         "app_foreground" -> AgentAccessibilityService.isAvailable()
         "bluetooth_connected", "bluetooth_disconnected" -> context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-        else -> type in AgentTaskRules.timeTypes || type in AgentTaskRules.eventTypes
+        else -> type in AgentTaskRules.eventTypes
     }
 
     private val monitoredEventTypes = AgentTaskRules.eventTypes - setOf(

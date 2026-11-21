@@ -1,7 +1,5 @@
 package io.github.mangi.eta.agent.automation
 
-import java.time.Instant
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -13,55 +11,15 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36])
 class AgentTaskRulesTest {
     @Test
-    fun onceIsConsumedAndIntervalsSkipMissedExecutions() {
-        val once = AgentTaskRules.validate(
-            JSONObject().put("type", "once").put("at", "2026-10-10T09:00:00+08:00")
-        )
-        assertEquals(
-            Instant.parse("2026-10-10T01:00:00Z").toEpochMilli(),
-            AgentTaskRules.nextTime(once, 0, true)
-        )
-        assertNull(AgentTaskRules.nextTime(once, 0, false))
-        val interval = AgentTaskRules.validate(
-            JSONObject().put("type", "interval").put("seconds", 3600)
-                .put("startAt", "2026-10-10T09:00:00+08:00")
-        )
-        assertEquals(
-            Instant.parse("2026-10-10T04:00:00Z").toEpochMilli(),
-            AgentTaskRules.nextTime(
-                interval,
-                Instant.parse("2026-10-10T03:20:00Z").toEpochMilli(),
-                false
-            )
-        )
-    }
-
-    @Test
-    fun dailyUsesExplicitTimeZoneWeekdaysAndDstTransition() {
-        val rule = AgentTaskRules.validate(
-            JSONObject().put("type", "daily").put("time", "09:00").put("timeZone", "Asia/Shanghai")
-                .put("weekdays", JSONArray(listOf(1, 2, 3, 4, 5)))
-        )
-        assertEquals(
-            Instant.parse("2026-10-12T01:00:00Z").toEpochMilli(),
-            AgentTaskRules.nextTime(
-                rule,
-                Instant.parse("2026-10-09T02:00:00Z").toEpochMilli(),
-                false
-            )
-        )
-        val dst = AgentTaskRules.validate(
-            JSONObject().put("type", "daily").put("time", "02:30")
-                .put("timeZone", "America/New_York")
-        )
-        assertEquals(
-            Instant.parse("2026-03-08T07:30:00Z").toEpochMilli(),
-            AgentTaskRules.nextTime(
-                dst,
-                Instant.parse("2026-03-08T00:00:00Z").toEpochMilli(),
-                false
-            )
-        )
+    fun timeTriggersAreRetiredAndRejected() {
+        listOf(
+            JSONObject().put("type", "once").put("at", "2026-10-10T09:00:00+08:00"),
+            JSONObject().put("type", "interval").put("seconds", 3600),
+            JSONObject().put("type", "daily").put("time", "09:00").put("timeZone", "Asia/Shanghai"),
+        ).forEach { raw ->
+            val error = assertThrows(Exception::class.java) { AgentTaskRules.validate(raw) }
+            assertTrue(error.message?.contains("已下线") == true)
+        }
     }
 
     @Test
@@ -105,13 +63,11 @@ class AgentTaskRulesTest {
     }
 
     @Test
-    fun unsupportedTriggersUnknownFiltersAndFractionalIntervalsAreRejected() {
+    fun unsupportedTriggersAndUnknownFiltersAreRejected() {
         val invalid = listOf(
             JSONObject().put("type", "location_enter"),
-            JSONObject().put("type", "interval").put("seconds", 900.5),
             JSONObject().put("type", "app_foreground")
                 .put("filters", JSONObject().put("textContains", "text")),
-            JSONObject().put("type", "daily").put("time", "25:00").put("timeZone", "Asia/Shanghai"),
             JSONObject().put("type", "screen_off")
                 .put("conditions", JSONObject().put("unlocked", "true"))
         )

@@ -39,7 +39,6 @@ internal class AgentTaskJobService : JobService() {
             try {
                 runBlocking {
                     val dao = EtaDatabase.get(this@AgentTaskJobService).agentTaskDao()
-                    AgentTaskScheduler.enqueueDue(this@AgentTaskJobService)
                     val run = dao.nextQueued() ?: return@runBlocking
                     // deadline 可能越过网络约束；离线时保留队列，不调用模型或消耗执行次数。
                     if (AgentTaskScheduler.state(this@AgentTaskJobService)["networkConnected"] != true) {

@@ -118,6 +118,8 @@ fun ConversationSidePaneScaffold(
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
     onOpenScheduledTasks: () -> Unit = {},
+    /** 首页当前选中模型名，工作台「模型」一行的右侧取值。 */
+    activeModelLabel: String? = null,
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
     onNewConversation: () -> Unit = {},
@@ -297,6 +299,7 @@ fun ConversationSidePaneScaffold(
                         onOpenTools = onOpenTools,
                         onOpenSkills = onOpenSkills,
                         onOpenScheduledTasks = onOpenScheduledTasks,
+                        activeModelLabel = activeModelLabel,
                         onOpenCharacters = onOpenCharacters,
                         onOpenPermissions = onOpenPermissions,
                         modifier = Modifier

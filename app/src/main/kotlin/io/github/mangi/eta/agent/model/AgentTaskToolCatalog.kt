@@ -33,21 +33,9 @@ internal object AgentTaskToolCatalog {
                     "type",
                     JSONObject().put("type", "string").put(
                         "enum",
-                        JSONArray((AgentTaskRules.timeTypes + AgentTaskRules.eventTypes).toList())
+                        JSONArray(AgentTaskRules.eventTypes.toList())
                     )
                 )
-                    .put("at", text(64)).put("startAt", text(64)).put(
-                        "seconds",
-                        JSONObject().put("type", "integer").put("minimum", 900)
-                            .put("maximum", 31_536_000)
-                    )
-                    .put("time", text(5)).put("timeZone", text(100)).put(
-                        "weekdays",
-                        JSONObject().put("type", "array").put(
-                            "items",
-                            JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 7)
-                        )
-                    )
                     .put(
                         "filters",
                         JSONObject().put("type", "object").put("additionalProperties", false).put(
@@ -81,7 +69,7 @@ internal object AgentTaskToolCatalog {
                 )
         schema(
             "tasks_triggers",
-            "Inspect implemented automation triggers, current permissions, event lifecycle and scheduling limits before creating a task. Unavailable future triggers cannot be enabled. Time triggers may be delayed by Android."
+            "Inspect implemented automation triggers, current permissions and event lifecycle before creating an event-driven task. Unavailable future triggers cannot be enabled. This tool only covers event triggers; time schedules (once/interval/daily, cron) belong to the separate scheduled-task tools."
         )
         schema(
             "tasks_list",
@@ -89,7 +77,7 @@ internal object AgentTaskToolCatalog {
         )
         schema(
             "tasks_create",
-            "Persist an assistant task only when the user asks for a future schedule or automation. First inspect tasks_triggers. Use once with offset ISO 8601 at; interval >=900 seconds; daily requires HH:mm and IANA timeZone, optional weekdays 1–7. Event filters depend on trigger type; task result triggers require an exact source taskId. Local matching uses no model calls; executing uses the currently selected model and permissions. No main-screen GUI operation is allowed during automatic runs. Prefer a specific goal and bounded maxRuns; enabled=false saves a draft when a source is unavailable.",
+            "Persist an event-driven assistant task. First inspect tasks_triggers. Time schedules (once/interval/daily, cron) are NOT supported here — use the scheduled-task tools for anything time based. Event filters depend on trigger type; task result triggers require an exact source taskId. Local matching uses no model calls; executing uses the currently selected model and permissions. No main-screen GUI operation is allowed during automatic runs. Prefer a specific goal and bounded maxRuns; enabled=false saves a draft when a source is unavailable.",
             definition,
             listOf("name", "prompt", "trigger")
         )

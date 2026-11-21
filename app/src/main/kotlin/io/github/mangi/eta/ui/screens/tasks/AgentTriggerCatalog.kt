@@ -54,7 +54,6 @@ internal enum class TaskTriggerGroup(val label: Int) {
 
 internal data class TaskTriggerUi(val type: String, val available: Boolean) {
     val group: TaskTriggerGroup get() = when (type) {
-        in AgentTaskRules.timeTypes -> TaskTriggerGroup.TIME
         "network_connected", "network_disconnected", "bluetooth_connected", "bluetooth_disconnected", "headset_connected", "headset_disconnected" -> TaskTriggerGroup.CONNECTION
         "notification_posted", "notification_removed", "app_foreground" -> TaskTriggerGroup.APPS
         "memory_updated", "task_completed", "task_failed" -> TaskTriggerGroup.ETA
@@ -64,7 +63,7 @@ internal data class TaskTriggerUi(val type: String, val available: Boolean) {
 
 internal fun loadTaskTriggers(context: Context): List<TaskTriggerUi> {
     val array = AgentTaskScheduler.capabilities(context).getJSONArray("triggers")
-    val supported = AgentTaskRules.timeTypes + AgentTaskRules.eventTypes
+    val supported = AgentTaskRules.eventTypes
     return (0 until array.length()).map { array.getJSONObject(it) }.filter { it.optString("type") in supported }
         .map { TaskTriggerUi(it.getString("type"), it.optBoolean("available")) }
 }
@@ -263,7 +262,6 @@ internal fun TriggerDetails(trigger: TaskTriggerUi, onDismiss: () -> Unit) {
 }
 
 private fun triggerDescriptionRes(type: String): Int = when (type) {
-    in AgentTaskRules.timeTypes -> R.string.automation_trigger_scope_time
     "notification_posted", "notification_removed" -> R.string.automation_trigger_scope_notification
     "app_foreground" -> R.string.automation_trigger_scope_accessibility
     "bluetooth_connected", "bluetooth_disconnected" -> R.string.automation_trigger_scope_bluetooth

@@ -143,6 +143,10 @@ import com.itos.coui.dialog.CouiDialogDefaults
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
 import com.itos.coui.layout.Divider
+import com.itos.coui.layout.Divider as CouiDivider
+import com.itos.coui.icons.CouiIcons
+import io.github.mangi.eta.ui.components.coui.CouiIcon
+import androidx.compose.foundation.layout.defaultMinSize
 import com.itos.coui.menu.CouiMenuItem
 import com.itos.coui.radiobutton.RadioButton
 import com.itos.coui.menu.Menu
@@ -265,6 +269,7 @@ internal fun ConversationPanePanel(
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
     onOpenScheduledTasks: () -> Unit = {},
+    activeModelLabel: String? = null,
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
     isRevealed: Boolean = true,
@@ -779,6 +784,12 @@ internal fun ConversationPanePanel(
 /** 工作区 chip 浮动材质外半影预留的纵向余量：亮色灰影比暗色明显，按最亮的一档留。 */
 private val WorkspaceChipShadowRoom = 20.dp
 
+/** chip 之间、以及 chip 与面板内边距之间的固定间隔。 */
+private val WorkspaceChipGap = 8.dp
+
+/** chip 行两端溢出时的渐隐宽度，超出面板边框的 chip 在这段距离内淡到透明。 */
+private val WorkspaceChipEdgeFade = 30.dp
+
 private fun buildChipEdgeFadeEffect(
     widthPx: Float,
     fadeStartPx: Float,
@@ -825,6 +836,14 @@ private fun buildChipEdgeFadeEffect(
         .createBlendModeEffect(content, mask, AndroidBlendMode.DST_IN)
         .asComposeRenderEffect()
 }
+
+private data class WorkbenchEntry(
+    val icon: ImageVector,
+    val title: String,
+    val trailingValue: String? = null,
+    val onClick: () -> Unit,
+)
+
 
 @Composable
 private fun PaneWorkbenchSection(
@@ -937,6 +956,124 @@ private fun PaneWorkbenchSection(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CouiWorkbenchRow(
+    entry: WorkbenchEntry,
+    dark: Boolean,
+) {
+    val colors = CouiPageDefaults.themeColors(dark)
+    val source = remember { MutableInteractionSource() }
+    val chevronTint = Color(if (dark) 0x4DFFFFFF else 0x42000000)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = ConversationPanelMetrics.WorkbenchRowMinHeight)
+            .couiButtonFeedback(dark, source, enabled = true, list = true)
+            .clickable(
+                interactionSource = source,
+                indication = null,
+                role = Role.Button,
+                onClick = entry.onClick,
+            )
+            .padding(
+                horizontal = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
+                vertical = 11.dp,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CouiIcon(
+            imageVector = entry.icon,
+            contentDescription = null,
+            modifier = Modifier.size(ConversationPanelMetrics.WorkbenchIconSize),
+            tint = colors.title.copy(alpha = 0.86f),
+        )
+        Spacer(Modifier.width(ConversationPanelMetrics.WorkbenchIconGap))
+        CouiText(
+            text = entry.title,
+            kind = CouiTextKind.ItemTitle,
+            color = colors.title,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Start,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!entry.trailingValue.isNullOrEmpty()) {
+            CouiText(
+                text = entry.trailingValue,
+                kind = CouiTextKind.ItemValue,
+                color = colors.summary,
+                modifier = Modifier
+                    .widthIn(max = 136.dp)
+                    .padding(start = 8.dp),
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        CouiIcon(
+            imageVector = CouiIcons.Outlined.Next,
+            contentDescription = null,
+            modifier = Modifier
+                .padding(start = 6.dp)
+                .size(width = 11.dp, height = 20.dp),
+            tint = chevronTint,
+        )
+    }
+}
+
+@Composable
+private fun MiuixWorkbenchRow(entry: WorkbenchEntry) {
+    val colors = MiuixTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = ConversationPanelMetrics.WorkbenchRowMinHeight)
+            .clickable(role = Role.Button, onClick = entry.onClick)
+            .padding(
+                horizontal = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
+                vertical = 11.dp,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = entry.icon,
+            contentDescription = null,
+            modifier = Modifier.size(ConversationPanelMetrics.WorkbenchIconSize),
+            tint = colors.onSurface.copy(alpha = 0.85f),
+        )
+        Spacer(Modifier.width(ConversationPanelMetrics.WorkbenchIconGap))
+        Text(
+            text = entry.title,
+            style = MiuixTheme.textStyles.body1.copy(fontSize = 15.sp),
+            color = colors.onSurface,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!entry.trailingValue.isNullOrEmpty()) {
+            Text(
+                text = entry.trailingValue,
+                style = MiuixTheme.textStyles.footnote1,
+                color = colors.onSurfaceVariantSummary,
+                modifier = Modifier
+                    .widthIn(max = 136.dp)
+                    .padding(start = 8.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            imageVector = ConversationPaneIcons.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier
+                .padding(start = 4.dp)
+                .size(14.dp),
+            tint = colors.onSurfaceVariantActions,
+        )
     }
 }
 

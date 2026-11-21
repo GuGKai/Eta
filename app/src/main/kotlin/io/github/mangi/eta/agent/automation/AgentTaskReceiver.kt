@@ -22,7 +22,6 @@ internal class AgentTaskReceiver : BroadcastReceiver() {
                         System.currentTimeMillis().toString()
                     )
                 }
-                AgentTaskScheduler.enqueueDue(context)
                 AgentTaskScheduler.refresh(context)
             } finally {
                 pending.finish()

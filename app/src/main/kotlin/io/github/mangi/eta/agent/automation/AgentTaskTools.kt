@@ -30,14 +30,14 @@ internal class AgentTaskTools(context: Context) {
                         text(args, "prompt", 8000),
                         rule.toString(),
                         boolean(args, "enabled", true),
-                        AgentTaskRules.nextTime(rule, now, true),
+                        null,
                         AgentTaskRules.integer(args, "cooldownSeconds", 60, 86400, 900),
                         AgentTaskRules.integer(
                             args,
                             "maxRuns",
                             1,
                             10000,
-                            if (rule.getString("type") == "once") 1 else 1000
+                            1000
                         ).toInt(),
                         createdAt = now,
                         updatedAt = now
@@ -75,11 +75,7 @@ internal class AgentTaskTools(context: Context) {
                         prompt = if (args.has("prompt")) text(args, "prompt", 8000) else old.prompt,
                         enabled = boolean(args, "enabled", old.enabled),
                         triggerJson = rule.toString(),
-                        nextRunAt = if (args.has("trigger") || (!old.enabled && args.optBoolean("enabled"))) AgentTaskRules.nextTime(
-                            rule,
-                            now,
-                            true
-                        ) else old.nextRunAt,
+                        nextRunAt = null,
                         cooldownSeconds = AgentTaskRules.integer(
                             args,
                             "cooldownSeconds",

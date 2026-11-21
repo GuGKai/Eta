@@ -53,7 +53,6 @@ import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.runtime.AgentRuntimeService
-import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTaskDetailScreen
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTaskEditorScreen
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTasksScreen
