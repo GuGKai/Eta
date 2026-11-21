@@ -38,7 +38,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
@@ -64,6 +63,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.Constraints
@@ -91,7 +91,6 @@ import io.github.mangi.eta.ui.components.CharacterAvatar
 import io.github.mangi.eta.ui.components.ChatActionIcons
 import io.github.mangi.eta.ui.components.AgentTopBarChatHeader
 import io.github.mangi.eta.ui.components.ChatImagePreviewHost
-import io.github.mangi.eta.ui.components.ConversationPanelMetrics
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.EtaTopLayer
 import io.github.mangi.eta.ui.components.MiuixBackButton
@@ -218,17 +217,21 @@ internal fun AgentAppShell(
                         if (currentRoute !is AppRoute.Settings) {
                             CouiTopAppBar(
                                 title = {
+                                    // 标题横向占满「左侧按钮右侧 → 三点菜单左侧」的整段槽位并居中。
+                                    // COUI 顶栏给标题的槽宽 = 屏宽 - (padding + 左按钮 + gap) - (padding + 右按钮 + gap)，
+                                    // 两侧用的是同一 padding 与同一 gap，所以居中后左右留白天然相等。
                                     BasicText(
                                         text = barTitle,
-                                        modifier = if (homeTitle != null) {
+                                        modifier = (if (homeTitle != null) {
                                             Modifier.alpha(conversationTitleAlpha)
                                         } else {
                                             Modifier
-                                        },
+                                        }).fillMaxWidth(),
                                         // COUI 的正文样式自带固定深色，暗色模式下会黑字压深底，这里显式跟随主题前景色。
                                         style = couiTextStyle.copy(
                                             color = MiuixTheme.colorScheme.onSurface,
                                             fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center,
                                         ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -255,18 +258,12 @@ internal fun AgentAppShell(
                                 actions = {
                                     if (isHome) {
                                         TopAppBarButtonGroup {
-                                            // 新建对话独立成按钮放在右侧，图标用加号；菜单里不再重复一项。
-                                            CouiTopAppBarIconButton(
-                                                icon = ChatActionIcons.NewChat,
-                                                contentDescription = stringResource(R.string.action_new_conversation),
-                                                onClick = onNewConversation,
-                                                dark = dark,
-                                                colors = colors,
-                                                iconSize = ConversationPanelMetrics.NewChatIconSize,
-                                            )
+                                            // 新建对话收进右侧三点菜单的第一项，顶栏右侧只留菜单按钮；
+                                            // 空出来的位置直接让给标题（标题可用宽度由 COUI 顶栏按两侧按钮宽度算）。
                                             CouiTopBarOverflowMenu(
                                                 dark = dark,
                                                 colors = colors,
+                                                onNewConversation = onNewConversation,
                                                 onOpenTerminal = onOpenTerminal,
                                                 onOpenBrowser = onOpenBrowser,
                                                 onOpenTasks = onOpenTasks,
@@ -382,6 +379,7 @@ internal fun AgentAppShell(
 private fun CouiTopBarOverflowMenu(
     dark: Boolean,
     colors: com.itos.coui.layout.CouiPageColors,
+    onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenTasks: () -> Unit,
@@ -394,7 +392,7 @@ private fun CouiTopBarOverflowMenu(
     val autoReadEnabled = speechSettings?.chatAutoSpeak == true
     val anchor = rememberCouiMenuAnchor()
 
-    val openTerminalText = stringResource(R.string.action_open_terminal)
+    val newConversationText = stringResource(R.string.action_new_conversation)
     val openBrowserText = stringResource(R.string.action_open_browser)
     val openTasksText = stringResource(R.string.automation_title)
     val openScheduledText = stringResource(R.string.route_scheduled_tasks)
@@ -402,7 +400,7 @@ private fun CouiTopBarOverflowMenu(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
     )
     val menuItems = remember(
-        openTerminalText,
+        newConversationText,
         openBrowserText,
         openTasksText,
         openScheduledText,
@@ -411,7 +409,8 @@ private fun CouiTopBarOverflowMenu(
         autoReadEnabled,
     ) {
         buildList {
-            add(CouiMenuItem(value = 1, text = openTerminalText, icon = Icons.Rounded.Terminal))
+            // 新建对话从顶栏收进菜单，固定排在第一位。
+            add(CouiMenuItem(value = 0, text = newConversationText, icon = ChatActionIcons.NewChat))
             add(CouiMenuItem(value = 3, text = openBrowserText, icon = Icons.Rounded.Language))
             // 与设置页同一个入口，直接跳到自动任务列表。
             add(CouiMenuItem(value = 4, text = openTasksText, icon = Icons.Rounded.FilterAlt))
@@ -445,6 +444,8 @@ private fun CouiTopBarOverflowMenu(
             onItemClick = { item ->
                 showMenu = false
                 when (item.value) {
+                    0 -> onNewConversation()
+                    // 1 是刚下线的「打开终端」菜单项：按钮收起了，回调仍留着，方便以后换入口再挂回来。
                     1 -> onOpenTerminal()
                     3 -> onOpenBrowser()
                     4 -> onOpenTasks()
@@ -639,7 +640,6 @@ private fun TopBarOverflowMenu(
     val hasSpeechPlayback = speechSettings?.let { it.tts != TtsProvider.NONE } == true
     val autoReadEnabled = speechSettings?.chatAutoSpeak == true
     val newConversationText = stringResource(R.string.action_new_conversation)
-    val openTerminalText = stringResource(R.string.action_open_terminal)
     val openBrowserText = stringResource(R.string.action_open_browser)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
@@ -687,14 +687,6 @@ private fun TopBarOverflowMenu(
                     onClick = {
                         showMenu = false
                         onNewConversation()
-                    },
-                )
-                GlassPopupItem(
-                    text = openTerminalText,
-                    icon = MiuixIcons.Glass.Computer,
-                    onClick = {
-                        showMenu = false
-                        onOpenTerminal()
                     },
                 )
                 GlassPopupItem(
