@@ -30,7 +30,7 @@ import androidx.room.migration.Migration
         ScheduledTaskEntity::class,
         ScheduledTaskRunEntity::class,
     ],
-    version = 40,
+    version = 43,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -89,6 +89,9 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_37_38,
                         MIGRATION_38_39,
                         MIGRATION_39_40,
+                        MIGRATION_40_41,
+                        MIGRATION_41_42,
+                        MIGRATION_42_43,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -481,6 +484,18 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 )
             }
         }
+
+        /**
+         * 40 → 41 → 42 → 43：空迁移链。
+         *
+         * 41、42 是此前「回滚 / 恢复」实验为了改写 Room 身份哈希抬上去的纯版本号，DDL 为空，
+         * 实体与 40 完全一致。手机上现装的库已经是 43，若还出 40 的包，Room 会判定为降级并
+         * 直接抛 IllegalStateException（3.5.0 已刻意去掉 destructive fallback，不会清数据也不会自愈）。
+         * 因此这里把版本抬到 43 并保留空迁移，保证 40 / 41 / 42 的库都能沿空链升上来。
+         */
+        internal val MIGRATION_40_41 = Migration(40, 41) { _ -> }
+        internal val MIGRATION_41_42 = Migration(41, 42) { _ -> }
+        internal val MIGRATION_42_43 = Migration(42, 43) { _ -> }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",

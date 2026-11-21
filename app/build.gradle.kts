@@ -54,7 +54,7 @@ android {
         minSdk = 34
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026112106
+        versionCode = 2026112115
         versionName = "3.5.0"
 
         ndk {
