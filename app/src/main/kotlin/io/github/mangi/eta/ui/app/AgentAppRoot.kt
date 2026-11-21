@@ -70,7 +70,6 @@ import io.github.mangi.eta.ui.components.ChatImagePreviewHost
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
-import io.github.mangi.eta.ui.components.glassOverlayTextFieldColors
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiInputDialog
 import io.github.mangi.eta.ui.components.coui.CouiNoticeDialog
@@ -129,10 +128,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
+import top.yukonga.miuix.kmp.glass.GlassTextField
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
@@ -1141,11 +1140,10 @@ fun AgentAppRoot(
                 onDismissFinished = { if (conversationRenameTarget == null) retainedRename = null },
             ) {
                 Column {
-                    TextField(
+                    GlassTextField(
                         state = renameInputState,
                         lineLimits = TextFieldLineLimits.SingleLine,
                         label = stringResource(R.string.conversation_rename_hint),
-                        colors = glassOverlayTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     MiuixDialogActions(
