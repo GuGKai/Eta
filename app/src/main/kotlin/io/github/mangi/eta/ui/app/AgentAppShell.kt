@@ -368,7 +368,6 @@ internal fun AgentAppShell(
                 onOpenTools = onOpenTools,
                 onOpenSkills = onOpenSkills,
                 onOpenScheduledTasks = onOpenScheduledTasks,
-                activeModelLabel = homeModelPickerState?.selectedModel?.displayName,
                 onOpenCharacters = onOpenCharacters,
                 onOpenPermissions = onOpenPermissions,
             ) {

@@ -143,10 +143,6 @@ import com.itos.coui.dialog.CouiDialogDefaults
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
 import com.itos.coui.layout.Divider
-import com.itos.coui.layout.Divider as CouiDivider
-import com.itos.coui.icons.CouiIcons
-import io.github.mangi.eta.ui.components.coui.CouiIcon
-import androidx.compose.foundation.layout.defaultMinSize
 import com.itos.coui.menu.CouiMenuItem
 import com.itos.coui.radiobutton.RadioButton
 import com.itos.coui.menu.Menu
@@ -269,7 +265,6 @@ internal fun ConversationPanePanel(
     onOpenTools: () -> Unit,
     onOpenSkills: () -> Unit,
     onOpenScheduledTasks: () -> Unit = {},
-    activeModelLabel: String? = null,
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
     isRevealed: Boolean = true,
@@ -489,19 +484,7 @@ internal fun ConversationPanePanel(
                             verticalArrangement = Arrangement.spacedBy(ConversationPanelMetrics.RowGap),
                             overscrollEffect = null,
                         ) {
-                            // 工作台段（含定时任务入口）：搜索时隐藏，置于最前。
-                            if (!isSearching) {
-                                item(key = "pane_workbench") {
-                                    PaneWorkbenchSection(
-                                        activeModelLabel = activeModelLabel,
-                                        onOpenModelProviders = onOpenModelProviders,
-                                        onOpenCharacters = onOpenCharacters,
-                                        onOpenTools = onOpenTools,
-                                        onOpenSkills = onOpenSkills,
-                                        onOpenScheduledTasks = onOpenScheduledTasks,
-                                    )
-                                }
-                            }
+                            // 侧栏不再有顶部工作台卡片，第一条就是工作区段或会话分组。
                             // 顶部不再有任何选择框/工作台卡片，第一条就是工作区段或会话分组。
                             if (!isCoui && showWorkspacesSection) {
                                 item(key = "section-workspaces") {
@@ -835,246 +818,6 @@ private fun buildChipEdgeFadeEffect(
     return AndroidRenderEffect
         .createBlendModeEffect(content, mask, AndroidBlendMode.DST_IN)
         .asComposeRenderEffect()
-}
-
-private data class WorkbenchEntry(
-    val icon: ImageVector,
-    val title: String,
-    val trailingValue: String? = null,
-    val onClick: () -> Unit,
-)
-
-
-@Composable
-private fun PaneWorkbenchSection(
-    activeModelLabel: String?,
-    onOpenModelProviders: () -> Unit,
-    onOpenCharacters: () -> Unit,
-    onOpenTools: () -> Unit,
-    onOpenSkills: () -> Unit,
-    onOpenScheduledTasks: () -> Unit = {},
-) {
-    val modelSummary = activeModelLabel?.takeIf { it.isNotBlank() }
-        ?: stringResource(R.string.conversation_model_unconfigured)
-    val entries = listOf(
-        WorkbenchEntry(
-            icon = ConversationPaneIcons.Model,
-            title = stringResource(R.string.conversation_dock_models),
-            trailingValue = modelSummary,
-            onClick = onOpenModelProviders,
-        ),
-        WorkbenchEntry(
-            icon = ConversationPaneIcons.Character,
-            title = stringResource(R.string.conversation_dock_characters),
-            onClick = onOpenCharacters,
-        ),
-        WorkbenchEntry(
-            icon = ConversationPaneIcons.Tools,
-            title = stringResource(R.string.route_tools),
-            onClick = onOpenTools,
-        ),
-        WorkbenchEntry(
-            icon = ConversationPaneIcons.Skills,
-            title = stringResource(R.string.route_skills),
-            onClick = onOpenSkills,
-        ),
-        WorkbenchEntry(
-            icon = ConversationPaneIcons.Schedule,
-            title = stringResource(R.string.route_scheduled_tasks),
-            onClick = onOpenScheduledTasks,
-        ),
-    )
-
-    val cardColor = conversationPaneCardColor()
-    val dividerIndent = ConversationPanelMetrics.WorkbenchRowHorizontalPadding +
-        ConversationPanelMetrics.WorkbenchIconSize +
-        ConversationPanelMetrics.WorkbenchIconGap
-
-    when (LocalUiStyle.current) {
-        AppearanceUiStyle.COUI -> {
-            val shape = remember { CouiShape(ConversationPanelMetrics.WorkbenchCornerRadius, 2.5f) }
-            val dark = CouiTheme.isDark
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding)
-                    .then(
-                        if (!dark) {
-                            Modifier.dropShadow(
-                                shape = shape,
-                                shadow = Shadow(
-                                    radius = 10.dp,
-                                    color = Color.Black,
-                                    alpha = 0.025f,
-                                ),
-                            )
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .clip(shape)
-                    .background(cardColor, shape)
-                    .then(
-                        if (!dark) {
-                            Modifier.border(0.5.dp, Color(0x0A000000), shape)
-                        } else {
-                            Modifier.border(0.5.dp, Color(0x12FFFFFF), shape)
-                        },
-                    ),
-            ) {
-                entries.forEachIndexed { index, entry ->
-                    CouiWorkbenchRow(entry = entry, dark = dark)
-                    if (index < entries.lastIndex) {
-                        CouiDivider(
-                            startIndent = dividerIndent,
-                            endIndent = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
-                        )
-                    }
-                }
-            }
-        }
-        AppearanceUiStyle.MIUIX -> {
-            val colors = MiuixTheme.colorScheme
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
-                colors = CardDefaults.defaultColors(color = cardColor),
-            ) {
-                entries.forEachIndexed { index, entry ->
-                    MiuixWorkbenchRow(entry = entry)
-                    if (index < entries.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(
-                                start = dividerIndent,
-                                end = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
-                            ),
-                            thickness = 0.5.dp,
-                            color = colors.dividerLine.copy(alpha = 0.45f),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CouiWorkbenchRow(
-    entry: WorkbenchEntry,
-    dark: Boolean,
-) {
-    val colors = CouiPageDefaults.themeColors(dark)
-    val source = remember { MutableInteractionSource() }
-    val chevronTint = Color(if (dark) 0x4DFFFFFF else 0x42000000)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .defaultMinSize(minHeight = ConversationPanelMetrics.WorkbenchRowMinHeight)
-            .couiButtonFeedback(dark, source, enabled = true, list = true)
-            .clickable(
-                interactionSource = source,
-                indication = null,
-                role = Role.Button,
-                onClick = entry.onClick,
-            )
-            .padding(
-                horizontal = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
-                vertical = 11.dp,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CouiIcon(
-            imageVector = entry.icon,
-            contentDescription = null,
-            modifier = Modifier.size(ConversationPanelMetrics.WorkbenchIconSize),
-            tint = colors.title.copy(alpha = 0.86f),
-        )
-        Spacer(Modifier.width(ConversationPanelMetrics.WorkbenchIconGap))
-        CouiText(
-            text = entry.title,
-            kind = CouiTextKind.ItemTitle,
-            color = colors.title,
-            modifier = Modifier.weight(1f),
-            textAlign = TextAlign.Start,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!entry.trailingValue.isNullOrEmpty()) {
-            CouiText(
-                text = entry.trailingValue,
-                kind = CouiTextKind.ItemValue,
-                color = colors.summary,
-                modifier = Modifier
-                    .widthIn(max = 136.dp)
-                    .padding(start = 8.dp),
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        CouiIcon(
-            imageVector = CouiIcons.Outlined.Next,
-            contentDescription = null,
-            modifier = Modifier
-                .padding(start = 6.dp)
-                .size(width = 11.dp, height = 20.dp),
-            tint = chevronTint,
-        )
-    }
-}
-
-@Composable
-private fun MiuixWorkbenchRow(entry: WorkbenchEntry) {
-    val colors = MiuixTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .defaultMinSize(minHeight = ConversationPanelMetrics.WorkbenchRowMinHeight)
-            .clickable(role = Role.Button, onClick = entry.onClick)
-            .padding(
-                horizontal = ConversationPanelMetrics.WorkbenchRowHorizontalPadding,
-                vertical = 11.dp,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = entry.icon,
-            contentDescription = null,
-            modifier = Modifier.size(ConversationPanelMetrics.WorkbenchIconSize),
-            tint = colors.onSurface.copy(alpha = 0.85f),
-        )
-        Spacer(Modifier.width(ConversationPanelMetrics.WorkbenchIconGap))
-        Text(
-            text = entry.title,
-            style = MiuixTheme.textStyles.body1.copy(fontSize = 15.sp),
-            color = colors.onSurface,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!entry.trailingValue.isNullOrEmpty()) {
-            Text(
-                text = entry.trailingValue,
-                style = MiuixTheme.textStyles.footnote1,
-                color = colors.onSurfaceVariantSummary,
-                modifier = Modifier
-                    .widthIn(max = 136.dp)
-                    .padding(start = 8.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Icon(
-            imageVector = ConversationPaneIcons.ChevronRight,
-            contentDescription = null,
-            modifier = Modifier
-                .padding(start = 4.dp)
-                .size(14.dp),
-            tint = colors.onSurfaceVariantActions,
-        )
-    }
 }
 
 /**
