@@ -117,16 +117,10 @@ class ConversationPanePanelTest {
                 searchQuery = "",
             ),
         )
-        var hasPermissionAttention by mutableStateOf(true)
         var composedQuery by mutableStateOf("")
-        var composedAttention by mutableStateOf(true)
 
         var newChatCount = 0
         var selectedConversation: String? = null
-        var modelsClicks = 0
-        var charactersClicks = 0
-        var toolsClicks = 0
-        var skillsClicks = 0
         var permissionsClicks = 0
         var settingsClicks = 0
 
@@ -137,7 +131,6 @@ class ConversationPanePanelTest {
                     applyInterfaceScale = true,
                 ) {
                     composedQuery = paneState.searchQuery
-                    composedAttention = hasPermissionAttention
                     ConversationSidePaneScaffold(
                         state = paneState,
                         visible = true,
@@ -151,16 +144,20 @@ class ConversationPanePanelTest {
                         onConversationSelected = { selectedConversation = it },
                         onConversationTogglePin = {},
                         onConversationRename = {},
+                        onConversationPinnedChange = { _, _ -> },
                         onConversationExport = {},
                         onConversationDelete = {},
+                        onCreateWorkspace = {},
+                        onRenameWorkspace = { _, _ -> },
+                        onDeleteWorkspace = {},
+                        onWorkspaceCollapsedChange = { _, _ -> },
+                        onConversationMoveToWorkspace = { _, _ -> },
                         onOpenSettings = { settingsClicks++ },
-                        onOpenModelProviders = { modelsClicks++ },
-                        onOpenTools = { toolsClicks++ },
-                        onOpenSkills = { skillsClicks++ },
-                        onOpenCharacters = { charactersClicks++ },
+                        onOpenModelProviders = {},
+                        onOpenTools = {},
+                        onOpenSkills = {},
+                        onOpenCharacters = {},
                         onOpenPermissions = { permissionsClicks++ },
-                        activeModelLabel = "claude-sonnet-4",
-                        hasPermissionAttention = hasPermissionAttention,
                     ) {
                         Box(Modifier.fillMaxSize())
                     }
@@ -178,8 +175,8 @@ class ConversationPanePanelTest {
                             node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
                     }
                     assertTrue(
-                        "Expected workbench models entry for $style / $theme",
-                        allTexts.any { it.contains("claude-sonnet-4") },
+                        "Expected pinned conversation for $style / $theme",
+                        allTexts.any { it == "置顶系统调试" },
                     )
                     assertTrue(
                         "Expected conversation title for $style / $theme",
@@ -193,29 +190,19 @@ class ConversationPanePanelTest {
             pumpFrames(activity, frameClock)
 
             clickByLabel(activity, activity.getString(R.string.action_new_conversation))
-            clickByLabel(activity, activity.getString(R.string.conversation_dock_models))
-            clickByLabel(activity, activity.getString(R.string.conversation_dock_characters))
-            clickByLabel(activity, activity.getString(R.string.route_tools))
-            clickByLabel(activity, activity.getString(R.string.route_skills))
-            clickByLabel(activity, activity.getString(R.string.conversation_permission_attention))
+            clickByLabel(activity, activity.getString(R.string.route_permissions))
             clickByLabel(activity, activity.getString(R.string.route_settings))
             clickByLabel(activity, "置顶系统调试")
 
             assertEquals(1, newChatCount)
-            assertEquals(1, modelsClicks)
-            assertEquals(1, charactersClicks)
-            assertEquals(1, toolsClicks)
-            assertEquals(1, skillsClicks)
             assertEquals(1, permissionsClicks)
             assertEquals(1, settingsClicks)
             assertEquals("conv-pinned", selectedConversation)
 
-            // 权限全部就绪后描述切换为正常“权限”，搜索时工作台收起以聚焦结果
-            hasPermissionAttention = false
+            // 搜索时列表按关键词过滤
             paneState = paneState.copy(searchQuery = "咖啡")
             pumpFrames(activity, frameClock)
 
-            assertEquals(false, composedAttention)
             assertEquals("咖啡", composedQuery)
 
             val searchNodes = collectSemanticsNodes(activity.window.decorView)
@@ -224,39 +211,31 @@ class ConversationPanePanelTest {
                     node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
             }
             assertFalse(
-                "Workbench should hide while searching: $searchTexts",
-                searchTexts.any { it == "claude-sonnet-4" },
+                "Unrelated conversations should hide while searching: $searchTexts",
+                searchTexts.any { it == "置顶系统调试" },
             )
             assertTrue(
                 "Healthy permission button should use default label",
                 searchTexts.any { it == activity.getString(R.string.route_permissions) },
             )
 
-            // 点击清空按钮恢复工作台展示
+            // 点击清空按钮恢复完整列表
             clickByLabel(activity, activity.getString(R.string.page_clear_84fcd7))
             pumpFrames(activity, frameClock)
             assertEquals("", paneState.searchQuery)
             val restoredTexts = collectAllTexts(activity)
             assertTrue(
-                "Workbench should reappear after clearing search",
-                restoredTexts.any { it == "claude-sonnet-4" },
+                "Conversation list should reappear after clearing search",
+                restoredTexts.any { it == "置顶系统调试" },
             )
 
-            // 在 MIUIX 模式下也验证新建对话、工作台入口与底栏圆形按钮点击
+            // 在 MIUIX 模式下也验证新建对话与底栏圆形按钮点击
             appearance = AppearanceSettings(uiStyle = AppearanceUiStyle.MIUIX, themeMode = AppearanceThemeMode.DARK)
             pumpFrames(activity, frameClock)
             clickByLabel(activity, activity.getString(R.string.action_new_conversation))
-            clickByLabel(activity, activity.getString(R.string.conversation_dock_models))
-            clickByLabel(activity, activity.getString(R.string.conversation_dock_characters))
-            clickByLabel(activity, activity.getString(R.string.route_tools))
-            clickByLabel(activity, activity.getString(R.string.route_skills))
             clickByLabel(activity, activity.getString(R.string.route_permissions))
             clickByLabel(activity, activity.getString(R.string.route_settings))
             assertEquals(2, newChatCount)
-            assertEquals(2, modelsClicks)
-            assertEquals(2, charactersClicks)
-            assertEquals(2, toolsClicks)
-            assertEquals(2, skillsClicks)
             assertEquals(2, permissionsClicks)
             assertEquals(2, settingsClicks)
         } finally {
@@ -313,8 +292,14 @@ class ConversationPanePanelTest {
                         onConversationSelected = {},
                         onConversationTogglePin = {},
                         onConversationRename = {},
+                        onConversationPinnedChange = { _, _ -> },
                         onConversationExport = {},
                         onConversationDelete = {},
+                        onCreateWorkspace = {},
+                        onRenameWorkspace = { _, _ -> },
+                        onDeleteWorkspace = {},
+                        onWorkspaceCollapsedChange = { _, _ -> },
+                        onConversationMoveToWorkspace = { _, _ -> },
                         onOpenSettings = {},
                         onOpenModelProviders = {},
                         onOpenTools = {},
@@ -410,8 +395,14 @@ class ConversationPanePanelTest {
                         onConversationSelected = {},
                         onConversationTogglePin = {},
                         onConversationRename = {},
+                        onConversationPinnedChange = { _, _ -> },
                         onConversationExport = {},
                         onConversationDelete = {},
+                        onCreateWorkspace = {},
+                        onRenameWorkspace = { _, _ -> },
+                        onDeleteWorkspace = {},
+                        onWorkspaceCollapsedChange = { _, _ -> },
+                        onConversationMoveToWorkspace = { _, _ -> },
                         onOpenSettings = {},
                         onOpenModelProviders = {},
                         onOpenTools = {},
