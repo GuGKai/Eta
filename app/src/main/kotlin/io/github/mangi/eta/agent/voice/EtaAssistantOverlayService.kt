@@ -427,6 +427,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                                 speechState = EtaSpeechState()
                             }
                         },
+                        onSuggestionClick = ::submitPrompt,
                         onSubmit = ::submitInput,
                         onStop = ::stopCurrentRun,
                         onClose = ::dismissAndStop,

@@ -33,6 +33,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -1962,7 +1964,8 @@ private fun WorkspaceNameDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var input by remember(initialName) { mutableStateOf(initialName) }
+    val inputState = remember(initialName) { TextFieldState(initialName) }
+    val input = inputState.text.toString()
     val hint = stringResource(R.string.workspace_name_hint)
     val saveText = stringResource(R.string.action_save)
     val canSave = input.isNotBlank()
@@ -1970,12 +1973,11 @@ private fun WorkspaceNameDialog(
         AppearanceUiStyle.COUI -> CouiInputDialog(
             visible = true,
             title = title,
-            value = input,
-            onValueChange = { input = it },
+            state = inputState,
             placeholder = hint,
             confirmText = saveText,
             confirmEnabled = canSave,
-            onConfirm = { onConfirm(input.trim()) },
+            onConfirm = { onConfirm(inputState.text.toString().trim()) },
             onDismissRequest = onDismiss,
         )
 
@@ -1987,7 +1989,7 @@ private fun WorkspaceNameDialog(
             Column {
                 TextField(
                     value = input,
-                    onValueChange = { input = it },
+                    onValueChange = { inputState.setTextAndPlaceCursorAtEnd(it) },
                     label = hint,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1996,7 +1998,7 @@ private fun WorkspaceNameDialog(
                     confirmText = saveText,
                     confirmEnabled = canSave,
                     onCancel = onDismiss,
-                    onConfirm = { onConfirm(input.trim()) },
+                    onConfirm = { onConfirm(inputState.text.toString().trim()) },
                     modifier = Modifier.padding(top = 16.dp),
                 )
             }
