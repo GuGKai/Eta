@@ -611,6 +611,71 @@ internal fun AgentConversationMessages(
     val earlierMessagesItemCount = if (hasEarlierMessages) 1 else 0
     val bottomItemIndex = timelineEntries.size + earlierMessagesItemCount
     val isUserDragging by scrollState.interactionSource.collectIsDraggedAsState()
+    // 自己发出的消息在列表里的位置（升序，消息 id 与 item index 成对）。
+    // 游标用 id 而不是 index：加载更早的一页时所有 index 会整体后移，存的 index 会指到别的消息上。
+    val userMessageAnchors = remember(timelineEntries, earlierMessagesItemCount) {
+        timelineEntries.mapIndexedNotNull { index, entry ->
+            val message = (entry as? AgentTimelineEntry.Message)?.message
+            if (message is UserMessageUi) message.id to index + earlierMessagesItemCount else null
+        }
+    }
+    // 圆钮箭头是否翻朝上。只跟随用户手指的滚动方向：往回翻历史就朝上，往下看新内容就朝下。
+    var jumpFacingUp by remember { mutableStateOf(false) }
+    // 逐条回溯的游标（消息 id）。用户手动一划就清空，下次点击按当前视口重新找最近一条。
+    var userJumpCursorKey by remember { mutableStateOf<String?>(null) }
+    // 回溯到「已加载窗口的最早一条」时要先补一页；这里记下补页落地后接着往回找的锚点。
+    var pendingEarlierJumpAnchorKey by remember { mutableStateOf<String?>(null) }
+    // 方向判定要读最新的拖动状态：effect 只启动一次，不能捕获首帧的旧值。
+    val latestIsUserDragging by rememberUpdatedState(isUserDragging)
+    // 同一屏内换方向要有最小位移，否则手指停在原地时的像素抖动会让箭头来回闪。
+    val jumpDirectionThresholdPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+    LaunchedEffect(scrollState, jumpDirectionThresholdPx) {
+        var previousIndex = scrollState.firstVisibleItemIndex
+        var previousOffset = scrollState.firstVisibleItemScrollOffset
+        // 同一屏内的累计位移：不足阈值就先攒着，别急着翻箭头。
+        var accumulatedPx = 0
+        snapshotFlow { scrollState.firstVisibleItemIndex to scrollState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                // 程序化滚动（点击回溯、停靠、跟底）与流式排版变化都不参与判断，只同步基准。
+                if (!latestIsUserDragging) {
+                    previousIndex = index
+                    previousOffset = offset
+                    accumulatedPx = 0
+                    return@collect
+                }
+                val towardsOlder: Boolean? = if (index != previousIndex) {
+                    // 跨条目了，方向已经足够明确。
+                    accumulatedPx = 0
+                    index < previousIndex
+                } else {
+                    accumulatedPx += offset - previousOffset
+                    if (abs(accumulatedPx) >= jumpDirectionThresholdPx) {
+                        val older = accumulatedPx < 0
+                        accumulatedPx = 0
+                        older
+                    } else {
+                        null
+                    }
+                }
+                if (towardsOlder != null) {
+                    jumpFacingUp = towardsOlder
+                    // 用户自己往上看过历史了，回溯链从头开始：下次点击找视口上方最近的一条。
+                    if (towardsOlder) userJumpCursorKey = null
+                    // 手动滚动接管之后，之前「补一页再接着跳」的待办也要作废，不能突然自己跳走。
+                    pendingEarlierJumpAnchorKey = null
+                }
+                previousIndex = index
+                previousOffset = offset
+            }
+    }
+    // 箭头翻转动画：0 = 朝下（原来的回到底部），1 = 朝上（逐条回溯自己发的消息）。
+    val jumpArrowFlip = remember { Animatable(if (jumpFacingUp) 1f else 0f) }
+    LaunchedEffect(jumpFacingUp) {
+        jumpArrowFlip.animateTo(
+            targetValue = if (jumpFacingUp) 1f else 0f,
+            animationSpec = spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow),
+        )
+    }
     val isAtBottom by remember(scrollState) {
         derivedStateOf { !scrollState.canScrollForward }
     }
@@ -1023,6 +1088,35 @@ internal fun AgentConversationMessages(
             frames = frames,
         )
         return false
+    }
+
+    // 逐条回溯自己的消息：「回到底部」圆钮朝上时点一下，就把这条消息的气泡送到顶栏下沿。
+    // 落点沿用正文停靠那一套结构对齐（条目顶贴顶栏底边），再多吃掉气泡自身的内边距，
+    // 这样看着是「气泡紧贴顶栏」，而不是气泡上方还留一道空白。
+    suspend fun snapUserMessageToTop(itemIndex: Int) {
+        val bubbleInsetPx = with(density) { UserBubbleTopInset.roundToPx() }
+        val structuralOffset = (chatTopPaddingPx - dockGapPx - bubbleInsetPx).coerceAtLeast(0)
+        // 用 scrollToItem 直接落位：远距离回溯时不给动画，避免一长串滚动过程。
+        scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
+    }
+
+    // 补页落地后接着往回跳：锚点是「补页前已加载窗口里最早的一条自己发的消息」。
+    // 新页并入后在它前面找最近的一条继续贴顶；这一页里也没有自己发的消息，就把锚点换成
+    // 新的最早一条，等用户下次点击再拉一页 —— 绝不在这里循环拉库。
+    LaunchedEffect(messageStartIndex) {
+        val anchorKey = pendingEarlierJumpAnchorKey ?: return@LaunchedEffect
+        val anchorPosition = userMessageAnchors.indexOfFirst { anchor -> anchor.first == anchorKey }
+        val target = if (anchorPosition > 0) userMessageAnchors[anchorPosition - 1] else null
+        if (target == null) {
+            pendingEarlierJumpAnchorKey = userMessageAnchors.firstOrNull()?.first
+            return@LaunchedEffect
+        }
+        pendingEarlierJumpAnchorKey = null
+        userJumpCursorKey = target.first
+        // 依然是在回看历史：跟底与停靠都不许把视口拽回去。
+        onBottomAnchorChanged(false)
+        isBottomSettling = false
+        snapUserMessageToTop(target.second)
     }
 
     // 历史会话打开时的落点：沿用当前结构对齐位置，不再按首行实测二次补偿。
@@ -1980,36 +2074,86 @@ internal fun AgentConversationMessages(
                     // 点按钮先给一次轻震：这是唯一的「回到最底 / 回到回答首行」入口，
                     // 不给反馈会让人以为没点上。
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                    // 折叠项展开会临时禁用自动回锚，用户手动要回最底时必须解除。
-                    suppressAutoReanchor = false
-                    // 用户明确要求「回到最底」：本轮停靠一并作废，滚动权交还给跟底。
-                    // 只设 keepBottomAnchored 不够：程序化滚动不会触发 isUserDragging，
-                    // 残留的 finalAnswerAnchored 会让下一次弹键盘被当成「还停在顶栏」而不抬。
-                    finalAnswerAnchored = false
-                    dockUserInterrupted = true
-                    dockInterruptAtMs = SystemClock.elapsedRealtime()
-                    autoScrollFrozen = false
-                    val pending = pendingAnswerDockKey
-                    val pendingIndex = if (pending == null) {
-                        -1
-                    } else {
-                        latestTimelineEntries.indexOfLast { entry -> entry.key == pending }
-                    }
-                    if (pending != null && pendingIndex >= 0) {
-                        // 答完时用户没跟底：按钮语义改成「回到这条回答的首行」，也就是跟顶的
-                        // 落点，而不是直接飞到列表最底部；点一下顺便清掉提示点。
-                        pendingAnswerDockKey = null
-                        finalAnswerHandledId = pending
-                        coroutineScope.launch {
-                            snapAnswerToTop(
-                                key = pending,
-                                itemIndex = pendingIndex + earlierMessagesItemCount,
-                            )
+                    if (jumpFacingUp) {
+                        // 箭头翻朝上了：按钮这次不「回到底部」，而是逐条往回找我发的消息。
+                        // 朝下时完全走下面原来的流程，原功能一点不动。
+                        val cursorKey = userJumpCursorKey
+                        val cursorPosition = if (cursorKey == null) {
+                            -1
+                        } else {
+                            userMessageAnchors.indexOfFirst { anchor -> anchor.first == cursorKey }
+                        }
+                        val target = if (cursorPosition < 0) {
+                            // 第一次点（或游标已失效）：取视口顶端（含）上方最近的一条自己发的消息；
+                            // 它要是已经贴着顶栏了，就再往前退一格，免得点了像没反应。
+                            val topIndex = scrollState.firstVisibleItemIndex
+                            val topOffset = scrollState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { info -> info.index == topIndex }
+                                ?.offset
+                            val expectedTopPx = topInsetPx + dockGapPx
+                            val alreadyDocked = topOffset != null && topOffset <= expectedTopPx
+                            userMessageAnchors.lastOrNull { anchor ->
+                                anchor.second < topIndex ||
+                                    (anchor.second == topIndex && !alreadyDocked)
+                            } ?: userMessageAnchors.firstOrNull()
+                        } else {
+                            userMessageAnchors.getOrNull(cursorPosition - 1)
+                        }
+                        val canLoadEarlier = hasEarlierMessages &&
+                            !isStreaming &&
+                            editTargetMessageId == null &&
+                            historyLoadState != ConversationHistoryLoadState.Loading
+                        if (target != null) {
+                            pendingEarlierJumpAnchorKey = null
+                            userJumpCursorKey = target.first
+                            // 用户主动离开底部回看历史：跟底与停靠都要让路，否则回答一长又把人拽回去。
+                            onBottomAnchorChanged(false)
+                            isBottomSettling = false
+                            coroutineScope.launch { snapUserMessageToTop(target.second) }
+                        } else if (canLoadEarlier) {
+                            // 已加载窗口里没有更早的我发的消息了，但库里还有：先补一页。
+                            // 补页落地后由 messageStartIndex 那个 effect 接着往回跳，
+                            // 不能在这里判成「到头了」，否则再往前的内容永远翻不出来。
+                            pendingEarlierJumpAnchorKey = userMessageAnchors.firstOrNull()?.first
+                            onBottomAnchorChanged(false)
+                            isBottomSettling = false
+                            onLoadEarlierMessages()
+                        } else {
+                            // 真正回溯到最早的一条：停在原处，用一次更重的震动说明到头了。
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     } else {
-                        onBottomAnchorChanged(true)
-                        coroutineScope.launch {
-                            scrollState.animateScrollToItem(bottomItemIndex)
+                        // 折叠项展开会临时禁用自动回锚，用户手动要回最底时必须解除。
+                        suppressAutoReanchor = false
+                        // 用户明确要求「回到最底」：本轮停靠一并作废，滚动权交还给跟底。
+                        // 只设 keepBottomAnchored 不够：程序化滚动不会触发 isUserDragging，
+                        // 残留的 finalAnswerAnchored 会让下一次弹键盘被当成「还停在顶栏」而不抬。
+                        finalAnswerAnchored = false
+                        dockUserInterrupted = true
+                        dockInterruptAtMs = SystemClock.elapsedRealtime()
+                        autoScrollFrozen = false
+                        val pending = pendingAnswerDockKey
+                        val pendingIndex = if (pending == null) {
+                            -1
+                        } else {
+                            latestTimelineEntries.indexOfLast { entry -> entry.key == pending }
+                        }
+                        if (pending != null && pendingIndex >= 0) {
+                            // 答完时用户没跟底：按钮语义改成「回到这条回答的首行」，也就是跟顶的
+                            // 落点，而不是直接飞到列表最底部；点一下顺便清掉提示点。
+                            pendingAnswerDockKey = null
+                            finalAnswerHandledId = pending
+                            coroutineScope.launch {
+                                snapAnswerToTop(
+                                    key = pending,
+                                    itemIndex = pendingIndex + earlierMessagesItemCount,
+                                )
+                            }
+                        } else {
+                            onBottomAnchorChanged(true)
+                            coroutineScope.launch {
+                                scrollState.animateScrollToItem(bottomItemIndex)
+                            }
                         }
                     }
                 }
@@ -2034,7 +2178,8 @@ internal fun AgentConversationMessages(
                                 contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
                                 modifier = Modifier
                                     .size(18.dp)
-                                    .rotate(90f),
+                                    // 90° 是朝下（原来的回到底部）；翻朝上就一路转过去，带一点回弹。
+                                    .rotate(90f - 180f * jumpArrowFlip.value),
                                 tint = CouiTheme.colorSchemeFor(couiDark).onSurface,
                             )
                         }
@@ -2047,7 +2192,10 @@ internal fun AgentConversationMessages(
                             Icon(
                                 imageVector = Icons.Rounded.ArrowDownward,
                                 contentDescription = stringResource(R.string.ui_back_to_bottom_32282e),
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    // Miuix 用的是整支向下的箭头，翻朝上就是整 180°。
+                                    .rotate(180f * jumpArrowFlip.value),
                                 tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                             )
                         }
@@ -2323,6 +2471,8 @@ private val DockGap = 0.dp
 private val DockLookahead = 16.dp
 // 列表内容顶部内边距（顶栏高度之外的额外留白）。
 private val ChatTopContentPadding = 14.dp
+// 自己发的消息气泡在条目内部的上边距：回溯落点要把它吃掉，气泡才是「贴着顶栏」。
+private val UserBubbleTopInset = 8.dp
 // 停靠位移的时间常数（秒）：逐帧指数缓出，前段快、后段收敛，避免观感生硬或像瞬移。
 private const val DockTimeConstantSeconds = 0.085f
 // 停靠收口的一次对齐阈值（px）：残差小于它就一次 scrollBy 到位，不再逐帧微调。
