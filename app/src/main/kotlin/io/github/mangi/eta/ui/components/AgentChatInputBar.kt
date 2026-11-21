@@ -32,6 +32,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -73,6 +76,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -92,6 +96,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.flow.first
+import kotlin.math.pow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
@@ -154,6 +159,30 @@ private val StopIconSize = 15.dp
 private val ThinkingIconSize = ChatInputActionIconSize
 /** 输入栏正中的余额胶囊：由外壳页面注入，避免把余额状态一路透传进输入栏。 */
 internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+
+/** 输入框底色面板向上多探出的高度：渐变从这段背景的顶边开始。 */
+private val ChatBottomFadeOverhang = 32.dp
+
+/** 最后一层条带（图片 / 文件 / 文件路径 / 排队消息 / 编辑提示）与胶囊上边缘之间的空隙。 */
+private val ChatInputStripGapToInput = 5.dp
+
+/** 条带彼此之间的间距。 */
+private val ChatInputStripGap = 8.dp
+
+/**
+ * 输入框胶囊上方那块渐隐背景：顶边全透明，向下平滑升到实色。
+ *
+ * 沿用原有写法：Brush.verticalGradient、11 个 stop、alpha = progress^1.6、终点色 surface。
+ */
+private fun chatInputFadeBrush(color: Color): Brush {
+    val stops = 10
+    return Brush.verticalGradient(
+        *Array(stops + 1) { index ->
+            val progress = index / stops.toFloat()
+            progress to color.copy(alpha = progress.pow(1.6f))
+        },
+    )
+}
 
 /**
  * 输入框圆角。跟着屏幕圆角做同心：内圆角 = 外圆角 − 这一侧的留白，
@@ -317,97 +346,144 @@ internal fun AgentChatInputBar(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // 胶囊顶边在窗口里的位置：输入栏菜单的回退定位要用它。
+    var inputContainerTopPx by remember { mutableFloatStateOf(0f) }
+    // 最后一层条带与胶囊之间只留 5dp，其它条带之间保持 8dp。
+    val queueStripBottomGap = if (
+        pendingFileReferences.isEmpty() && pendingImages.isEmpty() && !isEditingMessage
+    ) {
+        ChatInputStripGapToInput
+    } else {
+        ChatInputStripGap
+    }
+    val fileStripBottomGap = if (pendingImages.isEmpty() && !isEditingMessage) {
+        ChatInputStripGapToInput
+    } else {
+        ChatInputStripGap
+    }
+    val imageStripBottomGap = if (isEditingMessage) ChatInputStripGap else ChatInputStripGapToInput
+
     Column(
         modifier = modifier
             .fillMaxWidth(),
     ) {
         if (recognitionEnabled) SpeechInputFeedback(dictation)
-        AnimatedVisibility(
-            visible = queuedMessages.isNotEmpty(),
-            enter = fadeIn(tween(160)) + expandVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
-                ),
-                expandFrom = Alignment.Bottom,
-            ),
-            exit = fadeOut(tween(100)) + shrinkVertically(tween(150)),
+        // 输入框上方的渐隐背景，完全沿用原有的实现：终点色就是 surface。
+        val inputFadeColor = MiuixTheme.colorScheme.surface
+        val inputFadeBrush = remember(inputFadeColor) { chatInputFadeBrush(inputFadeColor) }
+        // 输入框上方那条渐变就是这块区域的背景：底部对齐、至少留出 ChatBottomFadeOverhang，
+        // 条带作为它的子节点画在渐变上面（离胶囊 5dp），所以加了条带渐变也跟着变高、且始终垫在下面。
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ChatBottomFadeOverhang)
+                .background(inputFadeBrush),
+            verticalArrangement = Arrangement.Bottom,
         ) {
-            AgentChatQueueStrip(
-                queuedMessages = queuedMessages,
-                isStreaming = isStreaming,
-                onSteer = onSteerQueuedMessage,
-                onRecall = { id -> onRecallQueuedMessage(id, textFieldState.text.toString()) },
-                onRemove = onRemoveQueuedMessage,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
-        AnimatedVisibility(
-            visible = pendingFileReferences.isNotEmpty(),
-            enter = fadeIn(tween(180)) + expandVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
+            AnimatedVisibility(
+                visible = queuedMessages.isNotEmpty(),
+                enter = fadeIn(tween(160)) + expandVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    expandFrom = Alignment.Bottom,
                 ),
-                expandFrom = Alignment.Bottom,
-            ),
-            exit = fadeOut(tween(120)) + shrinkVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium,
+                exit = fadeOut(tween(100)) + shrinkVertically(tween(150)),
+            ) {
+                AgentChatQueueStrip(
+                    queuedMessages = queuedMessages,
+                    isStreaming = isStreaming,
+                    onSteer = onSteerQueuedMessage,
+                    onRecall = { id -> onRecallQueuedMessage(id, textFieldState.text.toString()) },
+                    onRemove = onRemoveQueuedMessage,
+                    modifier = Modifier.padding(
+                        start = ChatInputOuterMargin,
+                        end = ChatInputOuterMargin,
+                        bottom = queueStripBottomGap,
+                    ),
+                )
+            }
+            AnimatedVisibility(
+                visible = pendingFileReferences.isNotEmpty(),
+                enter = fadeIn(tween(180)) + expandVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    expandFrom = Alignment.Bottom,
                 ),
-                shrinkTowards = Alignment.Bottom,
-            ),
-        ) {
-            PendingFileReferenceStrip(
-                references = pendingFileReferences,
-                onRemoveReference = onRemoveFileReference,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
+                exit = fadeOut(tween(120)) + shrinkVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium,
+                    ),
+                    shrinkTowards = Alignment.Bottom,
+                ),
+            ) {
+                PendingFileReferenceStrip(
+                    references = pendingFileReferences,
+                    onRemoveReference = onRemoveFileReference,
+                    modifier = Modifier.padding(
+                        start = ChatInputOuterMargin,
+                        end = ChatInputOuterMargin,
+                        bottom = fileStripBottomGap,
+                    ),
+                )
+            }
 
-        AnimatedVisibility(
-            visible = pendingImages.isNotEmpty(),
-            enter = fadeIn(tween(180)) + expandVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
+            AnimatedVisibility(
+                visible = pendingImages.isNotEmpty(),
+                enter = fadeIn(tween(180)) + expandVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    expandFrom = Alignment.Bottom,
                 ),
-                expandFrom = Alignment.Bottom,
-            ),
-            exit = fadeOut(tween(120)) + shrinkVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium,
+                exit = fadeOut(tween(120)) + shrinkVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium,
+                    ),
+                    shrinkTowards = Alignment.Bottom,
                 ),
-                shrinkTowards = Alignment.Bottom,
-            ),
-        ) {
-            PendingImageStrip(
-                images = pendingImages,
-                onRemoveImage = onRemoveImage,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
+            ) {
+                PendingImageStrip(
+                    images = pendingImages,
+                    onRemoveImage = onRemoveImage,
+                    modifier = Modifier.padding(
+                        start = ChatInputOuterMargin,
+                        end = ChatInputOuterMargin,
+                        bottom = imageStripBottomGap,
+                    ),
+                )
+            }
 
-        AnimatedVisibility(
-            visible = isEditingMessage,
-            enter = fadeIn(tween(160)),
-            exit = fadeOut(tween(100)) + shrinkVertically(tween(140)),
-        ) {
-            Text(
-                text = if (preserveFollowingMessages) {
-                    stringResource(R.string.chat_edit_preserve_following)
-                } else if (editHasLaterTurns) {
-                    stringResource(R.string.chat_edit_replace_later)
-                } else {
-                    stringResource(R.string.chat_edit_replace_message)
-                },
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                // 与输入框内正文同一起点（容器 10dp + 文本 8dp）。
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 8.dp),
-            )
+            AnimatedVisibility(
+                visible = isEditingMessage,
+                enter = fadeIn(tween(160)),
+                exit = fadeOut(tween(100)) + shrinkVertically(tween(140)),
+            ) {
+                Text(
+                    text = if (preserveFollowingMessages) {
+                        stringResource(R.string.chat_edit_preserve_following)
+                    } else if (editHasLaterTurns) {
+                        stringResource(R.string.chat_edit_replace_later)
+                    } else {
+                        stringResource(R.string.chat_edit_replace_message)
+                    },
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    // 与输入框内正文同一起点（容器 10dp + 文本 8dp）。
+                    modifier = Modifier.padding(
+                        start = ChatInputOuterMargin + 18.dp,
+                        end = ChatInputOuterMargin + 18.dp,
+                        bottom = ChatInputStripGapToInput,
+                    ),
+                )
+            }
+
         }
 
         val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
@@ -434,242 +510,226 @@ internal fun AgentChatInputBar(
             MiuixTheme.colorScheme.outline.copy(alpha = 0.5f)
         }
         val miuixInputShape = remember { GlassShape(24.dp) }
-        var inputContainerTopPx by remember { mutableFloatStateOf(0f) }
-        Box(
+        // 实色面板从胶囊顶边开始；它上方的渐变是条带区自己的背景，接缝同色不可见。
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .onGloballyPositioned { coordinates ->
-                    inputContainerTopPx = coordinates.boundsInWindow().top
-                },
+                .background(MiuixTheme.colorScheme.surface)
+                .navigationBarsPadding()
+                .padding(
+                    start = ChatInputOuterMargin,
+                    end = ChatInputOuterMargin,
+                    bottom = ChatInputOuterMargin,
+                ),
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (isCoui) {
-                            Modifier
-                                .dropShadow(
-                                    shape = couiInputShape,
-                                    shadow = Shadow(
-                                        radius = 16.dp,
-                                        color = Color.Black,
-                                        alpha = if (couiDark) 0.22f else 0.045f,
-                                    ),
-                                )
-                                .clip(couiInputShape)
-                                .background(
-                                    inputContainerColor,
-                                    couiInputShape,
-                                )
-                                .border(
-                                    width = 0.5.dp,
-                                    color = if (couiDark) Color(0x20FFFFFF) else Color(0x0E000000),
-                                    shape = couiInputShape,
-                                )
-                        } else {
-                            Modifier
-                                .glassPanel(
-                                    backdrop = glassBackdrop,
-                                    shape = miuixInputShape,
-                                    style = GlassDefaults.style(isDark),
-                                    material = GlassMaterials.puredThinGlass(isDark),
-                                    stroke = GlassEdgeStrokes.forTheme(
-                                        isDark = isDark,
-                                        light = GlassEdgeStrokes.SmallLight,
-                                        dark = GlassEdgeStrokes.SmallDark,
-                                    ),
-                                    shadow = GlassShadows.Regular,
-                                    shading = false,
-                                    fallback = Modifier
-                                        .squircleSurface(
-                                            color = miuixInputBg,
-                                            cornerRadius = 24.dp,
-                                        )
-                                        .squircleBorder(
-                                            width = 0.5.dp,
-                                            color = inputBorderColor,
-                                            cornerRadius = 24.dp,
-                                        ),
-                                )
-                        },
-                    )
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .onGloballyPositioned { coordinates ->
+                        // 渐变要贴着胶囊上边缘画，这里记下胶囊顶边在窗口里的位置。
+                        inputContainerTopPx = coordinates.positionInWindow().y
+                    },
             ) {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .defaultMinSize(minHeight = 36.dp)
-                        .padding(horizontal = 6.dp, vertical = 5.dp),
-                    contentAlignment = Alignment.TopStart,
-                ) {
-                    // 占位文字与输入正文共用同一行高，首字输入时基线不跳动。
-                    val inputTextStyle = MiuixTheme.textStyles.body1.copy(
-                        lineHeight = 22.sp,
-                        lineHeightStyle = EditorialLineHeightStyle,
-                    )
-                    val character = LocalRoleplayChat.current
-                    // 纯空格也算已输入：占位文字必须让位，否则光标前会一直挂着提示语。
-                    if (textFieldState.text.isEmpty()) {
-                        Text(
-                            text = when {
-                                // 角色对话的占位文字跟随角色，避免“交给 Eta”打断沉浸感。
-                                character != null && isStreaming ->
-                                    stringResource(R.string.chat_character_typing, character.characterName)
-                                character != null -> stringResource(R.string.chat_character_input_hint, character.characterName)
-                                isStreaming -> stringResource(R.string.chat_eta_working)
-                                else -> stringResource(R.string.chat_input_hint)
+                        .then(
+                            if (isCoui) {
+                                Modifier
+                                    .dropShadow(
+                                        shape = couiInputShape,
+                                        shadow = Shadow(
+                                            radius = 16.dp,
+                                            color = Color.Black,
+                                            alpha = if (couiDark) 0.22f else 0.045f,
+                                        ),
+                                    )
+                                    .clip(couiInputShape)
+                                    .background(
+                                        inputContainerColor,
+                                        couiInputShape,
+                                    )
+                                    .border(
+                                        width = 0.5.dp,
+                                        color = if (couiDark) Color(0x20FFFFFF) else Color(0x0E000000),
+                                        shape = couiInputShape,
+                                    )
+                            } else {
+                                Modifier
+                                    .glassPanel(
+                                        backdrop = glassBackdrop,
+                                        shape = miuixInputShape,
+                                        style = GlassDefaults.style(isDark),
+                                        material = GlassMaterials.puredThinGlass(isDark),
+                                        stroke = GlassEdgeStrokes.forTheme(
+                                            isDark = isDark,
+                                            light = GlassEdgeStrokes.SmallLight,
+                                            dark = GlassEdgeStrokes.SmallDark,
+                                        ),
+                                        shadow = GlassShadows.Regular,
+                                        shading = false,
+                                        fallback = Modifier
+                                            .squircleSurface(
+                                                color = miuixInputBg,
+                                                cornerRadius = 24.dp,
+                                            )
+                                            .squircleBorder(
+                                                width = 0.5.dp,
+                                                color = inputBorderColor,
+                                                cornerRadius = 24.dp,
+                                            ),
+                                    )
                             },
-                            style = inputTextStyle,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
-                    }
-                    BasicTextField(
-                        state = textFieldState,
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                ) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                            .onFocusChanged { inputFocused = it.isFocused }
-                            .onPlaced {
-                                // 节点完成布局才可能真正拿到焦点，这里是新建会话的主要触发点。
-                                inputPlaced = true
-                                if (pendingFocusRequest) {
-                                    pendingFocusRequest = false
-                                    runCatching { focusRequester.requestFocus() }
-                                }
-                            },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                        textStyle = inputTextStyle.copy(color = MiuixTheme.colorScheme.onSurface),
-                        cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
-                        lineLimits = TextFieldLineLimits.MultiLine(
-                            minHeightInLines = 1,
-                            maxHeightInLines = 6,
-                        ),
-                    )
-                }
-
-                Box(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                        if (isEditingMessage) {
-                            IconButton(
-                                onClick = onCancelMessageEdit,
-                                minWidth = ChatInputActionSize,
-                                minHeight = ChatInputActionSize,
-                            ) {
-                                Icon(
-                                    imageVector = if (isCoui) Icons.Rounded.Close else MiuixIcons.Glass.Close,
-                                    contentDescription = stringResource(R.string.ui_cancel_edit_c698df),
-                                    modifier = Modifier.size(ChatInputActionIconSize),
-                                    tint = MiuixTheme.colorScheme.onSurface,
-                                )
-                            }
-                        } else {
-                            AgentAttachmentPickerButton(
-                                glassBackdrop = glassBackdrop,
-                                inputContainerTopPx = inputContainerTopPx,
-                                onAttachImage = onAttachImage,
-                                onAttachFiles = onAttachFiles,
-                                onAttachFolder = onAttachFolder,
-                                onAttachFilePath = onAttachFilePath,
+                            .defaultMinSize(minHeight = 36.dp)
+                            .padding(horizontal = 6.dp, vertical = 5.dp),
+                        contentAlignment = Alignment.TopStart,
+                    ) {
+                        // 占位文字与输入正文共用同一行高，首字输入时基线不跳动。
+                        val inputTextStyle = MiuixTheme.textStyles.body1.copy(
+                            lineHeight = 22.sp,
+                            lineHeightStyle = EditorialLineHeightStyle,
+                        )
+                        val character = LocalRoleplayChat.current
+                        // 纯空格也算已输入：占位文字必须让位，否则光标前会一直挂着提示语。
+                        if (textFieldState.text.isEmpty()) {
+                            Text(
+                                text = when {
+                                    // 角色对话的占位文字跟随角色，避免“交给 Eta”打断沉浸感。
+                                    character != null && isStreaming ->
+                                        stringResource(R.string.chat_character_typing, character.characterName)
+                                    character != null -> stringResource(R.string.chat_character_input_hint, character.characterName)
+                                    isStreaming -> stringResource(R.string.chat_eta_working)
+                                    else -> stringResource(R.string.chat_input_hint)
+                                },
+                                style = inputTextStyle,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
+                        }
+                        BasicTextField(
+                            state = textFieldState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                                .onFocusChanged { inputFocused = it.isFocused }
+                                .onPlaced {
+                                    // 节点完成布局才可能真正拿到焦点，这里是新建会话的主要触发点。
+                                    inputPlaced = true
+                                    if (pendingFocusRequest) {
+                                        pendingFocusRequest = false
+                                        runCatching { focusRequester.requestFocus() }
+                                    }
+                                },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                            textStyle = inputTextStyle.copy(color = MiuixTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                            lineLimits = TextFieldLineLimits.MultiLine(
+                                minHeightInLines = 1,
+                                maxHeightInLines = 6,
+                            ),
+                        )
+                    }
 
-                            Spacer(modifier = Modifier.width(2.dp))
-
-                            if (isCoui || availableReasoningEfforts.isNotEmpty()) {
-                                ThinkingEffortChip(
-                                    effort = reasoningEffort,
-                                    options = availableReasoningEfforts,
-                                    model = modelPickerState.selectedModel,
-                                    enabled = !isStreaming,
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                            if (isEditingMessage) {
+                                IconButton(
+                                    onClick = onCancelMessageEdit,
+                                    minWidth = ChatInputActionSize,
+                                    minHeight = ChatInputActionSize,
+                                ) {
+                                    Icon(
+                                        imageVector = if (isCoui) Icons.Rounded.Close else MiuixIcons.Glass.Close,
+                                        contentDescription = stringResource(R.string.ui_cancel_edit_c698df),
+                                        modifier = Modifier.size(ChatInputActionIconSize),
+                                        tint = MiuixTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            } else {
+                                AgentAttachmentPickerButton(
                                     glassBackdrop = glassBackdrop,
                                     inputContainerTopPx = inputContainerTopPx,
-                                    onEffortChange = onReasoningEffortChange,
-                                    onRequestModelSheet = { showModelSheet = true },
+                                    onAttachImage = onAttachImage,
+                                    onAttachFiles = onAttachFiles,
+                                    onAttachFolder = onAttachFolder,
+                                    onAttachFilePath = onAttachFilePath,
                                 )
-                            }
-                        }
 
-                        Spacer(modifier = Modifier.weight(1f))
+                                Spacer(modifier = Modifier.width(2.dp))
 
-                        if (showContextUsage) {
-                            AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
-
-                            Spacer(modifier = Modifier.width(2.dp))
-                        }
-
-
-                        val showStreamingSend = isStreaming && !isCompacting && canSend
-                        val submitCurrentDraft: (Boolean) -> Unit = { interrupt ->
-                            if (canSend) {
-                                dictation.cancel()
-                                val submittedText = textFieldState.text.toString()
-                                textFieldState.clearText()
-                                if (interrupt) {
-                                    onSteerSubmit(submittedText)
-                                } else {
-                                    onSubmit(submittedText)
+                                if (isCoui || availableReasoningEfforts.isNotEmpty()) {
+                                    ThinkingEffortChip(
+                                        effort = reasoningEffort,
+                                        options = availableReasoningEfforts,
+                                        model = modelPickerState.selectedModel,
+                                        enabled = !isStreaming,
+                                        glassBackdrop = glassBackdrop,
+                                        inputContainerTopPx = inputContainerTopPx,
+                                        onEffortChange = onReasoningEffortChange,
+                                        onRequestModelSheet = { showModelSheet = true },
+                                    )
                                 }
                             }
-                        }
 
-                        val showPrimaryStop = isStreaming && !showStreamingSend
-                        val sendCircleSize = if (isCoui) 32.dp else SendButtonVisualSize
-                        val sendButtonColor by animateColorAsState(
-                            targetValue = when {
-                                showPrimaryStop -> MiuixTheme.colorScheme.onSurface
-                                canSend -> MiuixTheme.colorScheme.primary
-                                isCoui -> couiSendIdleCircleColor(couiDark)
-                                else -> MiuixTheme.colorScheme.surfaceContainerHigh
-                            },
-                            animationSpec = tween(durationMillis = 160),
-                            label = "send_button_color",
-                        )
-                        val sendIconLabel = if (isEditingMessage && preserveFollowingMessages) {
-                            stringResource(R.string.chat_save_message)
-                        } else {
-                            stringResource(R.string.chat_send)
-                        }
-                        if (isCoui && canSend) {
-                            // 只有「可发送」的蓝底状态走 COUI 圆形图标按钮（轮廓光晕 + 触摸位移 + 压感 + 高光）；
-                            // 灰色不可发送与终止态保持原有样式。
-                            Box(
-                                modifier = Modifier.size(ChatInputActionSize),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CouiCircleIconButton(
-                                    icon = Icons.Rounded.ArrowUpward,
-                                    contentDescription = sendIconLabel,
-                                    onClick = { submitCurrentDraft(false) },
-                                    onLongClick = if (showStreamingSend) {
-                                        {
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            submitCurrentDraft(true)
-                                        }
-                                    } else {
-                                        null
-                                    },
-                                    fillColor = CouiTheme.colorSchemeFor(couiDark).accent,
-                                    iconColor = Color.White,
-                                    buttonSize = sendCircleSize,
-                                    iconSize = 18.dp,
-                                )
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            if (showContextUsage) {
+                                AgentContextUsageButton(usage = contextUsage, onCompact = onCompactContext, canCompact = canCompactContext && !isStreaming)
+
+                                Spacer(modifier = Modifier.width(2.dp))
                             }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(ChatInputActionSize)
-                                    .clip(CircleShape)
-                                    .combinedClickable(
-                                        enabled = isStreaming || canSend,
-                                        onClick = {
-                                            if (showPrimaryStop) {
-                                                onStop()
-                                            } else {
-                                                submitCurrentDraft(false)
-                                            }
-                                        },
+
+
+                            val showStreamingSend = isStreaming && !isCompacting && canSend
+                            val submitCurrentDraft: (Boolean) -> Unit = { interrupt ->
+                                if (canSend) {
+                                    dictation.cancel()
+                                    val submittedText = textFieldState.text.toString()
+                                    textFieldState.clearText()
+                                    if (interrupt) {
+                                        onSteerSubmit(submittedText)
+                                    } else {
+                                        onSubmit(submittedText)
+                                    }
+                                }
+                            }
+
+                            val showPrimaryStop = isStreaming && !showStreamingSend
+                            val sendCircleSize = if (isCoui) 32.dp else SendButtonVisualSize
+                            val sendButtonColor by animateColorAsState(
+                                targetValue = when {
+                                    showPrimaryStop -> MiuixTheme.colorScheme.onSurface
+                                    canSend -> MiuixTheme.colorScheme.primary
+                                    isCoui -> couiSendIdleCircleColor(couiDark)
+                                    else -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                },
+                                animationSpec = tween(durationMillis = 160),
+                                label = "send_button_color",
+                            )
+                            val sendIconLabel = if (isEditingMessage && preserveFollowingMessages) {
+                                stringResource(R.string.chat_save_message)
+                            } else {
+                                stringResource(R.string.chat_send)
+                            }
+                            if (isCoui && canSend) {
+                                // 只有「可发送」的蓝底状态走 COUI 圆形图标按钮（轮廓光晕 + 触摸位移 + 压感 + 高光）；
+                                // 灰色不可发送与终止态保持原有样式。
+                                Box(
+                                    modifier = Modifier.size(ChatInputActionSize),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CouiCircleIconButton(
+                                        icon = Icons.Rounded.ArrowUpward,
+                                        contentDescription = sendIconLabel,
+                                        onClick = { submitCurrentDraft(false) },
                                         onLongClick = if (showStreamingSend) {
                                             {
                                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)

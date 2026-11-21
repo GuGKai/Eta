@@ -36,7 +36,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -81,7 +80,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RectangleShape
@@ -139,7 +137,6 @@ import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.min
-import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
@@ -2260,91 +2257,55 @@ private fun AgentChatBottomBar(
     focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
 ) {
-    // 输入框背后的整块背景：从自身顶边透明，向下平滑升到与页面一致的实色。
-    val inputSurface = MiuixTheme.colorScheme.surface
-    val bottomFadeBrush = remember(inputSurface) {
-        val stops = 10
-        Brush.verticalGradient(
-            *Array(stops + 1) { index ->
-                val progress = index / stops.toFloat()
-                progress to inputSurface.copy(alpha = progress.pow(1.6f))
-            },
-        )
-    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .imePadding(),
     ) {
-        // 输入框上方原来那条「向上渐隐」的渐变条（以及它的磨砂层）整段删掉：
-        // 渐变条的实色端与胶囊圆角相差一截，圆角外就会露出横切的硬边。
-        // 现在改成把输入框自己的背景整体向上探出一段（ChatBottomFadeOverhang），
-        // 渐变由这块背景的顶边开始、到胶囊顶部正好升到实色，圆角处因此没有分界线。
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(ChatBottomFadeOverhang)
-                .background(bottomFadeBrush),
+        // 输入框的底色面板与渐变已经下沉到 AgentChatInputBar 里，只包住胶囊本身：
+        // 上面的图片/文件/路径/排队消息改为透明浮层，新增组件时背景不再整体被顶上去。
+        AgentChatInputBar(
+            input = input,
+            isCompacting = isCompacting,
+            contextUsage = contextUsage,
+            showContextUsage = showContextUsage,
+            isStreaming = isStreaming,
+            reasoningEffort = reasoningEffort,
+            availableReasoningEfforts = availableReasoningEfforts,
+            modelPickerState = modelPickerState,
+            pendingImages = pendingImages,
+            pendingFileReferences = pendingFileReferences,
+            queuedMessages = queuedMessages,
+            inputSyncVersion = inputSyncVersion,
+            focusInputOnSync = focusInputOnSync,
+            isEditingMessage = messageEdit != null,
+            editHasLaterTurns = messageEdit?.hasLaterTurns == true,
+            preserveFollowingMessages = messageEdit?.preserveFollowingMessages == true,
+            onSubmit = onSubmit,
+            onInterruptAndSubmit = onInterruptAndSubmit,
+            onSteerSubmit = onSteerSubmit,
+            onSteerQueuedMessage = onSteerQueuedMessage,
+            onRecallQueuedMessage = onRecallQueuedMessage,
+            onRemoveQueuedMessage = onRemoveQueuedMessage,
+            onReasoningEffortChange = onReasoningEffortChange,
+            onModelSelected = onModelSelected,
+            onCompactContext = onCompactContext,
+            canCompactContext = canCompactContext,
+            onStop = onStop,
+            onAttachImage = onAttachImage,
+            onRemoveImage = onRemoveImage,
+            onAttachFiles = onAttachFiles,
+            onAttachFolder = onAttachFolder,
+            onAttachFilePath = onAttachFilePath,
+            onRemoveFileReference = onRemoveFileReference,
+            onCancelMessageEdit = onCancelMessageEdit,
+            focusInputRequest = focusInputRequest,
+            onFocusInputHandled = onFocusInputHandled,
+            glassBackdrop = glassBackdrop,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // 这块实色背景紧接上方渐变的实色端，两者同色同透明度，接缝不可见；
-                // 输入框胶囊本身画在它上面，圆角外侧就是这块实色，不会再露硬边。
-                .background(MiuixTheme.colorScheme.surface)
-                .navigationBarsPadding()
-                .padding(
-                    start = ChatInputOuterMargin,
-                    end = ChatInputOuterMargin,
-                    bottom = ChatInputOuterMargin,
-                ),
-        ) {
-            AgentChatInputBar(
-                input = input,
-                isCompacting = isCompacting,
-                contextUsage = contextUsage,
-                showContextUsage = showContextUsage,
-                isStreaming = isStreaming,
-                reasoningEffort = reasoningEffort,
-                availableReasoningEfforts = availableReasoningEfforts,
-                modelPickerState = modelPickerState,
-                pendingImages = pendingImages,
-                pendingFileReferences = pendingFileReferences,
-                queuedMessages = queuedMessages,
-                inputSyncVersion = inputSyncVersion,
-                focusInputOnSync = focusInputOnSync,
-                isEditingMessage = messageEdit != null,
-                editHasLaterTurns = messageEdit?.hasLaterTurns == true,
-                preserveFollowingMessages = messageEdit?.preserveFollowingMessages == true,
-                onSubmit = onSubmit,
-                onInterruptAndSubmit = onInterruptAndSubmit,
-                onSteerSubmit = onSteerSubmit,
-                onSteerQueuedMessage = onSteerQueuedMessage,
-                onRecallQueuedMessage = onRecallQueuedMessage,
-                onRemoveQueuedMessage = onRemoveQueuedMessage,
-                onReasoningEffortChange = onReasoningEffortChange,
-                onModelSelected = onModelSelected,
-                onCompactContext = onCompactContext,
-                canCompactContext = canCompactContext,
-                onStop = onStop,
-                onAttachImage = onAttachImage,
-                onRemoveImage = onRemoveImage,
-                onAttachFiles = onAttachFiles,
-                onAttachFolder = onAttachFolder,
-                onAttachFilePath = onAttachFilePath,
-                onRemoveFileReference = onRemoveFileReference,
-                onCancelMessageEdit = onCancelMessageEdit,
-                focusInputRequest = focusInputRequest,
-                onFocusInputHandled = onFocusInputHandled,
-                glassBackdrop = glassBackdrop,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
     }
 }
-
-/** 输入框背景向上多探出的高度：渐变从这段背景的顶边开始。 */
-private val ChatBottomFadeOverhang = 32.dp
 
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
