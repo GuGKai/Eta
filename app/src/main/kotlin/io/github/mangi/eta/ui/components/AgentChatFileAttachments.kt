@@ -8,6 +8,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +68,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import com.itos.coui.menu.CouiMenuItem
 import com.itos.coui.menu.Menu
 import com.itos.coui.menu.couiMenuAnchor
@@ -130,6 +132,14 @@ internal fun couiSendIdleIconColor(): Color = MiuixTheme.colorScheme.onSurfaceVa
  * 因此这里共用同一个常量；改动它时输入框圆角会自动跟着变。
  */
 internal val ChatInputOuterMargin = 8.dp
+
+/**
+ * 输入栏菜单、统计卡片、会话页顶栏菜单统一用这套 Popup 属性：不抢窗口焦点，键盘因此不会被系统收起。
+ *
+ * 非焦点 Popup 收不到返回键，关闭手势由 COUI 菜单自己的「点外部」逻辑和调用方的
+ * BackHandler 兜住；换来的是点击加号、模型按钮、用量分析、侧栏与三点菜单时键盘保持原样。
+ */
+internal val NonFocusablePopupProperties: PopupProperties = PopupProperties(focusable = false)
 
 internal data class InputBarPopupLayout(
     val gap: Dp,
@@ -276,6 +286,8 @@ internal fun AgentAttachmentPickerButton(
 
     val uiStyle = LocalUiStyle.current
     val isCoui = uiStyle == AppearanceUiStyle.COUI
+    // 非焦点菜单收不到系统返回键，这里补一条：打开时按返回只关菜单。
+    BackHandler(enabled = showPopup) { showPopup = false }
     // COUI 的附件按钮补一块与输入栏操作区同风格的浅色圆底；
     // 直径跟随发送按钮的可视圆形，图标则沿用发送按钮的 18dp 视觉尺寸。
     val attachmentCircleModifier = if (isCoui) {
@@ -343,6 +355,8 @@ internal fun AgentAttachmentPickerButton(
                         onSelectOption(item.value)
                     },
                     anchor = anchor,
+                    // COUI：不抢焦点，键盘保持打开（关闭手势见下方 BackHandler）。
+                    properties = NonFocusablePopupProperties,
                 )
             }
             AppearanceUiStyle.MIUIX -> {

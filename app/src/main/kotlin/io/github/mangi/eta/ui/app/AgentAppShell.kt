@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -94,6 +95,7 @@ import io.github.mangi.eta.ui.components.ChatImagePreviewHost
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.EtaTopLayer
 import io.github.mangi.eta.ui.components.MiuixBackButton
+import io.github.mangi.eta.ui.components.NonFocusablePopupProperties
 import io.github.mangi.eta.ui.components.RoleplayChatUi
 import io.github.mangi.eta.ui.components.captureGlassBackdrop
 import io.github.mangi.eta.ui.components.coui.CouiBackButton
@@ -430,6 +432,9 @@ private fun CouiTopBarOverflowMenu(
         }
     }
 
+    // COUI：菜单不抢窗口焦点，正在输入的键盘不会被收起；返回键与点外部照常关闭。
+    BackHandler(enabled = showMenu) { showMenu = false }
+
     Box {
         CouiTopAppBarIconButton(
             icon = CouiIcons.Outlined.More,
@@ -460,6 +465,7 @@ private fun CouiTopBarOverflowMenu(
                 }
             },
             anchor = anchor,
+            properties = NonFocusablePopupProperties,
         )
     }
 }

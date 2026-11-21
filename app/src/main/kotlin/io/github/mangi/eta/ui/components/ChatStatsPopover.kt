@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -434,10 +436,29 @@ internal fun ChatStatsPopoverPopup(
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
     val couiDark = CouiTheme.isDark
 
+    // COUI：不抢焦点，键盘保持打开。非焦点弹层收不到外部点击与返回键，所以自己补一层
+    // 应用内全屏遮罩 + BackHandler：点外面只关卡片，输入框的键盘始终不收起。
+    if (isCoui) {
+        BackHandler { onDismissRequest() }
+        EtaTopLayer {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = null,
+                        indication = null,
+                        onClick = onDismissRequest,
+                    ),
+            )
+        }
+    }
     Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismissRequest,
-        properties = PopupProperties(focusable = true),
+        properties = PopupProperties(
+            focusable = !isCoui,
+            dismissOnClickOutside = !isCoui,
+        ),
     ) {
         val cardModifier = if (isCoui) {
             val shape = remember { CouiShape(18.dp, 2.2f) }

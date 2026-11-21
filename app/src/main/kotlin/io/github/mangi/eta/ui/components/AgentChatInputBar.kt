@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.components
 import io.github.mangi.eta.ui.voice.SpeechInputFeedback
 import io.github.mangi.eta.ui.voice.rememberSpeechInput
 import androidx.compose.ui.text.TextRange
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -738,56 +739,85 @@ internal fun AgentChatInputBar(
                                         } else {
                                             null
                                         },
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
+                                        fillColor = CouiTheme.colorSchemeFor(couiDark).accent,
+                                        iconColor = Color.White,
+                                        buttonSize = sendCircleSize,
+                                        iconSize = 18.dp,
+                                    )
+                                }
+                            } else {
                                 Box(
                                     modifier = Modifier
-                                        .size(sendCircleSize)
+                                        .size(ChatInputActionSize)
                                         .clip(CircleShape)
-                                        .background(sendButtonColor),
+                                        .combinedClickable(
+                                            enabled = isStreaming || canSend,
+                                            onClick = {
+                                                if (showPrimaryStop) {
+                                                    onStop()
+                                                } else {
+                                                    submitCurrentDraft(false)
+                                                }
+                                            },
+                                            onLongClick = if (showStreamingSend) {
+                                                {
+                                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    submitCurrentDraft(true)
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                        ),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    AnimatedContent(
-                                        targetState = showPrimaryStop,
-                                        transitionSpec = {
-                                            (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
-                                                .togetherWith(
-                                                    fadeOut(tween(90)) +
-                                                        scaleOut(tween(110), targetScale = 0.72f)
-                                                )
-                                        },
-                                        label = "send_stop_icon",
-                                    ) { stopIcon ->
-                                        Icon(
-                                            imageVector = if (stopIcon) {
-                                                Icons.Rounded.Stop
-                                            } else {
-                                                Icons.Rounded.ArrowUpward
+                                    Box(
+                                        modifier = Modifier
+                                            .size(sendCircleSize)
+                                            .clip(CircleShape)
+                                            .background(sendButtonColor),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        AnimatedContent(
+                                            targetState = showPrimaryStop,
+                                            transitionSpec = {
+                                                (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
+                                                    .togetherWith(
+                                                        fadeOut(tween(90)) +
+                                                            scaleOut(tween(110), targetScale = 0.72f)
+                                                    )
                                             },
-                                            contentDescription = when {
-                                                stopIcon -> stringResource(R.string.chat_stop)
-                                                isEditingMessage && preserveFollowingMessages -> stringResource(R.string.chat_save_message)
-                                                else -> stringResource(R.string.chat_send)
-                                            },
-                                            modifier = Modifier.size(
-                                                if (stopIcon) StopIconSize else if (isCoui) 18.dp else SendIconSize,
-                                            ),
-                                            tint = when {
-                                                stopIcon -> MiuixTheme.colorScheme.surface
-                                                canSend -> MiuixTheme.colorScheme.onPrimary
-                                                else -> couiSendIdleIconColor()
-                                            },
-                                        )
+                                            label = "send_stop_icon",
+                                        ) { stopIcon ->
+                                            Icon(
+                                                imageVector = if (stopIcon) {
+                                                    Icons.Rounded.Stop
+                                                } else {
+                                                    Icons.Rounded.ArrowUpward
+                                                },
+                                                contentDescription = when {
+                                                    stopIcon -> stringResource(R.string.chat_stop)
+                                                    isEditingMessage && preserveFollowingMessages -> stringResource(R.string.chat_save_message)
+                                                    else -> stringResource(R.string.chat_send)
+                                                },
+                                                modifier = Modifier.size(
+                                                    if (stopIcon) StopIconSize else if (isCoui) 18.dp else SendIconSize,
+                                                ),
+                                                tint = when {
+                                                    stopIcon -> MiuixTheme.colorScheme.surface
+                                                    canSend -> MiuixTheme.colorScheme.onPrimary
+                                                    else -> couiSendIdleIconColor()
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                }
-                // 余额胶囊相对整行绝对居中：变长时向两侧对称延伸，不会把右侧按钮挤偏。
-                LocalChatInputBalanceCapsule.current?.let { capsule ->
-                    Box(modifier = Modifier.align(Alignment.Center)) { capsule() }
-                }
+                    }
+                    // 余额胶囊相对整行绝对居中：变长时向两侧对称延伸，不会把右侧按钮挤偏。
+                    LocalChatInputBalanceCapsule.current?.let { capsule ->
+                        Box(modifier = Modifier.align(Alignment.Center)) { capsule() }
+                    }
+                    }
                 }
             }
         }
@@ -839,6 +869,8 @@ private fun ThinkingEffortChip(
     }
     val anchor = rememberCouiMenuAnchor()
     val popupAnchor = rememberGlassPopupAnchor()
+    // 非焦点菜单收不到系统返回键，这里补一条：打开时按返回只关菜单。
+    BackHandler(enabled = showPopup) { showPopup = false }
     LaunchedEffect(menuEnabled) {
         if (!menuEnabled) showPopup = false
     }
@@ -995,6 +1027,8 @@ private fun ThinkingEffortChip(
                         onEffortChange(item.value)
                     },
                     anchor = anchor,
+                    // COUI：不抢焦点，键盘保持打开（返回键由上面的 BackHandler 兜住）。
+                    properties = NonFocusablePopupProperties,
                 )
             }
                 AppearanceUiStyle.MIUIX -> {
