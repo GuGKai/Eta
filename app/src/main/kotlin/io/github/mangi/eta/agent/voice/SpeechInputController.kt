@@ -79,15 +79,16 @@ internal class SpeechInputController(
         )
         job = scope.launch(Dispatchers.Main.immediate) {
             try {
-                // 聆听期间压掉正在播放的媒体音量，避免麦克风把音乐、视频一起收进去；识别结束随租约还原。
-                lease = SpeechAudioLease(context, interrupt = { cancel() })
-                    .also { it.acquire(playback = false, muteMedia = true) }
                 val rawConfig = settings ?: SpeechSettingsRepository.settings()
-                // 识别已关闭：连刚拿到的静音租约一起放开，否则媒体音量会一直停在 0。
+                // 识别已关闭：直接退出，连音频焦点和媒体静音都不要碰，
+                // 否则会短暂抢占焦点、打断正在播放的音乐或另一路语音会话。
                 if (!rawConfig.recognitionEnabled) {
                     cancel()
                     return@launch
                 }
+                // 聆听期间压掉正在播放的媒体音量，避免麦克风把音乐、视频一起收进去；识别结束随租约还原。
+                lease = SpeechAudioLease(context, interrupt = { cancel() })
+                    .also { it.acquire(playback = false, muteMedia = true) }
                 val rawSecrets = credentials ?: SpeechSettingsRepository.credentials(context)
                 val (config, secrets) = SpeechSettingsRepository.resolveDeepSeekFallback(rawConfig, rawSecrets)
                 validateSpeechSettings(config, secrets, synthesis = false)
