@@ -95,12 +95,22 @@ class ConversationTitleGeneratorTest {
 
         val longTitle = "超长标题".repeat(20)
         val sanitized = ConversationTitleGenerator.sanitizeTitle(longTitle)!!
-        assertEquals(ConversationTitleGenerator.MAX_TITLE_CHARS, sanitized.length)
+        assertEquals("超长标题超长标题超长标题超", sanitized)
+        assertTrue(TitleWidth.columns(sanitized) <= TitleWidth.MAX_COLUMNS)
 
-        // 不截断代理对高半区
-        val emojiBoundary = "A".repeat(ConversationTitleGenerator.MAX_TITLE_CHARS - 1) + "\uD83D\uDE00"
+        // 中英混排：26 列预算下英文和汉字各占一半的空间。
+        assertEquals("Jetpack Compose 主题优化", ConversationTitleGenerator.sanitizeTitle("Jetpack Compose 主题优化"))
+        assertEquals("DeepSeek 深度思考模式确认", ConversationTitleGenerator.sanitizeTitle("DeepSeek 深度思考模式确认"))
+
+        val mixedLong = ConversationTitleGenerator.sanitizeTitle("Eta聊天页输入框布局与键盘交互调整需求确认")!!
+        assertTrue(TitleWidth.columns(mixedLong) <= TitleWidth.MAX_COLUMNS)
+        assertTrue(mixedLong.startsWith("Eta聊天页"))
+
+        // 不截断代理对：26 列正好是 13 个汉字，后面的 emoji 整个被丢掉，而不是留下半个。
+        val emojiBoundary = "标".repeat(13) + "\uD83D\uDE00"
         val truncatedEmoji = ConversationTitleGenerator.sanitizeTitle(emojiBoundary)!!
-        assertEquals(ConversationTitleGenerator.MAX_TITLE_CHARS - 1, truncatedEmoji.length)
+        assertEquals("标".repeat(13), truncatedEmoji)
+        assertTrue(!Character.isHighSurrogate(truncatedEmoji.last()))
     }
 
     @Test

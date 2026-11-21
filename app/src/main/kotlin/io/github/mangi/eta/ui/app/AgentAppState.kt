@@ -23,6 +23,7 @@ import io.github.mangi.eta.agent.model.AgentFileReference
 import io.github.mangi.eta.agent.model.AgentFileReferenceKind
 import io.github.mangi.eta.agent.model.AgentFileReferencePolicy
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
+import io.github.mangi.eta.agent.model.TitleWidth
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.ConversationTitleGenerator
 import io.github.mangi.eta.agent.roleplay.RoleplayBinding
@@ -2466,7 +2467,9 @@ internal class AgentAppState(
             ?: "image/jpeg"
 
     private fun String.defaultConversationTitle(): String =
-        lineSequence().firstOrNull().orEmpty().trim().take(MAX_TITLE_CHARS)
+        TitleWidth.truncateByColumns(
+            lineSequence().firstOrNull().orEmpty().trim(),
+        )
 
     private fun defaultConversationTitle(
         request: String,
@@ -3671,7 +3674,6 @@ internal class AgentAppState(
     }
 
     private companion object {
-        const val MAX_TITLE_CHARS = 24
         const val MAX_PREVIEW_CHARS = 48
         const val LEGACY_STOPPED_ERROR = "已停止"
         const val SYNTHETIC_STATUS_STOPPED = "eta_status:stopped"
