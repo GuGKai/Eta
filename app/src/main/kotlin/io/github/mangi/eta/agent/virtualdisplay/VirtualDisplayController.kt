@@ -519,7 +519,6 @@ internal object VirtualDisplayController {
 
     private fun statusBarInsetTopPx(context: Context, density: Float): Float {
         val fallback = 28f * density
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return fallback
         return runCatching {
             val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@runCatching fallback
             wm.currentWindowMetrics.windowInsets

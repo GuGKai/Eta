@@ -175,7 +175,7 @@ private fun CouiFlatCircleIconButton(
     )
     val glow = LocalCouiContourGlowEnabled.current
     val contour = remember(glow) {
-        if (glow && Build.VERSION.SDK_INT >= 33) CouiContour(style = CouiContourStyle.Button) else null
+        if (glow) CouiContour(style = CouiContourStyle.Button) else null
     }
     val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
 
@@ -198,7 +198,7 @@ private fun CouiFlatCircleIconButton(
             }
             .drawWithContent {
                 drawRect(fillColor)
-                if (Build.VERSION.SDK_INT >= 33 && contour != null) {
+                if (contour != null) {
                     // 主色圆钮（发送）的轮廓刻意比原厂更亮：原厂 0.25 / 0.3 在小尺寸圆钮上
                     // 几乎与填充融在一起，远看就是一块纯色，按要求把边缘拉到肉眼可辨。
                     val alpha = if (primaryLike) {

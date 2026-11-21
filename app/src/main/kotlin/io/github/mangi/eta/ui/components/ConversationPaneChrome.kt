@@ -1578,7 +1578,6 @@ private fun CouiBottomGradientBlurLayer(
     fadeHeight: Dp = 96.dp,
     blurRadius: Dp = 10.8.dp,
 ) {
-    if (Build.VERSION.SDK_INT < 33) return
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val fadePx = with(density) { fadeHeight.toPx() }
