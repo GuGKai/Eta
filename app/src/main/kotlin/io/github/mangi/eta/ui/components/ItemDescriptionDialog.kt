@@ -46,7 +46,7 @@ internal fun ItemDescriptionDialog(
             val dark = CouiTheme.isDark
             val maxBodyHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).dp
             CouiNoticeDialog(
-                visible = true,
+                visible = show,
                 title = title,
                 message = null,
                 confirmText = stringResource(R.string.action_close),
