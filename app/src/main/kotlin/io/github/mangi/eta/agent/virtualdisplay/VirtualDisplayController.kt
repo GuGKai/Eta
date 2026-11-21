@@ -962,7 +962,27 @@ internal object VirtualDisplayController {
                         val snapshot = mutableSnapshots.value
                         // 已经释放、已搬回虚拟屏、或被新一轮任务复用：无需再动手。
                         if (!snapshot.active || !snapshot.externalizedToMain) return@thread
-                        val foreground = lastMainDisplayForegroundPackage
+                        // 直接问无障碍服务“主屏当前窗口是谁”。
+                        // 不能用 lastMainDisplayForegroundPackage：它唯一的写入口
+                        // onMainDisplayForegroundPackage 在本模块里没有任何调用者，
+                        // 读出来恒为空，会让判定永远落到「用户已经离开」。
+                        val foreground = AgentAccessibilityService.current()
+                            ?.currentPackageName(Display.DEFAULT_DISPLAY)
+                            .orEmpty()
+                        if (foreground.isBlank()) {
+                            // 无障碍答不上来：宁可多占一会儿画布，也不误杀正在用的应用。
+                            if (waited < ExternalizedRetireMaxWaitMs) {
+                                AndroidAgentLogger.info(
+                                    "Virtual display retire pending: foreground unknown after ${waited}ms",
+                                )
+                                continue
+                            }
+                            AndroidAgentLogger.info(
+                                "Virtual display retire forced: foreground still unknown after ${waited}ms",
+                            )
+                            runCatching { release(activeContext ?: context, rootAvailable) }
+                            return@thread
+                        }
                         val stillUsing = foreground == snapshot.packageName
                         if (stillUsing && waited < ExternalizedRetireMaxWaitMs) {
                             AndroidAgentLogger.info(

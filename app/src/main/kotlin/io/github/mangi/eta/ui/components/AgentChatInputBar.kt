@@ -149,7 +149,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val SendButtonVisualSize = ChatInputActionIconSize
 private val SendIconSize = 16.dp
-private val StopIconSize = 10.dp
+/** 终止按钮的方块图标尺寸：原 10dp 放大 50%（10 × 1.5 = 15dp）。 */
+private val StopIconSize = 15.dp
 private val ThinkingIconSize = ChatInputActionIconSize
 /** 输入栏正中的余额胶囊：由外壳页面注入，避免把余额状态一路透传进输入栏。 */
 internal val LocalChatInputBalanceCapsule = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
@@ -619,7 +620,7 @@ internal fun AgentChatInputBar(
                             targetValue = when {
                                 showPrimaryStop -> MiuixTheme.colorScheme.onSurface
                                 canSend -> MiuixTheme.colorScheme.primary
-                                isCoui -> if (couiDark) Color(0xFF2E3136) else Color(0xFFE1E4E9)
+                                isCoui -> couiSendIdleCircleColor(couiDark)
                                 else -> MiuixTheme.colorScheme.surfaceContainerHigh
                             },
                             animationSpec = tween(durationMillis = 160),
@@ -715,7 +716,7 @@ internal fun AgentChatInputBar(
                                             tint = when {
                                                 stopIcon -> MiuixTheme.colorScheme.surface
                                                 canSend -> MiuixTheme.colorScheme.onPrimary
-                                                else -> MiuixTheme.colorScheme.onSurfaceVariantActions
+                                                else -> couiSendIdleIconColor()
                                             },
                                         )
                                     }

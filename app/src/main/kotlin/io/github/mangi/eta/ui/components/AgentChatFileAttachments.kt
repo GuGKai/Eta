@@ -51,8 +51,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +71,7 @@ import com.itos.coui.menu.CouiMenuItem
 import com.itos.coui.menu.Menu
 import com.itos.coui.menu.couiMenuAnchor
 import com.itos.coui.menu.rememberCouiMenuAnchor
+import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentFileReference
 import io.github.mangi.eta.agent.model.AgentFileReferenceKind
@@ -105,6 +106,22 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal val ChatInputPopupMargin = 8.dp
 internal val ChatInputActionSize = 40.dp
 internal val ChatInputActionIconSize = 24.dp
+
+/**
+ * COUI 输入栏「空草稿」态下发送按钮的圆底颜色。
+ *
+ * 附件加号按钮的圆底复用同一个值（含不透明度），保证两处底色在任何明暗模式下都完全一致。
+ */
+internal fun couiSendIdleCircleColor(dark: Boolean): Color =
+    if (dark) Color(0xFF2E3136) else Color(0xFFE1E4E9)
+
+/**
+ * COUI 输入栏「空草稿」态下发送按钮箭头的颜色。
+ *
+ * 附件加号图标复用同一个值，避免两处图标色出现偏差。
+ */
+@Composable
+internal fun couiSendIdleIconColor(): Color = MiuixTheme.colorScheme.onSurfaceVariantActions
 
 /**
  * 输入框到屏幕左、右、下三边的外边距。
@@ -262,9 +279,8 @@ internal fun AgentAttachmentPickerButton(
     // COUI 的附件按钮补一块与输入栏操作区同风格的浅色圆底；
     // 直径跟随发送按钮的可视圆形，图标则沿用发送按钮的 18dp 视觉尺寸。
     val attachmentCircleModifier = if (isCoui) {
-        val dark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
         Modifier.background(
-            color = MiuixTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.06f else 0.038f),
+            color = couiSendIdleCircleColor(CouiTheme.isDark),
             shape = CircleShape,
         )
     } else {
@@ -309,7 +325,7 @@ internal fun AgentAttachmentPickerButton(
                     modifier = Modifier
                         .size(if (isCoui) 18.dp else 23.dp)
                         .then(if (isCoui) Modifier else Modifier.glassPopupAnchorContent(popupAnchor)),
-                    tint = if (isCoui) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    tint = if (isCoui) couiSendIdleIconColor() else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f),
                 )
             }
         }
