@@ -42,7 +42,6 @@ import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -799,8 +798,6 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.McpServerDetail -> stringResource(R.string.route_mcp_server_detail)
     is AppRoute.ModelProviderDetail -> stringResource(R.string.route_provider_details)
     is AppRoute.ModelProviderNew -> stringResource(R.string.route_new_provider)
-    is AppRoute.ConversationTitleSettings -> stringResource(R.string.conversation_title_settings_title)
-    is AppRoute.AssistantOverlaySettings -> stringResource(R.string.assistant_overlay_settings_title)
     null -> stringResource(R.string.app_name)
 }
 

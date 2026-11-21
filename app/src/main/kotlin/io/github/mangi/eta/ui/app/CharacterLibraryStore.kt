@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.roleplay.CharacterBookDraft
 import io.github.mangi.eta.agent.roleplay.CharacterCard
 import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
@@ -285,7 +284,7 @@ internal class CharacterLibraryStore(
 
     fun loadDefaultPrompt() {
         if (defaultPromptLoaded && defaultPromptDraft != defaultPromptSaved) return
-        runOperation(context.getString(R.string.default_prompt_load_failed), queueIfBusy = true) {
+        runOperation(R.string.default_prompt_load_failed, "默认提示词读取失败，请重试", queueIfBusy = true) {
             defaultPromptSaved = io { SettingsDataStore.settings().defaultAssistantSystemPrompt }
                 .ifBlank { BuiltinProviders.DEFAULT_SYSTEM_PROMPT }
             defaultPromptDraft = defaultPromptSaved
@@ -297,7 +296,7 @@ internal class CharacterLibraryStore(
 
     fun resetDefaultPrompt() { if (!busy) defaultPromptDraft = BuiltinProviders.DEFAULT_SYSTEM_PROMPT }
 
-    fun saveDefaultPrompt(onSaved: () -> Unit) = runOperation(context.getString(R.string.default_prompt_save_failed)) {
+    fun saveDefaultPrompt(onSaved: () -> Unit) = runOperation(R.string.default_prompt_save_failed, "默认提示词保存失败，请重试") {
         val prompt = defaultPromptDraft.trim()
         io {
             SettingsDataStore.updateSettings { it.copy(defaultAssistantSystemPrompt =

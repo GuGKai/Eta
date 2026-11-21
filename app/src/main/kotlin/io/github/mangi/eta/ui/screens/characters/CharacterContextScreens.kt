@@ -12,8 +12,6 @@ import androidx.compose.ui.unit.dp
 import com.itos.coui.layout.CouiPageDefaults
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import androidx.compose.ui.res.stringResource
-import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.app.CharacterLibraryStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
