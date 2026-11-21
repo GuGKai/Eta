@@ -91,6 +91,22 @@ internal object VirtualDisplayController {
     private var restoreWatcher: Thread? = null
     private var restoreFailureCount: Int = 0
 
+    /** 外部化到主屏后，用户离开该应用时是否自动搬回虚拟屏；结果卡片「打开画面」传 false。 */
+    @Volatile
+    private var externalizedAutoRestore: Boolean = true
+
+    /** 外部化到主屏的 RootTask id；销毁虚拟屏后靠它把应用按原任务提回前台。 */
+    @Volatile
+    private var externalizedTaskId: Int = 0
+
+    /** 外部化完成的时刻。刚搬完的一小段窗口期主屏前台会抖动，这段期间不判断“用户离开了”。 */
+    @Volatile
+    private var externalizedAtElapsedMs: Long = 0L
+
+    /** 延迟回收观察线程：用户离开外置应用（或等够上限）后销毁虚拟屏。 */
+    private val retireLock = Any()
+    private var retireWatcher: Thread? = null
+
     /** 虚拟屏 IME 策略最近一次成功下发的目标；displayId 不匹配或 policy<0 表示需要重新下发。 */
     @Volatile private var appliedImePolicyDisplayId: Int = Display.INVALID_DISPLAY
     @Volatile private var appliedImePolicy: Int = -1
@@ -164,9 +180,24 @@ internal object VirtualDisplayController {
                 if ((bridge == null || bridge.isAlive) && isDisplayUsable(manager, existing.displayId)) {
                     synchronized(lock) {
                         if (sessionState.isCurrent(existing.token)) {
+                            // 复用既有虚拟屏：上一轮排下的延迟回收必须取消，否则会把这轮正在用的屏销毁掉。
+                            cancelExternalizedRetire()
                             // 复用既有虚拟屏：本地 IME 策略可能已被「接管」改成 FALLBACK，托管态补回 HIDE。
                             if (!mutableSnapshots.value.userControlling) {
                                 hideImeOnVirtualDisplay(existing.displayId, rootAvailable)
+                            }
+                            // 上一轮可能把应用外置到主屏后保留了这块屏，复用时要清掉外置态。
+                            synchronized(lock) {
+                                val reused = mutableSnapshots.value
+                                if (reused.externalizedToMain || reused.materializingToMain) {
+                                    mutableSnapshots.value = reused.copy(
+                                        externalizedToMain = false,
+                                        materializingToMain = false,
+                                        materializeFading = false,
+                                        materializeFrom = null,
+                                    )
+                                    externalizedTaskId = 0
+                                }
                             }
                             return existing.displayId
                         }
@@ -403,6 +434,20 @@ internal object VirtualDisplayController {
     fun handoffToMainDisplay(
         context: Context,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
+        /**
+         * 搬到主屏后，用户切走时是否自动把任务搬回虚拟屏。
+         *
+         * 结果卡片的「打开画面」是“我就要在主屏用它”，卡片随后就会被移除、胶囊也没了，
+         * 自动搬回只会把用户刚打开的应用抢回去，所以那条路径传 false。
+         */
+        autoRestoreOnLeave: Boolean = true,
+        /**
+         * 用户离开外置应用时是否直接释放虚拟屏。
+         *
+         * 虚拟屏一销毁，系统就会把它搬出去的任务挤回后台，所以选「留在主屏」的路径
+         * 必须把释放推迟到用户真的离开之后。
+         */
+        releaseAfterLeave: Boolean = false,
     ): Boolean {
         val snapshot = synchronized(lock) {
             val current = mutableSnapshots.value
@@ -430,7 +475,7 @@ internal object VirtualDisplayController {
         sleepQuietly(MaterializeExpandMs)
 
         // 2) 盖满之后才搬任务：虚拟屏变空的那一帧发生在这张不透明位图底下。
-        val moved = moveVirtualTaskToDisplay(
+        val movedTaskId = moveVirtualTaskToDisplay(
             context = appContext,
             sourceDisplayId = snapshot.displayId,
             targetDisplayId = Display.DEFAULT_DISPLAY,
@@ -438,7 +483,7 @@ internal object VirtualDisplayController {
             rootAvailable = rootAvailable,
         )
 
-        if (!moved) {
+        if (movedTaskId < 0) {
             // 搬运失败：撤掉过渡层并释放虚拟屏，避免留下看不见的空画布。
             synchronized(lock) {
                 val current = mutableSnapshots.value
@@ -458,7 +503,7 @@ internal object VirtualDisplayController {
         sleepQuietly(MaterializeMainFrameWaitMs)
         synchronized(lock) {
             val current = mutableSnapshots.value
-            if (!current.active) return moved
+            if (!current.active) return movedTaskId > 0
             mutableSnapshots.value = current.copy(materializeFading = true)
         }
         sleepQuietly(MaterializeFadeOutMs + MaterializeFadeTailMs)
@@ -467,7 +512,7 @@ internal object VirtualDisplayController {
         // 用户离开该应用时由主屏窗口事件把同一个 RootTask 搬回，胶囊小窗立即恢复。
         synchronized(lock) {
             val current = mutableSnapshots.value
-            if (!current.active) return moved
+            if (!current.active) return movedTaskId > 0
             mutableSnapshots.value = current.copy(
                 userControlling = false,
                 materializingToMain = false,
@@ -477,8 +522,19 @@ internal object VirtualDisplayController {
             )
             highFrequencyPreview = false
             restoreFailureCount = 0
+            externalizedAutoRestore = autoRestoreOnLeave
+            externalizedAtElapsedMs = SystemClock.elapsedRealtime()
+            // 记下这个 RootTask：销毁虚拟屏时系统会把主屏焦点改派给 Eta，
+            // 只有按 taskId 直接把它提回前台，才能让用户继续用原来的页面。
+            externalizedTaskId = movedTaskId
         }
-        return moved
+        // 已经排程的“搬回虚拟屏”观察线程必须立刻作废，否则它会在几百毫秒后把刚搬到主屏的应用抢回去。
+        if (!autoRestoreOnLeave) cancelRestoreWatcher()
+        AndroidAgentLogger.info(
+            "Virtual display handed off: task=$movedTaskId package=${snapshot.packageName} " +
+                "display=${snapshot.displayId}",
+        )
+        return movedTaskId > 0
     }
 
     private fun sleepQuietly(millis: Long) {
@@ -541,6 +597,12 @@ internal object VirtualDisplayController {
         lastMainDisplayForegroundPackage = packageName
         val snapshot = mutableSnapshots.value
         if (!snapshot.active || !snapshot.externalizedToMain) return
+        // 全屏位图还在淡出的这段时间，主屏前台会来回抖，此时的“前台变化”全是假信号。
+        if (snapshot.materializingToMain) return
+        // 用户从结果卡片点了「打开画面」：明确要在主屏用，别自动搬回去。
+        if (!externalizedAutoRestore) return
+        // 刚搬完的稳定期内同样不做判断，把时间留给窗口焦点落定。
+        if (SystemClock.elapsedRealtime() - externalizedAtElapsedMs < ExternalizedRestoreGraceMs) return
         // 系统窗口（下拉通知、锁屏、音量条）抢占焦点不代表用户离开了应用。
         if (packageName == snapshot.packageName ||
             packageName == "android" ||
@@ -562,6 +624,14 @@ internal object VirtualDisplayController {
         return restoreToVirtualDisplayInternal(snapshot, rootAvailable)
     }
 
+    /** 取消已排程的「搬回虚拟屏」观察线程；线程在 sleep 被中断后自行退出。 */
+    private fun cancelRestoreWatcher() {
+        val watcher = synchronized(restoreLock) {
+            restoreWatcher.also { restoreWatcher = null }
+        }
+        watcher?.interrupt()
+    }
+
     private fun scheduleRestoreToVirtualDisplay(leftForPackage: String) {
         synchronized(restoreLock) {
             if (restoreWatcher?.isAlive == true) return
@@ -576,6 +646,7 @@ internal object VirtualDisplayController {
                     }
                     val snapshot = mutableSnapshots.value
                     if (!snapshot.active || !snapshot.externalizedToMain) return@thread
+                    if (!externalizedAutoRestore || snapshot.materializingToMain) return@thread
                     val foreground = lastMainDisplayForegroundPackage
                     if (foreground.isNotBlank() && foreground == snapshot.packageName) return@thread
                     AndroidAgentLogger.info(
@@ -621,17 +692,17 @@ internal object VirtualDisplayController {
         rootAvailable: () -> Boolean,
     ): Boolean {
         val appContext = activeContext ?: return false
-        val moved = moveVirtualTaskToDisplay(
+        val movedTaskId = moveVirtualTaskToDisplay(
             context = appContext,
             sourceDisplayId = Display.DEFAULT_DISPLAY,
             targetDisplayId = snapshot.displayId,
             packageName = snapshot.packageName,
             rootAvailable = rootAvailable,
         )
-        if (!moved) return false
+        if (movedTaskId < 0) return false
         synchronized(lock) {
             val current = mutableSnapshots.value
-            if (!current.active || !current.externalizedToMain) return moved
+            if (!current.active || !current.externalizedToMain) return movedTaskId >= 0
             mutableSnapshots.value = current.copy(
                 userControlling = false,
                 materializingToMain = false,
@@ -648,7 +719,7 @@ internal object VirtualDisplayController {
             hide = !mutableSnapshots.value.userControlling,
             rootAvailable = rootAvailable,
         )
-        return moved
+        return true
     }
 
     /**
@@ -809,13 +880,192 @@ internal object VirtualDisplayController {
         }
     }
 
+    /**
+     * 销毁虚拟屏。
+     *
+     * 系统移除 display 时会把主屏焦点交还给它记住的旧任务（通常就是 Eta 自己），
+     * 刚从句外搬到主屏、正占着屏幕的应用会被顶到后面 —— 用户看到的就是
+     * 「点了打开画面，应用跟着结果卡片一起消失」。
+     * [restoreExternalizedForeground] 为真时，销毁前后把那个外置包按原 RootTask 提回前台。
+     */
     fun release(
         context: Context? = null,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
+        restoreExternalizedForeground: Boolean = false,
     ) {
+        // 真正销毁了就不需要再排「延迟回收」，否则会在下次任务里对同一块屏重复动手。
+        cancelExternalizedRetire()
+        val appContext = context?.applicationContext
+        val externalizedPackage = if (restoreExternalizedForeground && appContext != null) {
+            mutableSnapshots.value.let { snapshot ->
+                snapshot.packageName.takeIf { snapshot.active && snapshot.externalizedToMain && it.isNotBlank() }
+            }
+        } else {
+            null
+        }
+        val externalizedTask = if (externalizedPackage != null) externalizedTaskId else 0
+        // 先把「带回前台」的线程排好再销毁：销毁是异步的，焦点改派紧跟在它后面。
+        if (externalizedPackage != null && appContext != null) {
+            scheduleBringExternalizedToForeground(appContext, externalizedPackage, externalizedTask, rootAvailable)
+        }
         releaseSession(context, rootAvailable)
         // 虚拟屏彻底销毁后把“强制可调整大小”恢复成接管前的值，避免污染全局。
         context?.let { SizeCompatBypass.restore(it.applicationContext, rootAvailable) }
+    }
+
+    /**
+     * 服务停止时的收尾。
+     *
+     * 此刻如果正有应用被外置到主屏（用户点了「打开画面」），**不能立刻销毁虚拟屏**：
+     * 系统移除 display 的那一瞬会把主屏焦点抢回 Eta，用户正在用的应用就被盖掉，
+     * 看起来就是「跟着浮窗一起消失」。所以改成**延迟回收**：先按 [ExternalizedRetireDelayMs]
+     * 让用户安安静静用完，之后一旦发现主屏前台不再是那个应用（或等够
+     * [ExternalizedRetireMaxWaitMs] 上限），再把虚拟屏连同采集资源一起销毁，
+     * 既不打断使用，也不长期占着那块 1440x3168 的画布。
+     */
+    fun releaseForServiceStop(
+        context: Context? = null,
+        rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    ) {
+        val snapshot = mutableSnapshots.value
+        if (snapshot.active && snapshot.externalizedToMain) {
+            AndroidAgentLogger.info(
+                "Virtual display retire scheduled: ${snapshot.packageName} still externalized on main display, " +
+                    "delay=${ExternalizedRetireDelayMs}ms",
+            )
+            scheduleExternalizedRetire(context, rootAvailable)
+            return
+        }
+        release(context, rootAvailable)
+    }
+
+    /**
+     * 排一个后台观察线程做延迟回收：先等 [ExternalizedRetireDelayMs]，之后每
+     * [ExternalizedRetireRetryMs] 复查一次主屏前台；用户已经离开那个应用就销毁虚拟屏。
+     * 期间只要虚拟屏被回收/搬回/新任务复用，线程自行退出。
+     */
+    private fun scheduleExternalizedRetire(
+        context: Context?,
+        rootAvailable: () -> Boolean,
+    ) {
+        synchronized(retireLock) {
+            if (retireWatcher?.isAlive == true) return
+            retireWatcher = thread(name = "eta-vd-retire-watch", isDaemon = true) {
+                try {
+                    val started = SystemClock.elapsedRealtime()
+                    var waited = 0L
+                    while (true) {
+                        sleepQuietly(
+                            if (waited == 0L) ExternalizedRetireDelayMs else ExternalizedRetireRetryMs,
+                        )
+                        waited = SystemClock.elapsedRealtime() - started
+                        val snapshot = mutableSnapshots.value
+                        // 已经释放、已搬回虚拟屏、或被新一轮任务复用：无需再动手。
+                        if (!snapshot.active || !snapshot.externalizedToMain) return@thread
+                        val foreground = lastMainDisplayForegroundPackage
+                        val stillUsing = foreground == snapshot.packageName
+                        if (stillUsing && waited < ExternalizedRetireMaxWaitMs) {
+                            AndroidAgentLogger.info(
+                                "Virtual display retire postponed: ${snapshot.packageName} still in foreground " +
+                                    "after ${waited}ms",
+                            )
+                            continue
+                        }
+                        AndroidAgentLogger.info(
+                            "Virtual display retired: ${snapshot.packageName} after ${waited}ms " +
+                                "foreground=$foreground",
+                        )
+                        runCatching { release(activeContext ?: context, rootAvailable) }
+                        return@thread
+                    }
+                } finally {
+                    synchronized(retireLock) {
+                        if (retireWatcher === Thread.currentThread()) retireWatcher = null
+                    }
+                }
+            }
+        }
+    }
+
+    /** 取消待执行的延迟回收；虚拟屏被重新使用时调用，避免新任务被回收线程打断。 */
+    private fun cancelExternalizedRetire() {
+        val watcher = synchronized(retireLock) {
+            retireWatcher.also { retireWatcher = null }
+        } ?: return
+        // 回收线程自己调用 release 时不要打断自己。
+        if (watcher === Thread.currentThread()) return
+        watcher.interrupt()
+    }
+
+    /**
+     * 虚拟屏销毁后把外置到主屏的应用带回前台。
+     *
+     * 销毁是异步的，焦点改派在几十到几百毫秒之后才发生，所以在短窗口里反复提一次：
+     * 目标本来就在前台时调用 moveTaskToFront 没有副作用，真正生效的是焦点被抢走之后那一次。
+     * 进程内没有权限时退回 root 桥，由桥自己等「主屏栈顶变回 Eta」再动手。
+     */
+    private fun scheduleBringExternalizedToForeground(
+        context: Context,
+        packageName: String,
+        taskId: Int,
+        rootAvailable: () -> Boolean,
+    ) {
+        thread(name = "eta-vd-bring-front", isDaemon = true) {
+            // 只走特权桥：进程内的 ActivityManager.moveTaskToFront 在这台机器上没有可用的
+            // ATMS 入口，调用会静默失败，反而让兜底永远不触发。桥内部自己轮询等焦点改派。
+            repeat(ExternalizedBringAttempts) { attempt ->
+                if (attempt > 0) sleepQuietly(250L)
+                val brought = bringPackageToFront(
+                    context = context,
+                    packageName = packageName,
+                    expectedTopPackage = context.packageName,
+                    rootAvailable = rootAvailable,
+                )
+                if (brought) {
+                    AndroidAgentLogger.info(
+                        "Virtual display released, brought $packageName back (task=$taskId)",
+                    )
+                    return@thread
+                }
+            }
+        }
+    }
+
+    private fun bringPackageToFront(
+        context: Context,
+        packageName: String,
+        expectedTopPackage: String,
+        rootAvailable: () -> Boolean,
+    ): Boolean {
+        if (!rootAvailable() || !DeviceToolContract.validPackageName(packageName)) return false
+        return runCatching {
+            val apkPath = context.applicationInfo.sourceDir
+            val cmd = "CLASSPATH=${DeviceToolContract.quote(apkPath)} app_process /system/bin " +
+                "io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayCommandMain"
+            val req = JSONObject()
+                .put("action", "bring_to_front")
+                .put("package_name", packageName)
+                .put("expected_top_package", expectedTopPackage)
+                .put("target_display_id", Display.DEFAULT_DISPLAY)
+                .put("timeout_ms", 3_000)
+                .toString() + "\n"
+            val supervisor = ShellProcessSupervisor(rootAvailable = rootAvailable)
+            val proc = supervisor.startShellProcess("root", cmd, mergeStderr = true) ?: return false
+            try {
+                proc.outputStream.write(req.toByteArray(Charsets.UTF_8))
+                proc.outputStream.flush()
+                proc.outputStream.close()
+                val out = proc.inputStream.bufferedReader().readText()
+                proc.waitFor(6, TimeUnit.SECONDS)
+                out.contains("\"ok\":true")
+            } catch (_: Throwable) {
+                false
+            } finally {
+                supervisor.beginClosing()
+                if (proc.isAlive) supervisor.terminateAndReap(proc) else supervisor.reapProcess(proc)
+                supervisor.unregisterProcess(proc)
+            }
+        }.getOrDefault(false)
     }
 
     private fun releaseSession(
@@ -832,6 +1082,9 @@ internal object VirtualDisplayController {
             appliedImePolicyDisplayId = Display.INVALID_DISPLAY
             appliedImePolicy = -1
             highFrequencyPreview = false
+            externalizedAutoRestore = true
+            externalizedAtElapsedMs = 0L
+            externalizedTaskId = 0
             mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
             if (context != null && mutedPackages.isNotEmpty()) {
                 restoreMutedPackages(context.applicationContext, rootAvailable)
@@ -848,6 +1101,8 @@ internal object VirtualDisplayController {
         if (resources != null) {
             thread(name = "eta-vd-cleanup", isDaemon = true) { resources.close() }
         }
+        // 会话已结束：还在睡的观察线程再醒来也不该做任何搬运。
+        cancelRestoreWatcher()
     }
 
     private fun onFrameAvailable(reader: ImageReader) {
@@ -987,6 +1242,24 @@ internal object VirtualDisplayController {
 
     /** 破壁过渡：淡出结束到下线的余量，避免最后一帧硬切。 */
     private const val MaterializeFadeTailMs = 40L
+
+    /**
+     * 外置到主屏后的稳定期：这段时间内主屏前台报什么包名都不据此把任务搬回虚拟屏。
+     * 覆盖系统重组任务栈、焦点回落等瞬时抖动，避免刚打开的应用又被抢回后台。
+     */
+    private const val ExternalizedRestoreGraceMs = 1500L
+
+    /** 销毁虚拟屏后把外置任务提回前台的尝试次数；桥内部还会自己轮询焦点改派。 */
+    private const val ExternalizedBringAttempts = 2
+
+    /** 外置到主屏后的静默期：这段时间完全不考虑回收，先让用户安心用完。 */
+    private const val ExternalizedRetireDelayMs = 40_000L
+
+    /** 静默期之后的复查间隔：每次复查主屏前台是否还是那个应用。 */
+    private const val ExternalizedRetireRetryMs = 20_000L
+
+    /** 用户一直不离开时，最长保留多久强制回收，避免虚拟屏无限期占着内存。 */
+    private const val ExternalizedRetireMaxWaitMs = 15 * 60_000L
 
     /** 画布顶边相对状态栏下沿的内边距（画廊装裱 Column 的垂直 padding）。 */
     private const val StageCanvasTopInsetDp = 4f
@@ -1143,18 +1416,24 @@ internal object VirtualDisplayController {
         AndroidAgentLogger.info("[vd] 收回接管期间弹出的软键盘")
     }
 
+    /**
+     * 把 [sourceDisplayId] 上该包的任务搬到 [targetDisplayId]。
+     *
+     * 返回：>0 搬过去的 RootTask id；0 任务已启动但拿不到 id；-1 失败。
+     * 调用方需要这个 id，因为虚拟屏销毁后要靠它把应用按原任务提回前台。
+     */
     private fun moveVirtualTaskToDisplay(
         context: Context,
         sourceDisplayId: Int,
         targetDisplayId: Int,
         packageName: String,
         rootAvailable: () -> Boolean,
-    ): Boolean {
+    ): Int {
         // 1. 尝试进程内通过 system_server Hook 放行的 moveRootTaskToDisplay 迁移
-        val movedInProcess = runCatching {
+        val movedTaskIdInProcess = runCatching {
             HiddenApiBypass.addHiddenApiExemptions("Landroid/app/ActivityTaskManager", "Landroid/app/IActivityTaskManager")
             val atmClass = Class.forName("android.app.ActivityTaskManager")
-            val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching false
+            val service = atmClass.getMethod("getService").invoke(null) ?: return@runCatching -1
             val getTasks = service.javaClass.methods.firstOrNull { it.name == "getTasks" && it.parameterCount >= 1 }
             val tasks = when (getTasks?.parameterCount) {
                 1 -> getTasks.invoke(service, 40)
@@ -1189,13 +1468,13 @@ internal object VirtualDisplayController {
                     Int::class.javaPrimitiveType,
                 )
                 moveMethod.invoke(service, targetTaskId, targetDisplayId)
-                true
+                targetTaskId
             } else {
-                false
+                -1
             }
-        }.getOrDefault(false)
+        }.getOrDefault(-1)
 
-        if (movedInProcess) return true
+        if (movedTaskIdInProcess > 0) return movedTaskIdInProcess
 
         // 2. Root 特权桥调用 moveRootTaskToDisplay
         if (rootAvailable()) {
@@ -1211,27 +1490,27 @@ internal object VirtualDisplayController {
             val supervisor = ShellProcessSupervisor(rootAvailable = rootAvailable)
             val proc = supervisor.startShellProcess("root", cmd, mergeStderr = true)
             if (proc != null) {
-                val movedByRoot = try {
+                val movedByRootTaskId = try {
                     proc.outputStream.write(req.toByteArray(Charsets.UTF_8))
                     proc.outputStream.flush()
                     proc.outputStream.close()
                     val out = proc.inputStream.bufferedReader().readText()
                     proc.waitFor(4, TimeUnit.SECONDS)
-                    out.contains("\"ok\":true")
+                    parseBridgeTaskId(out)
                 } catch (_: Throwable) {
-                    false
+                    -1
                 } finally {
                     supervisor.beginClosing()
                     if (proc.isAlive) supervisor.terminateAndReap(proc) else supervisor.reapProcess(proc)
                     supervisor.unregisterProcess(proc)
                 }
-                if (movedByRoot) return true
+                if (movedByRootTaskId >= 0) return movedByRootTaskId
             }
         }
 
-        // 3. 兜底：以 SINGLE_TOP + NEW_TASK 在目标显示上唤起该应用
+        // 3. 兜底：以 SINGLE_TOP + NEW_TASK 在目标显示上唤起该应用（能起来，但拿不到 taskId）
         if (packageName.isNotBlank()) {
-            return runCatching {
+            val launched = runCatching {
                 val intent = context.packageManager.getLaunchIntentForPackage(packageName)
                     ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     ?: return@runCatching false
@@ -1239,8 +1518,20 @@ internal object VirtualDisplayController {
                 context.startActivity(intent, options.toBundle())
                 true
             }.getOrDefault(false)
+            if (launched) return 0
         }
-        return false
+        return -1
+    }
+
+    /** 从特权桥的 ETA_VD_RESULT JSON 里取 task_id；ok=false 或解析失败都返回 -1。 */
+    private fun parseBridgeTaskId(output: String): Int {
+        val raw = output.substringAfter(VirtualDisplayCommandMain.RESULT_PREFIX, "")
+            .lineSequence().firstOrNull()?.trim().orEmpty()
+        if (raw.isEmpty()) return -1
+        return runCatching {
+            val json = JSONObject(raw)
+            if (!json.optBoolean("ok")) -1 else json.optInt("task_id", 0)
+        }.getOrDefault(-1)
     }
 
     private fun mutePackageAudioFocusIfPossible(

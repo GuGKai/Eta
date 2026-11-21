@@ -347,6 +347,8 @@ internal fun AgentResultCard(
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
     val scope = rememberCoroutineScope()
+    // 退场动画与按钮动作解耦：动作必须执行，不能被组合作用域取消。
+    val exitHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     fun close() {
         if (!visible) return
         visible = false
@@ -355,6 +357,20 @@ internal fun AgentResultCard(
             delay(ResultCardExitMs.toLong())
             onClose()
         }
+    }
+
+    /**
+     * 与「完成」完全相同的下滑退场，播完再执行按钮动作。
+     * 不能用 rememberCoroutineScope：动作本身会移除窗口/切前台，组合随时可能被销毁，
+     * 作用域一取消动作就再也不执行，按钮会变成哑的。
+     */
+    fun closeThen(action: () -> Unit) {
+        if (!visible) {
+            action()
+            return
+        }
+        visible = false
+        exitHandler.postDelayed(action, ResultCardExitMs.toLong())
     }
 
     val isFailed = state.phase == AgentOverlayPhase.FAILED
@@ -508,10 +524,12 @@ internal fun AgentResultCard(
 
                 ResultCardActions(
                     content = content,
-                    onOpenEta = onOpenEta,
+                    onOpenEta = { closeThen(onOpenEta) },
                     onDone = ::close,
                     hasVirtualDisplayApp = hasVirtualDisplayApp,
-                    onOpenVirtualApp = onOpenVirtualApp,
+                    onOpenVirtualApp = onOpenVirtualApp?.let { openVirtual ->
+                        { closeThen(openVirtual) }
+                    },
                 )
             }
         }

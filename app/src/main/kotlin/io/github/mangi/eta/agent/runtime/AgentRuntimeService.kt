@@ -256,7 +256,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         AgentOverlayClearance.detach(clearanceHost)
-        VirtualDisplayController.release(this)
+        VirtualDisplayController.releaseForServiceStop(this)
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -1339,7 +1339,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         // ── 微缩镜窗口：收起态唯一可见的部分，宽度恒定 46.dp ─────────────
         // 窗口矩形内的透明区域同样吃点击，所以收起态的窗口必须和看得见的图形一样大，
         // 微缩镜外面的触摸才能落到下层应用上。
-        val lens = createOverlayComposeView {
+        val lens = createOverlayComposeView(fillHost = false) {
             AgentOverlayCapsuleLens(
                 state = state.value,
                 expanded = capsuleExpanded.value,
@@ -1362,7 +1362,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         // ── 面板窗口：宽度恒定装裱视窗宽度，收起态整体不可触摸 ─────────────
         // 两个窗口宽度都固定，开关时不存在任何重排，画面上只剩透明度变化。
-        val capsule = createOverlayComposeView {
+        val capsule = createOverlayComposeView(fillHost = false) {
             val controlRunId = displayedRun?.runId
             AgentOverlayCapsulePanel(
                 state = state.value,
@@ -1499,9 +1499,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 hasVirtualDisplayApp = virtualDisplayState.value.active &&
                     virtualDisplayState.value.packageName.isNotBlank(),
                 onOpenVirtualApp = {
+                    AndroidAgentLogger.info("Result card: open virtual app tapped")
                     thread(name = "eta-vd-result-handoff", isDaemon = true) {
-                        VirtualDisplayController.handoffToMainDisplay(this@AgentRuntimeService)
-                        mainHandler.post { dismissResult(resultRun) }
+                        // 用户要的是「在主屏接着用这个应用」：不再自动搬回虚拟屏。
+                        // 卡片随即关闭并销毁虚拟屏，销毁后由 release 把这个应用带回前台。
+                        val handedOff = VirtualDisplayController.handoffToMainDisplay(
+                            context = this@AgentRuntimeService,
+                            autoRestoreOnLeave = false,
+                        )
+                        if (handedOff) mainHandler.post { dismissResult(resultRun) }
                     }
                 },
             )
@@ -1590,7 +1596,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         runCatching { dispatcher.unregisterOnBackInvokedCallback(callback) }
     }
 
-    private fun createOverlayComposeView(content: @Composable () -> Unit): ComposeView =
+    private fun createOverlayComposeView(
+        fillHost: Boolean = true,
+        content: @Composable () -> Unit,
+    ): ComposeView =
         ComposeView(overlayContext()).apply {
             setViewTreeLifecycleOwner(this@AgentRuntimeService)
             setViewTreeSavedStateRegistryOwner(this@AgentRuntimeService)
@@ -1600,6 +1609,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AgentAppTheme(
                     appearance = appearance,
                     applyInterfaceScale = false,
+                    fillHost = fillHost,
                 ) {
                     // 部分 ROM 会给 TYPE_ACCESSIBILITY_OVERLAY 分配软件 Canvas；Miuix 与 COUI 的
                     // RuntimeShader 只检查系统版本，因此系统浮层统一使用无 RuntimeShader 的圆角回退。
@@ -1618,17 +1628,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
      * 窗口宽度决定可触摸范围，必须和看得见的图形一样大，否则会截走下层的点击。
      */
     private fun capsuleLensLayoutParams(): WindowManager.LayoutParams =
-        capsuleBaseLayoutParams(capsuleLensWindowWidthPx())
+        capsuleBaseLayoutParams(capsuleLensWindowWidthPx(), capsuleLensWindowHeightPx())
 
     /** 面板窗口：宽度恒为装裱视窗宽度，收起态由 FLAG_NOT_TOUCHABLE 整体让出触摸。 */
     private fun capsulePanelLayoutParams(): WindowManager.LayoutParams =
         capsuleBaseLayoutParams(capsuleStageWidthPx())
 
     /** 两个胶囊窗口共用：宽度固定、左上角定位 + 手动横向居中，位置就不会随开关变化。 */
-    private fun capsuleBaseLayoutParams(width: Int): WindowManager.LayoutParams =
+    private fun capsuleBaseLayoutParams(
+        width: Int,
+        height: Int = WindowManager.LayoutParams.WRAP_CONTENT,
+    ): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
             width,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            height,
             overlayType(),
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -1658,6 +1671,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     /** 收起态窗口宽：微缩镜外框 26.dp + 两侧各 10.dp 阴影留白，与看得见的图形一致。 */
     private fun capsuleLensWindowWidthPx(): Int =
         dpToPx(CAPSULE_LENS_WINDOW_WIDTH_DP + CAPSULE_LENS_SHADOW_MARGIN_DP * 2)
+
+    /**
+     * 收起态窗口高：微缩镜 32.dp + 圈距 4.dp × 2 + 上下留白 6.dp × 2 = 52.dp，另留 8.dp 给投影。
+     * 高度必须写死：窗口矩形要在胶囊下沿就结束，不能靠内容测量撑开。
+     */
+    private fun capsuleLensWindowHeightPx(): Int =
+        dpToPx(CAPSULE_LENS_WINDOW_HEIGHT_DP)
 
     /**
      * 按当前展开态校准窗口宽度与横向居中位置。
@@ -1825,7 +1845,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         displayedRun = null
         removeOverlayWindows()
         if (runs.all().isEmpty() && !guiControl.state.value.userPaused) {
-            VirtualDisplayController.release(this)
+            // 卡片收起时如果虚拟屏里还有应用被外置在主屏，销毁虚拟屏会把主屏焦点抢回 Eta，
+            // 那个应用看起来就"跟着浮窗一起消失"。这种情况保留虚拟屏，等下次任务复用。
+            VirtualDisplayController.releaseForServiceStop(this)
             stopSelf()
         }
     }
@@ -1930,6 +1952,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_STAGE_SIDE_EXTRA_DP = 44
         /** 收起态微缩镜外框宽（26.dp）与两侧阴影留白：窗口只包住看得见的这一小块。 */
         private const val CAPSULE_LENS_WINDOW_WIDTH_DP = 26
+        private const val CAPSULE_LENS_WINDOW_HEIGHT_DP = 60
         private const val CAPSULE_LENS_SHADOW_MARGIN_DP = 10
         /** 拿不到虚拟屏比例时的兜底画布比例（9:19.5）。 */
         private const val DEFAULT_CANVAS_ASPECT = 0.462f

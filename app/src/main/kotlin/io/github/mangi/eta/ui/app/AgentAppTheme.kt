@@ -57,6 +57,13 @@ fun AgentAppTheme(
     appearance: AppearanceSettings,
     applyInterfaceScale: Boolean,
     provideGlassHost: Boolean = false,
+    /**
+     * 是否让主题外壳填满整块窗口。
+     *
+     * 普通页面窗口是全屏的，填满没有副作用；但系统浮层（胶囊）用 WRAP_CONTENT 高度承载内容，
+     * 一旦被外壳铺成整屏，窗口矩形就会一直垂到屏幕底部，把下方触摸全部截走。
+     */
+    fillHost: Boolean = true,
     onResolvedDarkModeChange: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
@@ -206,7 +213,7 @@ fun AgentAppTheme(
             ) {
                 if (appearance.uiStyle == AppearanceUiStyle.COUI) {
                     CouiTheme(darkTheme = isDark, colorScheme = couiNative) {
-                        if (blurSupported) {
+                        if (blurSupported && fillHost) {
                             ProvideCouiMenuBackdrop(isolateContent = false) { windowSource ->
                                 Box(Modifier.fillMaxSize().then(windowSource)) {
                                     scopedContent()

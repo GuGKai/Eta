@@ -65,6 +65,9 @@ internal object VirtualDisplaySurfaceRegistry {
  * 2. action="move_to_display"（兼容 "move_to_main"）：查找指定 displayId 或 packageName
  *    的 RootTask，并调用 IActivityTaskManager.moveRootTaskToDisplay 迁移到 target_display_id
  *    （缺省为物理主屏 DEFAULT_DISPLAY）。全屏破壁与退出后搬回虚拟屏共用这段桥。
+ * 3. action="bring_to_front"：销毁虚拟屏后把外置到主屏的任务按原 RootTask 提回前台。
+ *    系统移除 display 时会把主屏焦点交还给它记住的旧任务（通常就是 Eta 自己），
+ *    不纠正的话，用户点「打开画面」后应用会跟着结果卡片一起被盖掉。
  */
 internal object VirtualDisplayCommandMain {
     const val READY_PREFIX = "ETA_VD_READY:"
@@ -97,6 +100,22 @@ internal object VirtualDisplayCommandMain {
                 "move_to_main", "move_to_display" -> {
                     val result = moveTaskToDisplay(request)
                     println(RESULT_PREFIX + result.toString())
+                    exitProcess(0)
+                }
+                "bring_to_front" -> {
+                    val result = bringTaskToFront(request)
+                    println(RESULT_PREFIX + result.toString())
+                    exitProcess(0)
+                }
+                "list_methods" -> {
+                    val atm = Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null)
+                    val filter = request.optString("filter").lowercase()
+                    val names = atm?.javaClass?.methods.orEmpty()
+                        .map { m -> m.name + "(" + m.parameterTypes.joinToString(",") { it.simpleName } + ")" }
+                        .filter { filter.isEmpty() || it.lowercase().contains(filter) }
+                        .distinct()
+                        .sorted()
+                    println(RESULT_PREFIX + JSONObject().put("ok", true).put("methods", names.joinToString(" | ")))
                     exitProcess(0)
                 }
                 else -> {
@@ -395,21 +414,8 @@ internal object VirtualDisplayCommandMain {
             ?: return JSONObject().put("ok", false).put("code", "ATM_UNAVAILABLE")
         val serviceClass = service.javaClass
 
-        val getTasks = serviceClass.methods.firstOrNull {
-            it.name == "getTasks" && it.parameterCount >= 1
-        }
-        val rawTasks = runCatching {
-            when (getTasks?.parameterCount) {
-                1 -> getTasks.invoke(service, 50)
-                3 -> getTasks.invoke(service, 50, false, false)
-                4 -> getTasks.invoke(service, 50, false, false, Display.INVALID_DISPLAY)
-                else -> null
-            } as? List<*>
-        }.getOrNull().orEmpty()
-
         var matchedTaskId = -1
-        for (item in rawTasks) {
-            val taskInfo = item as? android.app.TaskInfo ?: continue
+        for (taskInfo in readTasks(service, serviceClass, 50)) {
             val taskDisplayId = runCatching {
                 android.app.TaskInfo::class.java.getField("displayId").getInt(taskInfo)
             }.getOrDefault(Display.INVALID_DISPLAY)
@@ -443,5 +449,146 @@ internal object VirtualDisplayCommandMain {
             .put("ok", true)
             .put("task_id", matchedTaskId)
             .put("target_display_id", targetDisplayId)
+    }
+
+    /** 读取系统任务列表；不同版本 getTasks 的参数个数不同，按签名逐个试。 */
+    private fun readTasks(service: Any, serviceClass: Class<*>, max: Int): List<android.app.TaskInfo> {
+        val getTasks = serviceClass.methods.firstOrNull {
+            it.name == "getTasks" && it.parameterCount >= 1
+        } ?: return emptyList()
+        val raw = runCatching {
+            when (getTasks.parameterCount) {
+                1 -> getTasks.invoke(service, max)
+                3 -> getTasks.invoke(service, max, false, false)
+                4 -> getTasks.invoke(service, max, false, false, Display.INVALID_DISPLAY)
+                else -> null
+            } as? List<*>
+        }.getOrNull().orEmpty()
+        return raw.mapNotNull { it as? android.app.TaskInfo }
+    }
+
+    /**
+     * 把主屏上某个包的任务按原 RootTask 提回前台（纯窗口层级操作，不重启 Activity）。
+     *
+     * 虚拟屏被销毁的那一瞬间，系统会把主屏焦点交还给它记住的旧任务（通常就是 Eta 自己），
+     * 刚从句外搬出去、正占着屏幕的应用会被压到后面。这里轮询等这一刻出现再纠正，
+     * 用户看到的就是「应用还在，只是抖了一下」。
+     *
+     * 只有主屏栈顶仍是 expected_top_package（或已经是目标包本身）时才动手：
+     * 用户已经切去别的应用时宁可不动，也不要把人拽回来。
+     */
+    private fun bringTaskToFront(request: JSONObject): JSONObject {
+        val targetPackage = request.optString("package_name").trim()
+        if (targetPackage.isEmpty()) return JSONObject().put("ok", false).put("code", "PACKAGE_REQUIRED")
+        val targetDisplayId = request.optInt("target_display_id", Display.DEFAULT_DISPLAY)
+        val expectedTopPackage = request.optString("expected_top_package").trim()
+        val timeoutMs = request.optInt("timeout_ms", 3_000).coerceIn(200, 8_000)
+
+        val atmClass = Class.forName("android.app.ActivityTaskManager")
+        val service = atmClass.getMethod("getService").invoke(null)
+            ?: return JSONObject().put("ok", false).put("code", "ATM_UNAVAILABLE")
+        val serviceClass = service.javaClass
+        // 不同 ROM 提供的入口不同：先找 ATMS 的 moveRootTaskToFront，
+        // 再退到 startActivityFromRecents（从最近任务恢复，同样不重建 Activity），
+        // 最后试 IActivityManager.moveTaskToFront。
+        val moveToFront = serviceClass.methods.firstOrNull {
+            it.name == "moveRootTaskToFront" && it.parameterCount >= 2 &&
+                it.parameterTypes[0] == Int::class.javaPrimitiveType
+        }
+        val fromRecents = serviceClass.methods.firstOrNull {
+            it.name == "startActivityFromRecents" && it.parameterCount == 2
+        }
+        val amMoveToFront = runCatching {
+            val amService = Class.forName("android.app.ActivityManager")
+                .getMethod("getService").invoke(null) ?: return@runCatching null
+            amService to amService.javaClass.methods.firstOrNull {
+                it.name == "moveTaskToFront" && it.parameterCount >= 2 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType
+            }
+        }.getOrNull()
+        if (moveToFront == null && fromRecents == null && amMoveToFront?.second == null) {
+            return JSONObject().put("ok", false).put("code", "MOVE_FRONT_NOT_FOUND")
+        }
+
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var lastTopPackage = ""
+        var lastTargetTaskId = -1
+        var sawTargetOnTop = false
+        while (System.currentTimeMillis() < deadline) {
+            var topPackage = ""
+            var topSeen = false
+            var targetTaskId = -1
+            for (taskInfo in readTasks(service, serviceClass, 50)) {
+                val taskDisplayId = runCatching {
+                    android.app.TaskInfo::class.java.getField("displayId").getInt(taskInfo)
+                }.getOrDefault(Display.INVALID_DISPLAY)
+                if (taskDisplayId != targetDisplayId) continue
+                val topActivityPackage = taskInfo.topActivity?.packageName
+                    ?: taskInfo.baseActivity?.packageName
+                    ?: taskInfo.baseIntent.component?.packageName
+                    ?: taskInfo.baseIntent.`package`
+                if (!topSeen) {
+                    topSeen = true
+                    topPackage = topActivityPackage.orEmpty()
+                }
+                if (targetTaskId <= 0 && topActivityPackage == targetPackage) {
+                    targetTaskId = taskInfo.taskId
+                }
+            }
+            lastTopPackage = topPackage
+            lastTargetTaskId = targetTaskId
+            when {
+                // 任务还没落到目标屏，继续等。
+                targetTaskId <= 0 -> Unit
+                // 目标还在前台：销毁可能还没生效。继续等，别提前退出（这正是上一版失效的原因）。
+                topPackage == targetPackage -> sawTargetOnTop = true
+                expectedTopPackage.isEmpty() || topPackage == expectedTopPackage -> {
+                    when {
+                        moveToFront != null -> when (moveToFront.parameterCount) {
+                            2 -> moveToFront.invoke(service, targetTaskId, 0)
+                            else -> moveToFront.invoke(service, targetTaskId, 0, null)
+                        }
+                        fromRecents != null -> fromRecents.invoke(service, targetTaskId, null)
+                        amMoveToFront?.second != null -> {
+                            if (amMoveToFront.second!!.parameterCount >= 3) {
+                                amMoveToFront.second!!.invoke(amMoveToFront.first, targetTaskId, 0, null)
+                            } else {
+                                amMoveToFront.second!!.invoke(amMoveToFront.first, targetTaskId, 0)
+                            }
+                        }
+                    }
+                    return JSONObject()
+                        .put("ok", true)
+                        .put("moved", true)
+                        .put("task_id", targetTaskId)
+                        .put("top_before", topPackage)
+                }
+                else -> return JSONObject()
+                    .put("ok", true)
+                    .put("moved", false)
+                    .put("task_id", targetTaskId)
+                    .put("reason", "USER_ELSEWHERE")
+                    .put("top_before", topPackage)
+            }
+            try {
+                Thread.sleep(60L)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                break
+            }
+        }
+        // 一直在前台：说明销毁没有抢走焦点，任务本来就还在用户眼前，这也是成功。
+        if (sawTargetOnTop) {
+            return JSONObject()
+                .put("ok", true)
+                .put("moved", false)
+                .put("reason", "STILL_FRONT")
+                .put("task_id", lastTargetTaskId)
+        }
+        return JSONObject()
+            .put("ok", false)
+            .put("code", "TIMEOUT")
+            .put("top", lastTopPackage)
+            .put("task_id", lastTargetTaskId)
     }
 }
