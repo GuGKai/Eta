@@ -432,6 +432,7 @@ fun AgentAppRoot(
             onConversationMoveToWorkspace = { conversationId, workspaceId ->
                 agentState.moveConversationToWorkspace(conversationId, workspaceId)
             },
+            onReorderWorkspaces = { orderedIds -> agentState.reorderWorkspaces(orderedIds) },
             onOpenTools = { pushRoute(AppRoute.Tools) },
             onOpenSkills = { pushRoute(AppRoute.Skills) },
             onOpenScheduledTasks = { pushRoute(AppRoute.ScheduledTasks) },

@@ -1639,6 +1639,24 @@ internal class AgentAppState(
         refreshConversationSummaries()
     }
 
+    /**
+     * 重排工作区顺序。
+     *
+     * 侧栏顶部 chip 行和「移动到工作区」弹窗共用 workspaceRecords 的列表顺序，
+     * 所以这里改一次顺序，两处的展示顺序就同步跟着变。
+     * 传入的顺序必须是现存工作区的完整 id 集合，缺项或重复都直接忽略，避免误删工作区。
+     */
+    fun reorderWorkspaces(orderedIds: List<String>) {
+        if (workspaceRecords.size < 2 || orderedIds.size != workspaceRecords.size) return
+        val byId = workspaceRecords.associateBy { it.id }
+        if (orderedIds.toSet() != byId.keys) return
+        val reordered = orderedIds.map { byId.getValue(it) }
+        if (reordered == workspaceRecords) return
+        workspaceRecords = reordered
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
     /** 侧栏「新建会话」按钮带上当前选中的工作区；null 表示「全部」，即不归档。 */
     fun setPendingNewConversationWorkspace(workspaceId: String?) {
         pendingNewConversationWorkspaceId = workspaceId?.takeIf { candidate ->

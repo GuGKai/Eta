@@ -1,4 +1,6 @@
 package io.github.mangi.eta.ui.components
+import kotlin.math.roundToInt
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,6 +75,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.derivedStateOf
@@ -116,6 +120,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.itos.coui.backdrop.CouiBackdrop
 import com.itos.coui.backdrop.couiBackdrop
 import com.itos.coui.backdrop.rememberCouiBackdrop
@@ -259,6 +264,8 @@ internal fun ConversationPanePanel(
     onDeleteWorkspace: (String) -> Unit,
     onWorkspaceCollapsedChange: (String, Boolean) -> Unit,
     onConversationMoveToWorkspace: (String, String?) -> Unit,
+    /** 「移动到工作区」弹窗里长按拖动后的新顺序（工作区 id 列表），与顶部 chip 行共用同一份顺序。 */
+    onReorderWorkspaces: (List<String>) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModelProviders: () -> Unit,
     onOpenTools: () -> Unit,
@@ -759,6 +766,7 @@ internal fun ConversationPanePanel(
                 onConversationMoveToWorkspace(conversation.id, workspaceId)
                 workspaceMoveTarget = null
             },
+            onReorder = onReorderWorkspaces,
         )
     }
 }
@@ -2048,13 +2056,56 @@ private fun WorkspaceMoveDialog(
     workspaces: List<ConversationWorkspaceUi>,
     onDismiss: () -> Unit,
     onMove: (String?) -> Unit,
+    onReorder: (List<String>) -> Unit,
 ) {
     val title = stringResource(R.string.workspace_move_title)
     val emptyText = stringResource(R.string.workspace_move_empty)
     val removeText = stringResource(R.string.action_remove_from_workspace)
     val cancelText = stringResource(R.string.action_cancel)
     // 保留全部分类，当前所在的那个也用右侧圆点标出来（与设置页模型提供商的单选一致）。
-    val targets = workspaces
+    // 这里的顺序就是侧栏顶部 chip 行的顺序：长按拖动改完立即落库，两处同步。
+    val targets = remember { mutableStateListOf<ConversationWorkspaceUi>() }
+    LaunchedEffect(workspaces) {
+        if (workspaces.map { it.id } != targets.map { it.id }) {
+            targets.clear()
+            targets.addAll(workspaces)
+        }
+    }
+    // 行高固定（48dp 行 + 1px 分隔线），换位按整行步进判断。
+    val rowStepPx = with(LocalDensity.current) {
+        (CouiPageDefaults.rowMinHeight + CouiPageDefaults.dividerHeight).toPx().coerceAtLeast(1f)
+    }
+    val haptics = LocalHapticFeedback.current
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    fun beginReorderDrag(id: String) {
+        draggingId = id
+        dragOffsetY = 0f
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    fun dragReorderBy(id: String, delta: Float) {
+        if (draggingId != id) return
+        dragOffsetY += delta
+        val from = targets.indexOfFirst { it.id == id }
+        if (from < 0) return
+        val steps = (dragOffsetY / rowStepPx).roundToInt()
+        if (steps == 0) return
+        val to = (from + steps).coerceIn(0, targets.lastIndex)
+        if (to == from) return
+        targets.add(to, targets.removeAt(from))
+        // 扣掉已经换掉的行数，剩下的位移继续算下一行的阈值。
+        dragOffsetY -= (to - from) * rowStepPx
+    }
+
+    fun finishReorderDrag() {
+        if (draggingId == null) return
+        draggingId = null
+        dragOffsetY = 0f
+        onReorder(targets.map { it.id })
+    }
+
     val canRemove = conversation.workspaceId != null
 
     when (LocalUiStyle.current) {
@@ -2099,15 +2150,23 @@ private fun WorkspaceMoveDialog(
                     }
                     targets.forEachIndexed { index, workspace ->
                         val selected = workspace.id == conversation.workspaceId
-                        WorkspaceMoveOptionRow(
-                            text = workspace.name,
-                            selected = selected,
-                            showDivider = index != targets.lastIndex,
-                            // 选中分类即落库，弹窗随之收起；点当前分类只关掉弹窗。
-                            onClick = {
-                                if (selected) onDismiss() else onMove(workspace.id)
-                            },
-                        )
+                        // 用 id 做 key：拖动会重排顺序，Composable 不能按 index 互换身份，否则手势会被取消。
+                        key(workspace.id) {
+                            WorkspaceMoveOptionRow(
+                                text = workspace.name,
+                                selected = selected,
+                                showDivider = index != targets.lastIndex,
+                                dragging = draggingId == workspace.id,
+                                dragOffsetPx = if (draggingId == workspace.id) dragOffsetY else 0f,
+                                onDragStart = { beginReorderDrag(workspace.id) },
+                                onDragDelta = { delta -> dragReorderBy(workspace.id, delta) },
+                                onDragEnd = { finishReorderDrag() },
+                                // 选中分类即落库，弹窗随之收起；点当前分类只关掉弹窗。
+                                onClick = {
+                                    if (selected) onDismiss() else onMove(workspace.id)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -2167,6 +2226,11 @@ private fun WorkspaceMoveOptionRow(
     text: String,
     selected: Boolean,
     showDivider: Boolean,
+    dragging: Boolean,
+    dragOffsetPx: Float,
+    onDragStart: () -> Unit,
+    onDragDelta: (Float) -> Unit,
+    onDragEnd: () -> Unit,
     onClick: () -> Unit,
 ) {
     val dark = CouiTheme.isDark
@@ -2174,6 +2238,33 @@ private fun WorkspaceMoveOptionRow(
     val source = remember { MutableInteractionSource() }
     val rowModifier = Modifier
         .fillMaxWidth()
+        // 拖动中的行浮在其它行之上，并跟着手指移动。
+        .zIndex(if (dragging) 1f else 0f)
+        .graphicsLayer {
+            if (dragging) {
+                translationY = dragOffsetPx
+                scaleX = 1.02f
+                scaleY = 1.02f
+                shadowElevation = 12.dp.toPx()
+                shape = RoundedCornerShape(12.dp)
+            }
+        }
+        // 行本身是透明的，拖动浮起时必须自带底色，否则下面的行会透上来。
+        .background(
+            color = if (dragging) CouiTheme.colorScheme.surface else Color.Transparent,
+            shape = RoundedCornerShape(12.dp),
+        )
+        .pointerInput(Unit) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = { onDragStart() },
+                onDrag = { change, dragAmount ->
+                    change.consume()
+                    onDragDelta(dragAmount.y)
+                },
+                onDragEnd = { onDragEnd() },
+                onDragCancel = { onDragEnd() },
+            )
+        }
         .couiButtonFeedback(dark, source, true, list = true)
         .selectable(
             selected = selected,
