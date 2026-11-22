@@ -351,7 +351,6 @@ internal fun ConversationPanePanel(
     ) {
         when {
             isSearching -> state.conversations
-            !isCoui -> looseConversations
             selectedWorkspaceKey == WorkspaceChipAllKey -> allConversations
             else -> state.workspaces
                 .firstOrNull { it.id == selectedWorkspaceKey }
@@ -363,7 +362,7 @@ internal fun ConversationPanePanel(
     // 这样结束搜索时这条会话一定还在当前列表里，不会因为停留在别的文件夹而「消失」；
     // 非搜索态点会话就留在用户当前选的分类里，不要擅自跳回「全部」。
     val selectConversationRow: (String) -> Unit = { conversationId ->
-        if (isCoui && isSearching) selectWorkspace(WorkspaceChipAllKey)
+        if (isSearching) selectWorkspace(WorkspaceChipAllKey)
         onConversationSelected(conversationId)
     }
     val groups = remember(scopedConversations) { scopedConversations.groupForDrawer() }
@@ -394,8 +393,8 @@ internal fun ConversationPanePanel(
     var workspaceMoveTarget by remember { mutableStateOf<ConversationSummaryUi?>(null) }
 
     val showWorkspacesSection = state.workspaces.isNotEmpty() || !isSearching
-    // COUI 的工作区收进顶部 chip 栏；Miuix 仍是树形展开，所以两边的列表头逻辑分开判断。
-    val hasWorkspaceChips = isCoui && showWorkspacesSection
+    // 两种样式都把工作区收进顶部 chip 栏：MIUIX 用 Miuix 组件渲染同一套布局。
+    val hasWorkspaceChips = showWorkspacesSection
 
     val containerColor = conversationPaneContainerColor()
     val couiBackdrop = if (isCoui) rememberCouiBackdrop() else null
@@ -492,7 +491,8 @@ internal fun ConversationPanePanel(
                         ) {
                             // 侧栏不再有顶部工作台卡片，第一条就是工作区段或会话分组。
                             // 顶部不再有任何选择框/工作台卡片，第一条就是工作区段或会话分组。
-                            if (!isCoui && showWorkspacesSection) {
+                            // 工作区已收进顶部 chip 栏，树形段不再渲染（两种样式一致）。
+                            if (!hasWorkspaceChips && showWorkspacesSection) {
                                 item(key = "section-workspaces") {
                                     Column {
                                         PaneSectionHeader(
@@ -570,7 +570,7 @@ internal fun ConversationPanePanel(
                             }
 
                             // 分隔线从「工作区标题下」移到「工作区段与置顶/时间分组之间」。
-                            if (!isCoui && showWorkspacesSection && state.workspaces.isNotEmpty()) {
+                            if (!hasWorkspaceChips && showWorkspacesSection && state.workspaces.isNotEmpty()) {
                                 item(key = "section-workspaces-divider") {
                                     PaneHeaderDivider()
                                 }
@@ -843,7 +843,13 @@ private fun ConversationPaneWorkspaceChips(
     onDeleteWorkspace: (ConversationWorkspaceUi) -> Unit,
     couiBackdrop: CouiBackdrop?,
 ) {
-    if (couiBackdrop == null) return
+    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    var miuixMenuWorkspace by remember { mutableStateOf<ConversationWorkspaceUi?>(null) }
+    var miuixMenuBounds by remember { mutableStateOf(Rect.Zero) }
+    // 玻璃菜单自己维护「展开中」标志：show 从 false 翻到 true 才有展开动画。
+    var miuixMenuVisible by remember { mutableStateOf(false) }
+    // COUI 必须拿到背景采样；MIUIX 由 Miuix 组件自绘，不再依赖 COUI 材质。
+    if (isCoui && couiBackdrop == null) return
     val dark = CouiTheme.isDark
     val allLabel = stringResource(R.string.inbox_all)
     val chipsScroll = rememberScrollState()
@@ -924,7 +930,7 @@ private fun ConversationPaneWorkspaceChips(
             backdrop = couiBackdrop,
             modifier = Modifier,
             onClick = { onSelectedKeyChange(WorkspaceChipAllKey) },
-            onLongPress = onCreateWorkspace,
+            onLongPress = { onCreateWorkspace() },
             isListScrolling = { chipsScroll.isScrollInProgress },
         )
         workspaces.forEach { workspace ->
@@ -937,9 +943,15 @@ private fun ConversationPaneWorkspaceChips(
                     backdrop = couiBackdrop,
                     modifier = Modifier.couiMenuAnchor(chipAnchor),
                     onClick = { onSelectedKeyChange(workspace.id) },
-                    onLongPress = {
-                        menuAnchor = chipAnchor
-                        menuWorkspace = workspace
+                    onLongPress = { bounds ->
+                        if (isCoui) {
+                            menuAnchor = chipAnchor
+                            menuWorkspace = workspace
+                        } else {
+                            miuixMenuBounds = bounds
+                            miuixMenuWorkspace = workspace
+                            miuixMenuVisible = true
+                        }
                     },
                     isListScrolling = { chipsScroll.isScrollInProgress },
                 )
@@ -968,6 +980,43 @@ private fun ConversationPaneWorkspaceChips(
             anchor = activeAnchor,
         )
     }
+
+    // MIUIX：长按 chip 用 Miuix 玻璃菜单，与会话行的 GlassPopup 同一套。
+    // show 必须由 false 翻到 true，GlassPopup 才会跑展开动画；直接写死 true 就是「首帧全展开」，
+    // 看起来像没有动画。
+    if (!isCoui) {
+        EtaTopLayer {
+            GlassPopup(
+                show = miuixMenuVisible,
+                onDismissRequest = {
+                    miuixMenuVisible = false
+                    miuixMenuWorkspace = null
+                },
+                anchorBounds = miuixMenuBounds,
+                backdrop = currentGlassOverlayBackdrop(),
+            ) {
+                val target = miuixMenuWorkspace
+                if (target != null) {
+                    GlassPopupItem(
+                        text = renameLabel,
+                        onClick = {
+                            miuixMenuVisible = false
+                            miuixMenuWorkspace = null
+                            onRenameWorkspace(target)
+                        },
+                    )
+                    GlassPopupItem(
+                        text = deleteLabel,
+                        onClick = {
+                            miuixMenuVisible = false
+                            miuixMenuWorkspace = null
+                            onDeleteWorkspace(target)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -981,14 +1030,16 @@ private fun WorkspaceChipTab(
     label: String,
     selected: Boolean,
     dark: Boolean,
-    backdrop: CouiBackdrop,
+    backdrop: CouiBackdrop?,
     onClick: () -> Unit,
-    onLongPress: () -> Unit,
+    /** 长按回调带上 chip 的窗口坐标：MIUIX 的玻璃菜单按这个矩形定位。 */
+    onLongPress: (Rect) -> Unit,
     modifier: Modifier = Modifier,
     /** 列表此刻是否正在横向滑动；正在滑动时不认长按。 */
     isListScrolling: () -> Boolean = { false },
 ) {
     val currentLongPress by rememberUpdatedState(onLongPress)
+    var chipBounds by remember { mutableStateOf(Rect.Zero) }
     val haptic = LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
     // 按下时的「拖拽位移」：COUI chip 内部只做缩放，位移这半截由外层补，
@@ -1023,7 +1074,7 @@ private fun WorkspaceChipTab(
             // 已经在滑动列表时再弹菜单一定是误触，直接放弃。
             if (held == null && !currentIsScrolling()) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                currentLongPress()
+                currentLongPress(chipBounds)
                 // 一次按住只算一次长按：等手指彻底抬起再回到监听循环。
                 // 抬起事件在这里消费掉，否则 ChipTab 自己的 clickable 还会收到这次松手，
                 // 长按后顺手把工作区切了；切换会重排 chip 行，看起来就是后面几个按钮在挪位。
@@ -1037,20 +1088,32 @@ private fun WorkspaceChipTab(
             }
         }
     }
-    // 表面自己画：COUI 原生 ChipTab 的材质模糊偏轻，也没有整块颜色遮罩，
-    // 这里换成同一套浮动表面的 Eta 版（模糊更重 + 亮色白 30% / 暗色黑 30%）。
-    // 外壳只补按下时的 1.2dp 位移，不再垫任何自制玻璃。
-    PaneChipSurface(
-        modifier = modifier
-            .then(longPressObserver)
-            .graphicsLayer { translationY = pressShift.value.dp.toPx() },
-        label = label,
-        selected = selected,
-        backdrop = backdrop,
-        dark = dark,
-        enabled = true,
-        onClick = onClick,
-    )
+    val isCouiChip = LocalUiStyle.current == AppearanceUiStyle.COUI
+    if (isCouiChip) {
+        // COUI：保留原有的浮动材质表面。
+        PaneChipSurface(
+            modifier = modifier
+                .onGloballyPositioned { chipBounds = it.boundsInWindow() }
+                .then(longPressObserver)
+                .graphicsLayer { translationY = pressShift.value.dp.toPx() },
+            label = label,
+            selected = selected,
+            backdrop = requireNotNull(backdrop) { "COUI 工作区 chip 需要 COUI 背景采样" },
+            dark = dark,
+            enabled = true,
+            onClick = onClick,
+        )
+    } else {
+        // MIUIX：布局照 COUI 放顶部 chip 栏，芯片本身换成 Miuix 的 EtaChoiceChip。
+        EtaChoiceChip(
+            text = label,
+            selected = selected,
+            onClick = onClick,
+            modifier = modifier
+                .onGloballyPositioned { chipBounds = it.boundsInWindow() }
+                .then(longPressObserver),
+        )
+    }
 }
 
 private const val WorkspaceChipPressShiftDp = 1.2f
@@ -1570,7 +1633,6 @@ private fun ConversationHistoryRow(
 ) {
     var showActionMenu by remember { mutableStateOf(false) }
     var rowBounds by remember { mutableStateOf(Rect.Zero) }
-    var moreButtonBounds by remember { mutableStateOf(Rect.Zero) }
     var popupAnchorBounds by remember { mutableStateOf(Rect.Zero) }
     val hapticFeedback = LocalHapticFeedback.current
     val anchor = rememberCouiMenuAnchor()
@@ -1580,16 +1642,19 @@ private fun ConversationHistoryRow(
     val miuixColors = MiuixTheme.colorScheme
     val miuixDark = miuixColors.surface.luminance() < 0.5f
 
+    // 侧栏会话行统一采用 COUI 的选中态外观：超椭圆、纯白/#262932 底色、0.5dp 描边
+    // 与浅色下的柔和投影；MIUIX 样式不再使用 squircleSurface 的默认行底。
+    val rowDark = if (isCoui) couiDark else miuixDark
     val rowBackground = when {
         !selected -> Color.Transparent
-        isCoui -> if (couiDark) Color(0xFF262932) else Color.White
-        else -> miuixColors.tertiaryContainer.copy(alpha = if (miuixDark) 0.72f else 0.90f)
+        rowDark -> Color(0xFF262932)
+        else -> Color.White
     }
-    val rowModifier = if (isCoui) {
+    val rowModifier = run {
         val source = remember { MutableInteractionSource() }
         Modifier
             .then(
-                if (selected && !couiDark) {
+                if (selected && !rowDark) {
                     Modifier.dropShadow(
                         shape = couiRowShape,
                         shadow = Shadow(
@@ -1608,19 +1673,14 @@ private fun ConversationHistoryRow(
                 if (selected) {
                     Modifier.border(
                         width = 0.5.dp,
-                        color = if (couiDark) Color(0x1AFFFFFF) else Color(0x0D000000),
+                        color = if (rowDark) Color(0x1AFFFFFF) else Color(0x0D000000),
                         shape = couiRowShape,
                     )
                 } else {
                     Modifier
                 },
             )
-            .couiButtonFeedback(couiDark, source, enabled = true, list = true)
-    } else {
-        Modifier.squircleSurface(
-            color = rowBackground,
-            cornerRadius = ConversationPanelMetrics.RowCornerRadius,
-        )
+            .couiButtonFeedback(rowDark, source, enabled = true, list = true)
     }
 
     val titleColor = if (isCoui) {
@@ -1727,32 +1787,6 @@ private fun ConversationHistoryRow(
                         .clip(CircleShape)
                         .background(accentColor),
                 )
-            }
-
-            if (!isCoui && selected) {
-                val moreLabel = stringResource(R.string.action_more)
-                Box(
-                    modifier = Modifier
-                        .padding(start = 4.dp)
-                        .size(28.dp)
-                        .onGloballyPositioned { moreButtonBounds = it.boundsInWindow() }
-                        .clip(CircleShape)
-                        .clickable(
-                            role = Role.Button,
-                            onClickLabel = moreLabel,
-                        ) {
-                            popupAnchorBounds = moreButtonBounds
-                            anchor.open { showActionMenu = true }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = if (isCoui) Icons.Outlined.MoreHoriz else MiuixIcons.Glass.More,
-                        contentDescription = moreLabel,
-                        modifier = Modifier.size(if (isCoui) 17.dp else 20.dp),
-                        tint = summaryColor,
-                    )
-                }
             }
         }
 

@@ -457,7 +457,12 @@ internal fun ConversationPaneTopBar(
                         },
                     )
                     Box(modifier = Modifier.fillMaxWidth()) {
-                        barContent()
+                        Column(Modifier.fillMaxWidth()) {
+                            barContent()
+                            // MIUIX 也要渲染 chip 栏：布局与 COUI 一致，材质由 Miuix 组件自绘。
+                            // 放进前景 Column 后，上方 Layout 的模糊带高度会自动长到 chip 底部。
+                            secondaryBar?.invoke(null, null)
+                        }
                     }
                 },
             ) { measurables, constraints ->
@@ -718,11 +723,7 @@ internal fun ConversationPaneBottomDock(
         keyboard?.hide()
     }
 
-    val permissionsDesc = if (hasPermissionAttention) {
-        stringResource(R.string.conversation_permission_attention)
-    } else {
-        stringResource(R.string.route_permissions)
-    }
+    // MIUIX：底栏只留搜索框与设置圆钮，权限健康入口按需求下线。
     val settingsDesc = stringResource(R.string.route_settings)
     val searchPlaceholder = stringResource(R.string.conversation_search_hint)
     val cancelText = stringResource(R.string.action_cancel)
@@ -849,7 +850,6 @@ internal fun ConversationPaneBottomDock(
                 }
             } else {
                 val effectiveCouiBackdrop = activeCouiBackdrop
-                val permissionsIcon = if (isCoui) ConversationPaneIcons.Permissions else MiuixIcons.Glass.SecurityStatus
                 val settingsIcon = if (isCoui) ConversationPaneIcons.Settings else MiuixIcons.Glass.SettingsOutline
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -863,14 +863,6 @@ internal fun ConversationPaneBottomDock(
                         cancelText = cancelText,
                         miuixBackdrop = activeMiuixBackdrop,
                         modifier = Modifier.weight(1f),
-                    )
-                    PaneDockCircleButton(
-                        icon = permissionsIcon,
-                        contentDescription = permissionsDesc,
-                        showBadge = hasPermissionAttention,
-                        couiBackdrop = effectiveCouiBackdrop,
-                        miuixBackdrop = activeMiuixBackdrop,
-                        onClick = onOpenPermissions,
                     )
                     PaneDockCircleButton(
                         icon = settingsIcon,
