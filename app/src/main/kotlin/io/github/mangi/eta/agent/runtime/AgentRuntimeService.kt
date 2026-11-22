@@ -698,7 +698,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             // 回复完成通知与窗口投影解耦：纯后台运行（本轮没接管手机、不是窗口投影对象）
             // 同样要提醒，否则用户离开界面后完全收不到结果。notifyReplyCompleted 内部
             // 已跳过「用户此刻能直接读到回复」的情形。
-            if (result.ok) notifyReplyCompleted(result.content, replyConversationKey)
+            // 定时任务例外：结果由 ScheduledTaskNotificationManager 按任务自身的投递模式通知，
+            // 这里再补一条「回复完成」就成了同一件事提醒两次。
+            if (result.ok && scheduledRunContext(run.request) == null) {
+                notifyReplyCompleted(result.content, replyConversationKey)
+            }
             val guiState = guiControl.state.value
             if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
                 (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
@@ -1259,15 +1263,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         return firstLine.take(12)
     }
 
-    private fun isSilentScheduledRun(request: AgentRuntimeWire.RunRequest): Boolean {
-        val handoff = request.handoff ?: return false
-        if (handoff.source != AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE) return false
-        val scheduled = AgentExternalArchivePayload.from(handoff.payload)
+    /** 定时任务运行（含「立即试跑」）的受控上下文；非定时任务返回 null。 */
+    private fun scheduledRunContext(request: AgentRuntimeWire.RunRequest): ScheduledTaskRunContext? {
+        val handoff = request.handoff ?: return null
+        if (handoff.source != AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE) return null
+        return AgentExternalArchivePayload.from(handoff.payload)
             ?.adapterPayload
             ?.let(ScheduledTaskRunContext::fromAdapterPayload)
-            ?: return false
-        return !scheduled.showRunningNotification
     }
+
+    private fun isSilentScheduledRun(request: AgentRuntimeWire.RunRequest): Boolean =
+        scheduledRunContext(request)?.showRunningNotification == false
 
     @SuppressLint("WakelockTimeout")
     private fun setKeepScreenOn(enabled: Boolean) {

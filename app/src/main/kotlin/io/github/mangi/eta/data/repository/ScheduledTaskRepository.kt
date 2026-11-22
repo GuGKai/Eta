@@ -46,8 +46,22 @@ internal object ScheduledTaskRepository {
         return EtaDatabase.get(ctx).scheduledTaskDao()
     }
 
+    /**
+     * 最近一次读到的任务快照，供界面首帧直接复用。
+     *
+     * Room 的冷 Flow 首次发射要等 IO 线程查询，Compose 首帧拿不到数据就只能按空列表渲染，
+     * 于是每次进入任务列表都会先闪一下「快速开始 + 预设」的空态。缓存让再次进入时首帧就是列表；
+     * null 表示本进程还没读到过，调用方据此区分「未加载」和「确实没有任务」。
+     */
+    @Volatile
+    private var lastKnownTaskSnapshot: List<ScheduledTask>? = null
+
+    fun lastKnownTasks(): List<ScheduledTask>? = lastKnownTaskSnapshot
+
     fun observeTasks(context: Context? = null): Flow<List<ScheduledTask>> =
-        dao(context).observeTasks().map { list -> list.map { it.toDomain() } }
+        dao(context).observeTasks().map { list ->
+            list.map { it.toDomain() }.also { lastKnownTaskSnapshot = it }
+        }
 
     fun observeTask(taskId: String, context: Context? = null): Flow<ScheduledTask?> =
         dao(context).observeTask(taskId).map { it?.toDomain() }
@@ -57,6 +71,7 @@ internal object ScheduledTaskRepository {
 
     suspend fun allTasks(context: Context? = null): List<ScheduledTask> =
         dao(context).allTasks().map { it.toDomain() }
+            .also { lastKnownTaskSnapshot = it }
 
     suspend fun getTask(taskId: String, context: Context? = null): ScheduledTask? =
         dao(context).getTask(taskId)?.toDomain()

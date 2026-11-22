@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -97,8 +98,15 @@ internal fun ScheduledTasksScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val tasks by remember(context) { ScheduledTaskRepository.observeTasks(context) }
-        .collectAsState(initial = emptyList())
+    // Room 冷 Flow 首帧还没有值：用可空状态区分「未加载」与「确实没有任务」，
+    // 否则每次进入都会先渲染一遍「快速开始 + 预设」的空态，再切换成真实任务列表。
+    val taskFlow = remember(context) { ScheduledTaskRepository.observeTasks(context) }
+    val tasksState by produceState<List<ScheduledTask>?>(
+        initialValue = ScheduledTaskRepository.lastKnownTasks(),
+        key1 = taskFlow,
+    ) {
+        taskFlow.collect { value = it }
+    }
     val activeTaskIds by ScheduledTaskRunner.activeTaskIds.collectAsState()
     var health by remember(context) { mutableStateOf(ScheduledTaskHealthChecker.inspect(context)) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -160,7 +168,11 @@ internal fun ScheduledTasksScreen(
                         )
                     }
                 }
-                if (tasks.isEmpty()) {
+                val tasks = tasksState
+                if (tasks == null) {
+                    // 首帧任务还没查出来：留一行占位，别把「快速开始 + 预设」当空态闪一下。
+                    item(key = "tasks_loading") { Spacer(modifier = Modifier.size(1.dp)) }
+                } else if (tasks.isEmpty()) {
                     item(key = "presets_group") {
                         Group(title = stringResource(R.string.scheduled_section_quick_start)) {
                             ScheduledTaskPresets.all.forEachIndexed { index, preset ->
@@ -221,7 +233,11 @@ internal fun ScheduledTasksScreen(
                         )
                     }
                 }
-                if (tasks.isEmpty()) {
+                val tasks = tasksState
+                if (tasks == null) {
+                    // 首帧任务还没查出来：留一行占位，别把「快速开始 + 预设」当空态闪一下。
+                    item(key = "tasks_loading") { Spacer(modifier = Modifier.size(1.dp)) }
+                } else if (tasks.isEmpty()) {
                     item(key = "empty_intro") {
                         SmallTitle(text = stringResource(R.string.scheduled_section_quick_start))
                     }
