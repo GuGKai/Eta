@@ -231,9 +231,10 @@ internal fun ImageGenSettingsScreen(
     val modelField = key(backend) { rememberDraftTextFieldState(currentModel, onModelChange) }
     val apiKeyField = key(backend) { rememberDraftTextFieldState(currentApiKey, onApiKeyChange) }
 
+    // 下拉项只显示模型名：COUI 菜单行高固定 40dp，带 (id) 会折行被裁掉，露出括号顶弧。
+    // 模型 ID 仍可在下方「模型 ID」输入框与当前值中看到。
     val presetLabels = presets.map { preset ->
-        val label = preset.labelRes?.let { stringResource(it) } ?: preset.rawLabel
-        "$label (${preset.id})"
+        preset.labelRes?.let { stringResource(it) } ?: preset.rawLabel
     } + stringResource(R.string.imagegen_preset_custom_model)
     val selectedPresetIndex = remember(presets, currentModel) {
         presets.indexOfFirst { it.id == currentModel.trim() }.let { if (it >= 0) it else presets.size }
