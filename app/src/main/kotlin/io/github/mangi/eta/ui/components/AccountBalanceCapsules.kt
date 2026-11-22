@@ -121,7 +121,7 @@ internal fun AccountBalanceCapsules(
             show = true,
             cornerRadius = DialogDefaults.CornerRadius,
             title = stringResource(R.string.deepseek_seed_title),
-            summary = stringResource(R.string.deepseek_seed_summary, balanceValue),
+            // 标题下面的说明文字按设计删掉：只留标题 + 输入框。
             onDismissRequest = { editing = false },
         ) {
             Column(Modifier.fillMaxWidth()) {
