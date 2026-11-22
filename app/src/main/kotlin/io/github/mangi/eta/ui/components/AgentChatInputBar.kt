@@ -121,6 +121,11 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.components.coui.CouiMenu
+import io.github.mangi.eta.ui.components.coui.CouiMenuItem
+import io.github.mangi.eta.ui.components.coui.couiButtonFeedback
+import io.github.mangi.eta.ui.components.coui.couiMenuAnchor
+import io.github.mangi.eta.ui.components.coui.rememberCouiMenuAnchor
 import io.github.mangi.eta.ui.markdown.EditorialLineHeightStyle
 import io.github.mangi.eta.ui.app.composerFocusRequests
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
@@ -138,7 +143,6 @@ import top.yukonga.miuix.kmp.glass.GlassPopupSizing
 import top.yukonga.miuix.kmp.glass.GlassTransformPopup
 import top.yukonga.miuix.kmp.glass.glassPanel
 import top.yukonga.miuix.kmp.glass.glassPopupAnchor
-import top.yukonga.miuix.kmp.glass.glassPopupAnchorContent
 import top.yukonga.miuix.kmp.glass.glassPress
 import top.yukonga.miuix.kmp.glass.rememberGlassPopupAnchor
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -974,16 +978,7 @@ private fun ThinkingEffortChip(
                 .semantics { contentDescription = accessibilityLabel },
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = if (useTransformPopup) {
-                    Modifier.glassPopupAnchorContent(popupAnchor)
-                } else {
-                    Modifier
-                },
-                contentAlignment = Alignment.Center,
-            ) {
-                chipContent()
-            }
+            chipContent()
         }
         when (LocalUiStyle.current) {
             AppearanceUiStyle.COUI -> {
@@ -1020,7 +1015,19 @@ private fun ThinkingEffortChip(
                             gap = popupLayout.gap,
                             sizing = GlassPopupSizing(maxHeight = popupLayout.maxHeight),
                             onMeasured = { measuredPopupHeightPx = it.height },
-                            anchorContent = chipContent,
+                            anchorContent = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .heightIn(min = 30.dp)
+                                        .clip(CircleShape)
+                                        .background(bgColor, CircleShape)
+                                        .border(0.5.dp, borderColor, CircleShape)
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                ) {
+                                    chipContent()
+                                }
+                            },
                         ) {
                             options.forEach { option ->
                                 GlassPopupItem(
