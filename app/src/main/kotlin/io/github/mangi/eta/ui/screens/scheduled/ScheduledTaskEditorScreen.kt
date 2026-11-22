@@ -113,7 +113,6 @@ import top.yukonga.miuix.kmp.icon.glass.Ok
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import java.util.UUID
 
 @Composable
 internal fun ScheduledTaskEditorScreen(

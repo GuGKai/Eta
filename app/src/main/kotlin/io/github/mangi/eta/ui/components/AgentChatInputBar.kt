@@ -121,11 +121,6 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.coui.CouiMenu
-import io.github.mangi.eta.ui.components.coui.CouiMenuItem
-import io.github.mangi.eta.ui.components.coui.couiButtonFeedback
-import io.github.mangi.eta.ui.components.coui.couiMenuAnchor
-import io.github.mangi.eta.ui.components.coui.rememberCouiMenuAnchor
 import io.github.mangi.eta.ui.markdown.EditorialLineHeightStyle
 import io.github.mangi.eta.ui.app.composerFocusRequests
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
@@ -897,6 +892,24 @@ private fun ThinkingEffortChip(
         },
         animationSpec = tween(durationMillis = 160),
         label = "thinking_content",
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (active) {
+            colors.primary.copy(alpha = if (isDark) 0.18f else 0.10f)
+        } else {
+            ink.copy(alpha = if (isDark) 0.06f else 0.038f)
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "thinking_bg",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (active) {
+            colors.primary.copy(alpha = if (isDark) 0.30f else 0.22f)
+        } else {
+            ink.copy(alpha = if (isDark) 0.10f else 0.065f)
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "thinking_border",
     )
     val chipLabel = when (effort) {
         ReasoningEffort.OFF -> stringResource(R.string.reasoning_chip_off)

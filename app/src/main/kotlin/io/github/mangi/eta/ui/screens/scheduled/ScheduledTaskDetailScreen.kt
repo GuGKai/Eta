@@ -35,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit as OutlinedEdit
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.icons.CouiIcons
@@ -85,7 +84,6 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Edit
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import androidx.compose.material.icons.outlined.Edit as OutlinedEdit
 
 @Composable
 internal fun ScheduledTaskDetailScreen(
