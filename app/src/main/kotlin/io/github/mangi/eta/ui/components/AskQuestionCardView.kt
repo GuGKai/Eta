@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -72,10 +73,13 @@ internal fun AskQuestionCardView(
 
     val dark = CouiTheme.isDark
     val colors = CouiPageDefaults.themeColors(dark)
-    // 与 EtaChoiceChip（回答末尾的建议胶囊）同一套容器色。
-    val chipColor = if (dark) Color(0x1AFFFFFF) else Color(0x0D000000)
-    val segmentColor = if (dark) Color(0x1FFFFFFF) else Color(0x14000000)
-    val indicatorColor = if (dark) Color(0x33FFFFFF) else Color(0xEEFFFFFF)
+    // 深色下整张卡片的底色对齐设置页的选项列表：取 COUI 卡片色合成在页面底色上的实色，
+    // 不再用半透明叠在聊天背景上（那样会比设置页列表亮一档）。浅色沿用原容器色。
+    val chipColor = if (dark) colors.card.compositeOver(colors.background) else Color(0x0D000000)
+    // 选项卡向设置页选项列表看齐：深色下容器直接用列表项的卡片色（colors.card），
+    // 选中项比它亮一档，留出可见的选中块；浅色沿用 COUI 分段控件默认值。
+    val segmentColor = if (dark) colors.card else Color(0x14000000)
+    val indicatorColor = if (dark) Color(0x26FFFFFF) else Color(0xEEFFFFFF)
 
     val settledAnswer = answeredText?.takeIf { it.isNotBlank() }
 
