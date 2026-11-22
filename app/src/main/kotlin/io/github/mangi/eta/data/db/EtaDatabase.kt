@@ -30,7 +30,7 @@ import androidx.room.migration.Migration
         ScheduledTaskEntity::class,
         ScheduledTaskRunEntity::class,
     ],
-    version = 43,
+    version = 44,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -92,6 +92,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_40_41,
                         MIGRATION_41_42,
                         MIGRATION_42_43,
+                        MIGRATION_43_44,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -496,6 +497,20 @@ internal abstract class EtaDatabase : RoomDatabase() {
         internal val MIGRATION_40_41 = Migration(40, 41) { _ -> }
         internal val MIGRATION_41_42 = Migration(41, 42) { _ -> }
         internal val MIGRATION_42_43 = Migration(42, 43) { _ -> }
+
+        /** 43 → 44：加两列承载「模型提问卡片」及其已答内容。旧库逐列补齐，可重复执行。 */
+        internal val MIGRATION_43_44 = Migration(43, 44) { database ->
+            if (!database.columnExists("conversation_messages", "ask_json")) {
+                database.execSQL(
+                    "ALTER TABLE conversation_messages ADD COLUMN ask_json TEXT NOT NULL DEFAULT ''"
+                )
+            }
+            if (!database.columnExists("conversation_messages", "ask_answer")) {
+                database.execSQL(
+                    "ALTER TABLE conversation_messages ADD COLUMN ask_answer TEXT"
+                )
+            }
+        }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",

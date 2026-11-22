@@ -61,6 +61,8 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         GuiControlStatus.Acquired -> copy(phase = AgentOverlayPhase.RUNNING, status = AgentOverlayStatus.Continuing)
         GuiControlStatus.Waiting, GuiControlStatus.Released -> this
     }
+    // 提问浮层不单独展示：答案要在会话里点，浮层只维持当前状态。
+    is AgentEvent.AskQuestion -> this
     is AgentEvent.RunStarted -> copy(
         phase = AgentOverlayPhase.RUNNING,
         status = AgentOverlayStatus.Reasoning,

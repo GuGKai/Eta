@@ -1461,6 +1461,40 @@ internal class AgentAppState(
         persistConversations()
     }
 
+    /**
+     * 提问卡片提交：先在消息上记下答案（重进会话还能看到选了什么），
+     * 再把答案原文作为下一条用户消息发出，模型据此接着做。
+     */
+    /**
+     * 提问卡片提交：先在消息上记下答案（重进会话还能看到选了什么）。
+     *
+     * 这一轮还挂着（提问把工具调用阻塞住了）时，答案直接投递给等待中的工具调用，
+     * 同一轮对话带着答案继续，不再另发一条用户消息；只有运行已经结束的旧卡片，
+     * 才退回「把答案原文当新消息发出」的老路径。
+     */
+    fun answerAskQuestion(messageId: String, answerText: String) {
+        if (answerText.isBlank()) return
+        val display = io.github.mangi.eta.agent.model.AskQuestionAnswer.withoutPreamble(answerText)
+        fun markAnswered() {
+            val updated = homeState.messages.map { item ->
+                if (item is AgentMessageUi && item.id == messageId && item.askCard != null) {
+                    item.copy(askAnswer = display)
+                } else {
+                    item
+                }
+            }
+            updateCurrentConversation(homeState.copy(messages = updated))
+            persistConversations()
+        }
+        if (io.github.mangi.eta.agent.runtime.PendingAskRegistry.submit(messageId, answerText)) {
+            markAnswered()
+            return
+        }
+        if (homeState.isStreaming) return
+        markAnswered()
+        sendCurrentMessage(answerText)
+    }
+
     fun selectReplyCandidate(messageId: String, index: Int) {
         if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation) return
         val updated = RoleplayConversationReducer.select(homeState, messageId, index) ?: return

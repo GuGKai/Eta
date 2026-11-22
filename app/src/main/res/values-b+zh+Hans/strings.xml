@@ -8,6 +8,7 @@
   <string name="tool_release_gui">释放手机操作</string>
   <string name="tool_release_gui_description">完成当前手机操作阶段，将控制权交给等待中的任务。</string>
   <string name="tool_present_to_user">呈现到主屏</string>
+  <string name="tool_ask_user_question">需要确认需求</string>
   <string name="tool_present_to_user_description">将后台虚拟屏中已准备就绪的页面无缝移交到物理主屏前台。</string>
   <string name="settings_virtual_display_title">后台虚拟屏执行</string>
   <string name="overlay_virtual_canvas_auto">后台画布</string>
@@ -1730,6 +1731,12 @@
   <string name="route_scheduled_task_edit">编辑定时任务</string>
   <string name="scheduled_notification_channel_results">定时任务结果</string>
   <string name="scheduled_notification_channel_results_desc">定时任务完成后的简报与变动提醒</string>
+  <string name="ask_notification_channel">需要你选择</string>
+  <string name="ask_notification_channel_desc">有提问在等你回答时提醒，点一下直接回到那个会话</string>
+  <string name="ask_notification_title">需要你选择后才会继续</string>
+  <string name="ask_notification_text">%1$s</string>
+  <string name="ask_notification_text_multi">%1$s（共 %2$d 个问题）</string>
+  <string name="ask_notification_fallback">会话里有问题等你选择</string>
   <string name="scheduled_notification_channel_alerts">定时任务告警</string>
   <string name="scheduled_notification_channel_alerts_desc">任务执行失败、连续失败自动暂停及待解锁提醒</string>
   <string name="scheduled_notification_completed_fallback">定时任务已完成，点按查看完整对话。</string>

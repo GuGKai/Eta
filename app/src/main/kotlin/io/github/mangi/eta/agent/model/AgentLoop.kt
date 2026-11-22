@@ -722,6 +722,14 @@ internal class AgentLoop(
     private fun emitToolStarted(round: Int, toolCall: AgentModelClient.ToolCall) {
         onEvent(AgentEvent.ToolStarted(round, toolCall.id, toolCall.name,
             traceFormatter.summarizeArguments(toolCall), traceFormatter.displayCommand(toolCall)))
+        // 结构化提问要单独发一条事件：界面据此画选项卡，普通工作过程行只能显示一行摘要。
+        if (toolCall.name == AgentAskQuestionToolCatalog.TOOL_NAME) {
+            val card = runCatching { org.json.JSONObject(toolCall.argumentsJson) }.getOrNull()
+                ?.let { AskQuestionCard.from(it) }
+            if (card != null && !card.isEmpty) {
+                onEvent(AgentEvent.AskQuestion(round, toolCall.id, card.toJson().toString()))
+            }
+        }
     }
 
     private fun rejectedToolOutcome(

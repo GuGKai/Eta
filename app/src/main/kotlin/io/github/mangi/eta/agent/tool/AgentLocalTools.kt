@@ -245,6 +245,8 @@ internal class AgentLocalTools(
             when (toolCall.name) {
                 in AgentTaskTools.names -> AgentModelClient.ToolResult(AgentTaskTools(context).execute(toolCall.name, args), sensitive = true)
                 "get_current_context" -> textResult(DeviceContextTool.current(context))
+                // 提问本身不需要执行任何动作：答案会作为下一条用户消息回来。
+                "ask_user_question" -> textResult(askUserQuestion(args))
                 "search_apps" -> textResult(searchApps(args))
                 "launch_app" -> {
                     publishedObservation.set(PublishedObservation())
@@ -1028,6 +1030,21 @@ internal class AgentLocalTools(
                     put("note", "启动请求已提交，但尚未确认目标窗口；请先观察当前画布，不要直接重放启动或点击")
                 }
             }
+            .toString()
+    }
+
+    /** 结构化提问：把问题登记下来并让模型收尾，答案随后由界面以用户消息发回。 */
+    private fun askUserQuestion(args: JSONObject): String {
+        val card = io.github.mangi.eta.agent.model.AskQuestionCard.from(args)
+        if (card.isEmpty) {
+            return errorResult("INVALID_ARGUMENT", "questions 不能为空")
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("tool", "ask_user_question")
+            .put("status", "awaiting_user_answer")
+            .put("question_count", card.questions.size)
+            .put("message", "问题已经显示给用户了。本轮就此结束，不要重复追问；用户点选后会把所选内容按题序逐行发来，不带题号也不带题干，直接按顺序理解为对应各题的答案。")
             .toString()
     }
 

@@ -48,7 +48,6 @@ import androidx.compose.material.icons.rounded.MapsUgc
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -326,21 +325,6 @@ private val EdgeStrokeWidthNone = 0.dp
 internal fun conversationPaneEdgeStrokeWidth(): Dp =
     if (conversationPaneEdgeStrokeColor().alpha > 0f) EdgeStrokeWidth else EdgeStrokeWidthNone
 
-/**
- * COUI 顶栏内部的子 backdrop（`LocalCouiToolbarBackdrop` 在源码里是 internal，只能反射拿一次）。
- *
- * 自己搭顶栏材质后需要它来手动 provide，让 `CouiTopAppBarIconButton` 这类只认该 local 的控件
- * 也能拿到同一层材质；取不到时按钮自动降级成实色圆钮。
- */
-private val CouiToolbarBackdropLocal: ProvidableCompositionLocal<CouiBackdrop?>? by lazy {
-    runCatching {
-        @Suppress("UNCHECKED_CAST")
-        Class.forName("com.itos.coui.topappbar.TopAppBarSurfaceKt")
-            .getMethod("getLocalCouiToolbarBackdrop")
-            .invoke(null) as? ProvidableCompositionLocal<CouiBackdrop?>
-    }.getOrNull()
-}
-
 @Composable
 internal fun ConversationPaneTopBar(
     containerColor: Color,
@@ -372,9 +356,9 @@ internal fun ConversationPaneTopBar(
         ) {
             PaneBrandHeader(modifier = Modifier.weight(1f))
             NewConversationIconButton(
+                // COUI 风格下顶栏材质由 TopAppBarSurface 统一 provide，按钮直接走 COUI 实现。
                 hasCouiToolbarBackdrop = LocalUiStyle.current == AppearanceUiStyle.COUI &&
-                    couiBackdrop != null &&
-                    CouiToolbarBackdropLocal != null,
+                    couiBackdrop != null,
                 miuixBackdrop = miuixBackdrop,
                 onClick = onNewConversation,
             )

@@ -8,6 +8,7 @@
   <string name="tool_release_gui">釋放手機操作</string>
   <string name="tool_release_gui_description">完成目前的手機操作階段，將控制權交給等待中的任務。</string>
   <string name="tool_present_to_user">呈現到主畫面</string>
+  <string name="tool_ask_user_question">需要確認需求</string>
   <string name="tool_present_to_user_description">將背景虛擬螢幕中已準備就緒的頁面無縫移交至實體主畫面。</string>
   <string name="settings_virtual_display_title">背景虛擬螢幕執行</string>
   <string name="overlay_virtual_canvas_auto">背景畫布</string>
@@ -1623,6 +1624,12 @@
   <string name="route_scheduled_task_edit">編輯排程任務</string>
   <string name="scheduled_notification_channel_results">排程任務結果</string>
   <string name="scheduled_notification_channel_results_desc">排程任務完成後的簡報與變動提醒</string>
+  <string name="ask_notification_channel">需要你選擇</string>
+  <string name="ask_notification_channel_desc">有提問在等你回答時提醒，點一下直接回到那個對話</string>
+  <string name="ask_notification_title">需要你選擇後才會繼續</string>
+  <string name="ask_notification_text">%1$s</string>
+  <string name="ask_notification_text_multi">%1$s（共 %2$d 個問題）</string>
+  <string name="ask_notification_fallback">對話裡有問題等你選擇</string>
   <string name="scheduled_notification_channel_alerts">排程任務告警</string>
   <string name="scheduled_notification_channel_alerts_desc">任務執行失敗、連續失敗自動暫停及待解鎖提醒</string>
   <string name="scheduled_notification_completed_fallback">排程任務已完成，點按檢視完整對話。</string>

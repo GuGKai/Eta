@@ -211,6 +211,19 @@ internal sealed interface AgentEvent {
                 "${resultSummary.toSafeResultLogFields()}, images=$imageCount, image_bytes=$imageBytes"
     }
 
+    /**
+     * 模型通过 `ask_user_question` 工具提出的结构化问题：界面据此画可点的选项卡。
+     * 本轮不等答案，答案会作为下一条消息发回来。
+     */
+    data class AskQuestion(
+        val round: Int,
+        val toolCallId: String,
+        val cardJson: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "ask_question round=$round, chars=${cardJson.length}"
+    }
+
     data class SubagentProgress(
         val round: Int,
         val toolCallId: String,

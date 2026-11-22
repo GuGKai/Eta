@@ -22,6 +22,7 @@ internal object AgentToolCatalog {
     ): JSONArray =
         AgentBatchToolCatalog.project(capabilities.project(JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
+            AgentAskQuestionToolCatalog.appendTo(tools)
             AgentGestureToolCatalog.appendTo(tools)
             AgentTextSystemToolCatalog.appendTo(tools)
             AgentDeviceToolCatalog.appendTo(

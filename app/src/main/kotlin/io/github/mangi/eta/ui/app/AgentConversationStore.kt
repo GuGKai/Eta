@@ -443,6 +443,8 @@ internal object AgentConversationStore {
                         decodeMs = usage?.decodeMs,
                         decodeTokens = usage?.decodeTokens,
                         promptSuggestionsJson = promptSuggestions.toJsonArrayString(),
+                        askJson = askCard?.toJson()?.toString().orEmpty(),
+                        askAnswer = askAnswer,
                     )
                 }
             }
@@ -539,6 +541,9 @@ internal object AgentConversationStore {
                 roundCost = roundCost,
                 roundDurationMs = roundDurationMs,
                 promptSuggestions = promptSuggestionsJson.toStringList(),
+                askCard = io.github.mangi.eta.agent.model.AskQuestionCard.parse(askJson)
+                    .takeUnless { it.isEmpty },
+                askAnswer = askAnswer,
             )
 
             TYPE_SYSTEM_NOTICE -> SystemNoticeCode.fromWireValue(content)?.let { code ->

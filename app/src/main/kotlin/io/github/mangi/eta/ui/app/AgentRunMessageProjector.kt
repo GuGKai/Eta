@@ -69,6 +69,7 @@ internal class AgentRunMessageProjector(
         is AgentEvent.ToolStarted ->
             startTool(runId, event, finalizeTextRound(runId, event.round, finalizeThinkingRound(runId, event.round, messages)))
         is AgentEvent.ToolFinished -> finishTool(runId, event, messages)
+        is AgentEvent.AskQuestion -> appendAskCard(runId, event, messages)
         is AgentEvent.SubagentProgress -> updateSubagentProgress(runId, event, messages)
         is AgentEvent.HostedToolStarted ->
             startHostedTool(runId, event, finalizeTextRound(runId, event.round, finalizeThinkingRound(runId, event.round, messages)))
@@ -616,6 +617,30 @@ internal class AgentRunMessageProjector(
 
     fun clearRun(runId: String) {
         thinkingStartedAt.keys.removeAll { it.startsWith("$runId-thinking-") }
+    }
+
+    /**
+     * 模型提问：单独落一条消息承载卡片，正文留一句引导语。
+     *
+     * 卡片不能挂在工具行上——工具行会被折叠进「工作过程」，用户根本点不到。
+     */
+    private fun appendAskCard(
+        runId: String,
+        event: AgentEvent.AskQuestion,
+        messages: List<AgentChatMessageUi>,
+    ): List<AgentChatMessageUi> {
+        val card = io.github.mangi.eta.agent.model.AskQuestionCard.parse(event.cardJson)
+        if (card.isEmpty) return messages
+        val id = io.github.mangi.eta.agent.model.AskCardMessageId.of(runId, event.toolCallId)
+        if (messages.any { it.id == id }) return messages
+        return messages + AgentMessageUi(
+            id = id,
+            // 卡片自己说清了一切，正文不再留「想先跟你确认几件事」这类引导语。
+            content = "",
+            isStreaming = false,
+            renderMarkdown = true,
+            askCard = card,
+        )
     }
 
     /**

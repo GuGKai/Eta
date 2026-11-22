@@ -52,6 +52,7 @@ import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.AskPresence
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
 import io.github.mangi.eta.agent.device.RootAccess
@@ -182,6 +183,17 @@ fun AgentAppRoot(
     var navigationResetKey by rememberSaveable { mutableIntStateOf(0) }
     val appViewModel = viewModel<AgentAppViewModel>()
     val agentState = appViewModel.state
+    // 提问挂起要不要发通知，全看「用户眼前是不是这个会话页」：
+    // 导航栈顶不是首页（停在设置、工具、定时任务等页面），或者换了会话，都算看不到。
+    // 注意只决定「发不发」：已经发出去的通知要等作答、停止或超时才撤，回到页面不撤。
+    LaunchedEffect(backStack.lastOrNull(), agentState.conversationPaneState.selectedConversationId) {
+        val visibleConversationId = agentState.conversationPaneState.selectedConversationId
+        if (backStack.lastOrNull() is AppRoute.Home) {
+            AskPresence.enter(visibleConversationId)
+        } else {
+            AskPresence.leave(visibleConversationId)
+        }
+    }
     val keepScreenOn by AgentRuntimeService.keepScreenOn.collectAsState()
     val view = LocalView.current
     DisposableEffect(view, keepScreenOn) {
@@ -544,6 +556,7 @@ fun AgentAppRoot(
                                         is AgentHomeAction.BranchConversation ->
                                             agentState.branchConversation(action.conversationId, action.messageId)
                                         is AgentHomeAction.SelectReplyCandidate -> agentState.selectReplyCandidate(action.id, action.index)
+                                        is AgentHomeAction.AnswerAskQuestion -> { requestExecutionNotifications(); agentState.answerAskQuestion(action.id, action.answerText) }
                                         AgentHomeAction.OpenTools -> pushRoute(AppRoute.Tools)
                                         AgentHomeAction.OpenSkills -> pushRoute(AppRoute.Skills)
                                         AgentHomeAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
