@@ -1,7 +1,6 @@
 package io.github.mangi.eta.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -168,8 +167,7 @@ private fun AccountCapsule(
         modifier = modifier
             // 先裁成胶囊形状，按下的水波纹才是圆的，不会露出方形遮罩。
             .clip(CircleShape)
-            // 填充色与输入框底色完全一致（亮/暗色都由 chatInputContainerColor 决定），不出现第二种灰。
-            .background(chatInputContainerColor(), CircleShape)
+            // 背景透明：余额胶囊只以文字呈现，不再压一层与输入框同色的底。
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics { contentDescription = description }
             .padding(horizontal = 8.dp, vertical = 5.dp),

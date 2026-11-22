@@ -153,8 +153,10 @@ import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-private val SendButtonVisualSize = ChatInputActionIconSize
-private val SendIconSize = 16.dp
+/** 发送圆钮直径：与 COUI 样式对齐（上游 Miuix 是 24dp，此处不再跟随）。 */
+private val SendButtonVisualSize = 32.dp
+/** 发送箭头尺寸：与 COUI 样式的 18dp 对齐。 */
+private val SendIconSize = 18.dp
 /** 终止按钮的方块图标尺寸：原 10dp 放大 50%（10 × 1.5 = 15dp）。 */
 private val StopIconSize = 15.dp
 private val ThinkingIconSize = ChatInputActionIconSize
@@ -175,12 +177,12 @@ private val ChatInputStripGap = 8.dp
  *
  * 沿用原有写法：Brush.verticalGradient、11 个 stop、alpha = progress^1.6、终点色 surface。
  */
-private fun chatInputFadeBrush(color: Color): Brush {
+private fun chatInputFadeBrush(color: Color, alphaScale: Float = 1f): Brush {
     val stops = 10
     return Brush.verticalGradient(
         *Array(stops + 1) { index ->
             val progress = index / stops.toFloat()
-            progress to color.copy(alpha = progress.pow(1.6f))
+            progress to color.copy(alpha = progress.pow(1.6f) * alphaScale)
         },
     )
 }
@@ -371,7 +373,11 @@ internal fun AgentChatInputBar(
         if (recognitionEnabled) SpeechInputFeedback(dictation)
         // 输入框上方的渐隐背景，完全沿用原有的实现：终点色就是 surface。
         val inputFadeColor = MiuixTheme.colorScheme.surface
-        val inputFadeBrush = remember(inputFadeColor) { chatInputFadeBrush(inputFadeColor) }
+        // MIUIX：这块渐隐整体降到 50% 透明度，别把上方内容压得太实；COUI 保持原样。
+        val fadeAlphaScale = if (LocalUiStyle.current == AppearanceUiStyle.COUI) 1f else 0.5f
+        val inputFadeBrush = remember(inputFadeColor, fadeAlphaScale) {
+            chatInputFadeBrush(inputFadeColor, fadeAlphaScale)
+        }
         // 输入框上方那条渐变就是这块区域的背景：底部对齐、至少留出 ChatBottomFadeOverhang，
         // 条带作为它的子节点画在渐变上面（离胶囊 5dp），所以加了条带渐变也跟着变高、且始终垫在下面。
         Column(
@@ -888,25 +894,6 @@ private fun ThinkingEffortChip(
         animationSpec = tween(durationMillis = 160),
         label = "thinking_content",
     )
-    val bgColor by animateColorAsState(
-        targetValue = if (active) {
-            colors.primary.copy(alpha = if (isDark) 0.18f else 0.10f)
-        } else {
-            ink.copy(alpha = if (isDark) 0.06f else 0.038f)
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "thinking_bg",
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (active) {
-            colors.primary.copy(alpha = if (isDark) 0.30f else 0.22f)
-        } else {
-            ink.copy(alpha = if (isDark) 0.10f else 0.065f)
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "thinking_border",
-    )
-
     val chipLabel = when (effort) {
         ReasoningEffort.OFF -> stringResource(R.string.reasoning_chip_off)
         ReasoningEffort.DEFAULT -> stringResource(R.string.reasoning_chip_default)
@@ -952,16 +939,7 @@ private fun ThinkingEffortChip(
                 )
                 .size(ChatInputActionSize)
                 .clip(CircleShape)
-                .then(
-                    if (isCoui) {
-                        // COUI 下只保留模型图标本体；圆形浅色底和细描边移给左侧附件按钮。
-                        Modifier
-                    } else {
-                        Modifier
-                            .background(bgColor, CircleShape)
-                            .border(0.5.dp, borderColor, CircleShape)
-                    },
-                )
+                // 两种样式都只保留模型图标本体：圆形浅色底和细描边统一给左侧附件按钮。
                 .then(
                     if (isCoui) {
                         Modifier.couiButtonFeedback(isDark, interactionSource, enabled = interactive)

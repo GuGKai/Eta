@@ -290,14 +290,17 @@ internal fun AgentAttachmentPickerButton(
     BackHandler(enabled = showPopup) { showPopup = false }
     // COUI 的附件按钮补一块与输入栏操作区同风格的浅色圆底；
     // 直径跟随发送按钮的可视圆形，图标则沿用发送按钮的 18dp 视觉尺寸。
-    val attachmentCircleModifier = if (isCoui) {
-        Modifier.background(
-            color = couiSendIdleCircleColor(CouiTheme.isDark),
-            shape = CircleShape,
-        )
+    // 两种样式统一：加号按钮都带一块与发送按钮同直径的圆底。
+    // MIUIX 的底色直接取发送按钮「空草稿」那一档灰（surfaceContainerHigh），随亮暗主题自动切换。
+    val attachmentCircleColor = if (isCoui) {
+        couiSendIdleCircleColor(CouiTheme.isDark)
     } else {
-        Modifier
+        MiuixTheme.colorScheme.surfaceContainerHigh
     }
+    val attachmentCircleModifier = Modifier.background(
+        color = attachmentCircleColor,
+        shape = CircleShape,
+    )
     val popupLayout = rememberInputBarPopupLayout(
         inputContainerTopPx = inputContainerTopPx,
         anchorTopPx = buttonTopPx,
@@ -326,7 +329,7 @@ internal fun AgentAttachmentPickerButton(
         ) {
             Box(
                 modifier = Modifier
-                    .size(if (isCoui) 32.dp else 23.dp)
+                    .size(32.dp)
                     .clip(CircleShape)
                     .then(attachmentCircleModifier),
                 contentAlignment = Alignment.Center,
@@ -335,9 +338,10 @@ internal fun AgentAttachmentPickerButton(
                     imageVector = if (isCoui) Icons.Rounded.Add else MiuixIcons.Glass.Add,
                     contentDescription = stringResource(R.string.ui_add_attachment_dba9e8),
                     modifier = Modifier
-                        .size(if (isCoui) 18.dp else 23.dp)
+                        .size(18.dp)
                         .then(if (isCoui) Modifier else Modifier.glassPopupAnchorContent(popupAnchor)),
-                    tint = if (isCoui) couiSendIdleIconColor() else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    // 与发送按钮空态箭头同一个色值，亮暗两套主题都不会跑偏。
+                    tint = couiSendIdleIconColor(),
                 )
             }
         }

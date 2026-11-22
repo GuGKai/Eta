@@ -212,40 +212,44 @@ internal fun AgentTopBarChatHeader(
                             .couiMenuAnchor(anchor)
                             .clip(RoundedCornerShape(10.dp))
                             .then(
+                                // MIUIX 顶栏不再承载模型入口，只留角色名，因此不给按压反馈。
                                 if (isCoui) {
                                     Modifier.couiButtonFeedback(isDark, interactionSource, enabled = enabled)
                                 } else {
-                                    Modifier.glassPress(interactionSource, enabled = enabled)
+                                    Modifier
                                 },
                             )
                             .clickable(
                                 interactionSource = interactionSource,
                                 indication = null,
-                                enabled = enabled,
+                                enabled = isCoui && enabled,
                                 role = Role.Button,
                                 onClick = triggerModelPicker,
                             )
-                            .semantics { contentDescription = switchModelDescription }
-                            .padding(horizontal = 6.dp, vertical = 3.dp),
+                            .semantics { if (isCoui) contentDescription = switchModelDescription }
+                            .padding(horizontal = if (isCoui) 6.dp else 16.dp, vertical = 3.dp),
                     ) {
                         Text(
                             text = character.characterName,
                             style = MiuixTheme.textStyles.body1.copy(
-                                fontSize = 15.5.sp,
-                                lineHeight = 19.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                fontSize = if (isCoui) 15.5.sp else 17.sp,
+                                lineHeight = if (isCoui) 19.sp else 22.sp,
+                                fontWeight = if (isCoui) FontWeight.SemiBold else FontWeight.Bold,
                             ),
                             color = MiuixTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        ModelSubtitleRow(
-                            selected = selected,
-                            modelName = currentModel,
-                            textColor = subtitleColor,
-                            chevronColor = chevronColor,
-                            showChevron = enabled,
-                        )
+                        // MIUIX：只留下标题，模型副标题与下拉箭头一并去掉。
+                        if (isCoui) {
+                            ModelSubtitleRow(
+                                selected = selected,
+                                modelName = currentModel,
+                                textColor = subtitleColor,
+                                chevronColor = chevronColor,
+                                showChevron = enabled,
+                            )
+                        }
                     }
                 }
             }
@@ -258,44 +262,50 @@ internal fun AgentTopBarChatHeader(
                         .couiMenuAnchor(anchor)
                         .clip(RoundedCornerShape(12.dp))
                         .then(
+                            // MIUIX 顶栏不再承载模型入口，只留标题，因此不给按压反馈。
                             if (isCoui) {
                                 Modifier.couiButtonFeedback(isDark, interactionSource, enabled = enabled)
                             } else {
-                                Modifier.glassPress(interactionSource, enabled = enabled)
+                                Modifier
                             },
                         )
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null,
-                            enabled = enabled,
+                            enabled = isCoui && enabled,
                             role = Role.Button,
                             onClick = triggerModelPicker,
                         )
-                        .semantics { contentDescription = switchModelDescription }
-                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                        .semantics { if (isCoui) contentDescription = switchModelDescription }
+                        .padding(horizontal = if (isCoui) 10.dp else 16.dp, vertical = 3.dp),
                 ) {
                     Text(
                         text = conversationTitle,
                         style = MiuixTheme.textStyles.body1.copy(
-                            fontSize = 15.5.sp,
-                            lineHeight = 19.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            fontSize = if (isCoui) 15.5.sp else 17.sp,
+                            lineHeight = if (isCoui) 19.sp else 22.sp,
+                            fontWeight = if (isCoui) FontWeight.SemiBold else FontWeight.Bold,
                         ),
                         color = MiuixTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    ModelSubtitleRow(
-                        selected = selected,
-                        modelName = currentModel,
-                        textColor = subtitleColor,
-                        chevronColor = chevronColor,
-                        showChevron = enabled,
-                    )
+                    // MIUIX：只保留标题，模型副标题与下拉箭头去掉。
+                    if (isCoui) {
+                        ModelSubtitleRow(
+                            selected = selected,
+                            modelName = currentModel,
+                            textColor = subtitleColor,
+                            chevronColor = chevronColor,
+                            showChevron = enabled,
+                        )
+                    }
                 }
             }
 
             else -> {
+                // MIUIX：空白新会话页顶部不再显示模型选择胶囊。
+                if (!isCoui) return@Box
                 val pillFill = ink.copy(alpha = if (isDark) 0.08f else 0.042f)
                 val pillBorder = ink.copy(alpha = if (isDark) 0.12f else 0.07f)
                 val miuixCapsuleModifier = if (isCoui) {

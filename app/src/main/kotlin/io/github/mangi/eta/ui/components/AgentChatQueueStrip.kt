@@ -44,6 +44,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.model.QueuedMessageUi
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -87,9 +89,11 @@ internal fun AgentChatQueueStrip(
     val first = queuedMessages.first()
 
     val queueBorderColor = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f)
+    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
 
     // 描边不能挂在 squircleSurface 上：surface 的角部遮罩（DstIn）会把越过填充轮廓的
     // 那一段描边整段擦掉，表现为四个圆角没有描边、只有直边有线。改为同级覆盖层单独绘制。
+    // COUI 保留这套覆盖层写法；MIUIX 回到上游外观，直接把描边挂在 squircle 表面上。
     Box(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -97,6 +101,17 @@ internal fun AgentChatQueueStrip(
                 .squircleSurface(
                     color = MiuixTheme.colorScheme.surfaceContainer,
                     cornerRadius = QueueContainerCornerRadius,
+                )
+                .then(
+                    if (isCoui) {
+                        Modifier
+                    } else {
+                        Modifier.squircleBorder(
+                            width = 0.5.dp,
+                            color = queueBorderColor,
+                            cornerRadius = QueueContainerCornerRadius,
+                        )
+                    },
                 ),
         ) {
             Row(
@@ -216,15 +231,18 @@ internal fun AgentChatQueueStrip(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .squircleBorder(
-                    width = { 0.5.dp },
-                    color = { queueBorderColor },
-                    cornerRadius = QueueContainerCornerRadius,
-                ),
-        )
+        // COUI：保留覆盖层描边，四角不会缺线；MIUIX 用上面的上游写法，这里不再叠一层。
+        if (isCoui) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .squircleBorder(
+                        width = { 0.5.dp },
+                        color = { queueBorderColor },
+                        cornerRadius = QueueContainerCornerRadius,
+                    ),
+            )
+        }
     }
 }
 

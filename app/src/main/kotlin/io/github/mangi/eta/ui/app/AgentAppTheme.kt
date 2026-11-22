@@ -115,7 +115,10 @@ fun AgentAppTheme(
     } else {
         initialDisplayDensity
     }
-    val effectiveScale = if (applyInterfaceScale) {
+    // 界面缩放只作用于 COUI 样式：MIUIX 样式保持原作者的平台密度，
+    // 避免缩放把 Miuix 的排版、间距与组件尺寸一起带偏。
+    val scaleInterface = applyInterfaceScale && appearance.uiStyle == AppearanceUiStyle.COUI
+    val effectiveScale = if (scaleInterface) {
         normalizeInterfaceScale(appearance.interfaceScale)
     } else {
         DEFAULT_INTERFACE_SCALE
@@ -126,24 +129,24 @@ fun AgentAppTheme(
         context.resources.displayMetrics.density = baseDensity
         Density(context).also { context.resources.displayMetrics.density = saved }
     }
-    if (applyInterfaceScale) {
+    if (scaleInterface) {
         // 独立窗口（Dialog / Popup）的新 AndroidComposeView 从宿主 Context.resources 读取密度；
         // 以 configuration.densityDpi / 160f 为 100% 尺寸基准同步写入，保证页面与独立窗口缩放一致。
         context.resources.displayMetrics.density = targetDensity
         @Suppress("DEPRECATION")
         context.resources.displayMetrics.scaledDensity = targetDensity * configuration.fontScale
     }
-    DisposableEffect(context, applyInterfaceScale, baseDensity, configuration.fontScale) {
+    DisposableEffect(context, scaleInterface, baseDensity, configuration.fontScale) {
         onDispose {
-            if (applyInterfaceScale) {
+            if (scaleInterface) {
                 context.resources.displayMetrics.density = baseDensity
                 @Suppress("DEPRECATION")
                 context.resources.displayMetrics.scaledDensity = baseDensity * configuration.fontScale
             }
         }
     }
-    val appDensity = remember(context, targetDensity, configuration.fontScale, applyInterfaceScale) {
-        if (applyInterfaceScale) {
+    val appDensity = remember(context, targetDensity, configuration.fontScale, scaleInterface) {
+        if (scaleInterface) {
             context.resources.displayMetrics.density = targetDensity
             Density(context)
         } else {
