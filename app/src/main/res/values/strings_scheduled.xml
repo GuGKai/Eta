@@ -91,6 +91,8 @@
     <string name="scheduled_editor_section_schedule">Schedule</string>
     <string name="scheduled_editor_trigger_time">Trigger time</string>
     <string name="scheduled_editor_interval_label">Repeat interval</string>
+    <string name="scheduled_editor_hour_label">Hour</string>
+    <string name="scheduled_editor_minute_label">Minute</string>
     <string name="scheduled_editor_once_delay_label">Delay from now</string>
     <string name="scheduled_editor_cron_label">5-field Cron expression (min hr dom mon dow)</string>
     <string name="scheduled_editor_schedule_preview">Schedule preview</string>

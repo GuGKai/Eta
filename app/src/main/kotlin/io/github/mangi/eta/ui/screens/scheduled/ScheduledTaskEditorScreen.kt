@@ -1,6 +1,5 @@
 package io.github.mangi.eta.ui.screens.scheduled
 
-import android.app.TimePickerDialog
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,6 +55,8 @@ import com.itos.coui.layout.CouiPageDefaults
 import com.itos.coui.layout.Divider
 import com.itos.coui.layout.Group
 import com.itos.coui.menu.rememberCouiWindowBackdrop
+import com.itos.coui.picker.WheelPicker as CouiWheelPicker
+import com.itos.coui.picker.couiPickerSelectionLines
 import com.itos.coui.text.CouiTextKind
 import com.itos.coui.text.Text as CouiText
 import com.itos.coui.theme.CouiTheme
@@ -83,6 +84,7 @@ import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
 import io.github.mangi.eta.ui.components.OptionalModelPickerContent
 import io.github.mangi.eta.ui.components.coui.CouiChipTabs
+import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -268,19 +270,6 @@ internal fun ScheduledTaskEditorScreen(
         effortOptions.indexOf(current).takeIf { it >= 0 } ?: 0
     }
 
-    val openTimePicker: () -> Unit = {
-        TimePickerDialog(
-            context,
-            { _, pickedHour, pickedMinute ->
-                hour = pickedHour
-                minute = pickedMinute
-            },
-            hour,
-            minute,
-            true,
-        ).show()
-    }
-
     val canSave = initialized && !saving && nameState.text.isNotBlank() && promptState.text.isNotBlank() && scheduleError == null
     val onSaveClick: () -> Unit = {
         if (canSave) {
@@ -382,6 +371,16 @@ internal fun ScheduledTaskEditorScreen(
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
             val dark = CouiTheme.isDark
+            var showTimePicker by remember { mutableStateOf(false) }
+            var pickerHour by remember { mutableIntStateOf(hour.coerceIn(0, 23)) }
+            var pickerMinute by remember { mutableIntStateOf(minute.coerceIn(0, 59)) }
+            var pickerDaysOfWeek by remember { mutableStateOf(daysOfWeek) }
+            val openCouiTimePicker: () -> Unit = {
+                pickerHour = hour.coerceIn(0, 23)
+                pickerMinute = minute.coerceIn(0, 59)
+                pickerDaysOfWeek = daysOfWeek
+                showTimePicker = true
+            }
             CouiScaffoldPage(
                 title = pageTitle,
                 onBack = onBack,
@@ -417,6 +416,68 @@ internal fun ScheduledTaskEditorScreen(
                                 selectedModelId = id
                             },
                         )
+                    }
+                    CouiConfirmDialog(
+                        visible = showTimePicker,
+                        title = stringResource(R.string.scheduled_editor_trigger_time),
+                        message = null,
+                        confirmText = stringResource(R.string.action_confirm),
+                        onConfirm = {
+                            hour = pickerHour
+                            minute = pickerMinute
+                            if (triggerKind == ScheduledTaskTriggerKind.WEEKLY) {
+                                daysOfWeek = pickerDaysOfWeek
+                            }
+                            showTimePicker = false
+                        },
+                        onDismissRequest = { showTimePicker = false },
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .couiPickerSelectionLines(
+                                    color = CouiPageDefaults.themeColors(dark).divider,
+                                    horizontalInset = 0.dp,
+                                ),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CouiWheelPicker(
+                                modifier = Modifier.weight(1f),
+                                value = pickerHour,
+                                onValueChange = { pickerHour = it },
+                                valueRange = 0..23,
+                                label = stringResource(R.string.scheduled_editor_hour_label),
+                                formatter = { it.toString().padStart(2, '0') },
+                            )
+                            Text(
+                                text = ":",
+                                style = MiuixTheme.textStyles.title1,
+                                color = CouiPageDefaults.themeColors(dark).title,
+                            )
+                            CouiWheelPicker(
+                                modifier = Modifier.weight(1f),
+                                value = pickerMinute,
+                                onValueChange = { pickerMinute = it },
+                                valueRange = 0..59,
+                                label = stringResource(R.string.scheduled_editor_minute_label),
+                                formatter = { it.toString().padStart(2, '0') },
+                            )
+                        }
+                        if (triggerKind == ScheduledTaskTriggerKind.WEEKLY) {
+                            WeekdaySelectorRow(
+                                selectedDays = pickerDaysOfWeek,
+                                onToggleDay = { day ->
+                                    pickerDaysOfWeek = if (day in pickerDaysOfWeek && pickerDaysOfWeek.size > 1) {
+                                        pickerDaysOfWeek - day
+                                    } else {
+                                        pickerDaysOfWeek + day
+                                    }
+                                },
+                                isCoui = true,
+                                horizontalPadding = 0.dp,
+                            )
+                        }
                     }
                 },
             ) {
@@ -464,26 +525,14 @@ internal fun ScheduledTaskEditorScreen(
                             CouiPreference(
                                 title = stringResource(R.string.scheduled_editor_trigger_time),
                                 value = ScheduledTaskScheduleCalculator.formatHourMinute(hour, minute),
-                                onClick = openTimePicker,
+                                onClick = openCouiTimePicker,
                             )
                         }
                         ScheduledTaskTriggerKind.WEEKLY -> {
                             CouiPreference(
                                 title = stringResource(R.string.scheduled_editor_trigger_time),
-                                value = ScheduledTaskScheduleCalculator.formatHourMinute(hour, minute),
-                                onClick = openTimePicker,
-                            )
-                            Divider()
-                            WeekdaySelectorRow(
-                                selectedDays = daysOfWeek,
-                                onToggleDay = { day ->
-                                    daysOfWeek = if (day in daysOfWeek && daysOfWeek.size > 1) {
-                                        daysOfWeek - day
-                                    } else {
-                                        daysOfWeek + day
-                                    }
-                                },
-                                isCoui = true,
+                                summary = ScheduledTaskScheduleCalculator.describeSchedule(currentSchedule),
+                                onClick = openCouiTimePicker,
                             )
                         }
                         ScheduledTaskTriggerKind.INTERVAL -> {
