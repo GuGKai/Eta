@@ -898,13 +898,14 @@ private fun ModelPickerOptionRow(
     val containerColor = when {
         !selected -> Color.Transparent
         isCoui -> MiuixTheme.colorScheme.tertiaryContainer
-        // 与会话列表的选中胶囊同一档：暗色 48%，亮色 92%（白字对比需要）。
-        else -> MiuixTheme.colorScheme.primary.copy(alpha = if (isDark) 0.48f else 0.92f)
+        // 模型列表行是大块面，不跟着上面那排 chip 的白字实底走：
+        // 保持原来的浅主题色底 + 主题色文字，只有勾选状态强调一下。
+        else -> MiuixTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.08f)
     }
     val contentColor = when {
         !selected -> MiuixTheme.colorScheme.onSurface
         isCoui -> MiuixTheme.colorScheme.onTertiaryContainer
-        else -> Color.White
+        else -> MiuixTheme.colorScheme.primary
     }
     val checkIcon = if (isCoui) Icons.Rounded.Check else MiuixIcons.Glass.Ok
     Row(

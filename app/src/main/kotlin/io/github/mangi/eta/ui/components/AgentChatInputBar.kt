@@ -30,11 +30,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -346,6 +348,31 @@ internal fun AgentChatInputBar(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 键盘当前是否抬起：打开会话选模型弹层前据此决定要不要收键盘、关掉后要不要还回去。
+    val imeVisibleNow = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var restoreImeAfterModelSheet by remember { mutableStateOf(false) }
+    /**
+     * 打开会话选模型弹窗，并让键盘像 COUI 一样让位。
+     *
+     * COUI 用的是独立窗口的 Dialog，系统自己会把键盘收起来、关闭后再弹回去；
+     * MIUIX 的 OverlayBottomSheet 只是本页浮层，键盘不会让位，反而把它往上顶。
+     * 所以这里手动对齐：开之前收键盘，关之后把焦点和键盘还给输入框。
+     */
+    val openModelSheet: () -> Unit = {
+        restoreImeAfterModelSheet = imeVisibleNow
+        if (imeVisibleNow) keyboard?.hide()
+        showModelSheet = true
+    }
+    LaunchedEffect(showModelSheet) {
+        if (showModelSheet || !restoreImeAfterModelSheet) return@LaunchedEffect
+        restoreImeAfterModelSheet = false
+        runCatching { focusRequester.requestFocus() }
+        // 焦点先回到输入框（最多等 0.8 秒），再拉起键盘：IME 需要有效的输入连接。
+        withTimeoutOrNull(800) { snapshotFlow { inputFocused }.first { it } }
+        withFrameNanos { }
+        keyboard?.show()
     }
 
     // 胶囊顶边在窗口里的位置：输入栏菜单的回退定位要用它。
@@ -680,7 +707,7 @@ internal fun AgentChatInputBar(
                                         glassBackdrop = glassBackdrop,
                                         inputContainerTopPx = inputContainerTopPx,
                                         onEffortChange = onReasoningEffortChange,
-                                        onRequestModelSheet = { showModelSheet = true },
+                                        onRequestModelSheet = openModelSheet,
                                     )
                                 }
                             }
@@ -710,12 +737,13 @@ internal fun AgentChatInputBar(
 
                             val showPrimaryStop = isStreaming && !showStreamingSend
                             val sendCircleSize = if (isCoui) 32.dp else SendButtonVisualSize
+                            // 圆底只有两档：可发送走主题色，不可发送与生成中终止都取左侧加号按钮那块底色，
+                            // 于是终止态不再是深色实心圆，而是和加号同一颗灰圆。
                             val sendButtonColor by animateColorAsState(
-                                targetValue = when {
-                                    showPrimaryStop -> MiuixTheme.colorScheme.onSurface
-                                    canSend -> MiuixTheme.colorScheme.primary
-                                    isCoui -> couiSendIdleCircleColor(couiDark)
-                                    else -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                targetValue = if (canSend) {
+                                    MiuixTheme.colorScheme.primary
+                                } else {
+                                    chatInputActionCircleColor()
                                 },
                                 animationSpec = tween(durationMillis = 160),
                                 label = "send_button_color",
@@ -727,7 +755,7 @@ internal fun AgentChatInputBar(
                             }
                             if (isCoui && canSend) {
                                 // 只有「可发送」的蓝底状态走 COUI 圆形图标按钮（轮廓光晕 + 触摸位移 + 压感 + 高光）；
-                                // 灰色不可发送与终止态保持原有样式。
+                                // 灰色不可发送与终止态保持原有样式（底色与图标都跟随附件加号按钮）。
                                 Box(
                                     modifier = Modifier.size(ChatInputActionSize),
                                     contentAlignment = Alignment.Center,
@@ -807,10 +835,11 @@ internal fun AgentChatInputBar(
                                                 modifier = Modifier.size(
                                                     if (stopIcon) StopIconSize else if (isCoui) 18.dp else SendIconSize,
                                                 ),
-                                                tint = when {
-                                                    stopIcon -> MiuixTheme.colorScheme.surface
-                                                    canSend -> MiuixTheme.colorScheme.onPrimary
-                                                    else -> couiSendIdleIconColor()
+                                                // 终止方块与加号图标同色；可发送时仍取 onPrimary 压主题色底。
+                                                tint = if (canSend) {
+                                                    MiuixTheme.colorScheme.onPrimary
+                                                } else {
+                                                    couiSendIdleIconColor()
                                                 },
                                             )
                                         }
@@ -892,24 +921,6 @@ private fun ThinkingEffortChip(
         },
         animationSpec = tween(durationMillis = 160),
         label = "thinking_content",
-    )
-    val bgColor by animateColorAsState(
-        targetValue = if (active) {
-            colors.primary.copy(alpha = if (isDark) 0.18f else 0.10f)
-        } else {
-            ink.copy(alpha = if (isDark) 0.06f else 0.038f)
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "thinking_bg",
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (active) {
-            colors.primary.copy(alpha = if (isDark) 0.30f else 0.22f)
-        } else {
-            ink.copy(alpha = if (isDark) 0.10f else 0.065f)
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "thinking_border",
     )
     val chipLabel = when (effort) {
         ReasoningEffort.OFF -> stringResource(R.string.reasoning_chip_off)
@@ -1029,14 +1040,14 @@ private fun ThinkingEffortChip(
                             sizing = GlassPopupSizing(maxHeight = popupLayout.maxHeight),
                             onMeasured = { measuredPopupHeightPx = it.height },
                             anchorContent = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .heightIn(min = 30.dp)
-                                        .clip(CircleShape)
-                                        .background(bgColor, CircleShape)
-                                        .border(0.5.dp, borderColor, CircleShape)
-                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                // 不能带上主题色圆底/描边：锚点内容会在收起动画里被放回按钮位置，
+                                // 一带底就会闪出那颗蓝圆。
+                                // 但也不能只放 24dp 图标：GlassTransformPopup 用固定约束（= 整个
+                                // 40dp 锚点控件）量这段内容，图标会被撑满 40dp 并贴在左上角，动画
+                                // 期间就比按钮里的图标大一圈且错位。套一层撑满的 Box 居中才对齐。
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     chipContent()
                                 }
