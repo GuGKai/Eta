@@ -141,6 +141,30 @@ class MarkdownSpeechLocatorTest {
     }
 
     @Test
+    fun orderedListItemsIgnoreTheSpokenLeadAndHighlightTheBody() {
+        // 朗读会先念「第 1 项：」，界面上序号是灰色单独画的，块里只有正文；高亮必须落在正文上。
+        val markdown = """
+            开头一句说明。
+
+            1. 就地替换那一步，其余步骤原样保留
+            2. 我重出一份完整计划，你再看一遍
+            3. 两步都要：先替换，需要时再重出
+            4. 其他（直接说）
+
+            收尾一句。
+        """.trimIndent()
+        val sentences = sentencesOf(markdown)
+        assertEquals(6, sentences.size)
+        assertTrue(sentences[1].startsWith("第 1 项"))
+        assertEquals("就地替换那一步，其余步骤原样保留", highlighted(markdown, 1))
+        assertEquals("我重出一份完整计划，你再看一遍", highlighted(markdown, 2))
+        // 正文自己带冒号也不能被当成引导语剥掉。
+        assertEquals("两步都要：先替换，需要时再重出", highlighted(markdown, 3))
+        assertEquals("其他（直接说）", highlighted(markdown, 4))
+        assertEquals("收尾一句。", highlighted(markdown, 5))
+    }
+
+    @Test
     fun listItemsAreHighlightedPerItem() {
         val markdown = "步骤：\n\n- 先看第一项。\n- 再看第二项。"
         assertEquals(listOf("步骤：", "先看第一项。", "再看第二项。"), sentencesOf(markdown))

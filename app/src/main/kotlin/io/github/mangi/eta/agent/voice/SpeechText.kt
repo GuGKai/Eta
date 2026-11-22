@@ -165,6 +165,19 @@ internal object SpeechText {
         }
     }
 
+    /**
+     * 对齐用的可匹配文本：有序列表项的「第 1 项：」、任务项的「已完成：」是朗读时加的引导语，
+     * 界面上没有这段字（序号是灰色单独绘制的标记），高亮要按正文定位。
+     *
+     * 只剥引导语（很短的句首 + 冒号），正文本来的冒号不受影响。
+     */
+    fun alignmentBody(sentence: String): String {
+        val trimmed = sentence.trim()
+        val cut = trimmed.indexOfFirst { it == '：' || it == ':' }
+        if (cut !in 1 until LEAD_MAX) return trimmed
+        return trimmed.substring(cut + 1).trim().ifEmpty { trimmed }
+    }
+
     /** 把一行切成句子：连续句末标点与收尾引号归入本句，超长句再按次级标点细分。 */
     private fun splitLine(line: String, limit: Int): List<String> {
         val raw = mutableListOf<String>()
@@ -227,6 +240,9 @@ internal object SpeechText {
 
     private const val SENTENCE_LIMIT = 80
     private const val MIN_SENTENCE_LENGTH = 8
+
+    /** 引导语最多这么长（含冒号）；超过就当正文自己的冒号，不剥。 */
+    private const val LEAD_MAX = 24
     private val SENTENCE_END = setOf('。', '！', '？', '…', '；', ';', '!', '?')
     private val SENTENCE_TAIL = SENTENCE_END + setOf('”', '』', '」', '）', ')')
     private val SECONDARY_END = setOf('，', '、', '：', ':', ',', ' ')

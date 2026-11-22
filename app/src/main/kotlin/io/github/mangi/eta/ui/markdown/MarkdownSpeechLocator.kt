@@ -1,5 +1,6 @@
 package io.github.mangi.eta.ui.markdown
 
+import io.github.mangi.eta.agent.voice.SpeechText
 
 /**
  * 把「正在读第几句」落到 Markdown 渲染块里的字符区间。
@@ -7,6 +8,9 @@ package io.github.mangi.eta.ui.markdown
  * 朗读按清洗后的纯文本切句，界面显示的是渲染后的块文本。渲染端会给行内代码、链接两侧补窄空格，
  * 排版空白也与朗读文本不一样，直接拿整句去 indexOf 会失败，退化成「按句首近似」又会把末尾一两个字
  * 和标点漏在区间外。所以定位统一在**去掉所有空白**的紧凑文本上做，命中后再映射回原文区间。
+ *
+ * 有序列表项还多一层错位：朗读会先念「第 1 项：」这样的引导语，而界面上的序号是灰色单独画的，
+ * 块文本里没有这几个字，整句永远命中不了。这类句子先剥掉引导语再匹配，高亮就落回正文。
  *
  * 句序号通常单调前进，走过的位置缓存在 [MarkdownSpeechHighlightCache] 里，
  * 换句时只往前找一句；只有回退（重新朗读、跳读）才从头重算。
@@ -63,15 +67,22 @@ internal class MarkdownSpeechHighlightCache {
 
     /** 定位第 [i] 句在紧凑文本里的区间并推进 [cursor]；找不到时按游标处近似落点，绝不放弃。 */
     private fun locate(i: Int, flat: FlattenedBlocks) {
-        val needle = compactOf(sentences?.getOrNull(i).orEmpty())
-        if (needle.isEmpty()) return
-        val at = flat.compact.indexOf(needle, cursor)
-        if (at >= 0) {
-            spans[i] = Span(at, at + needle.length)
-            cursor = at + needle.length
-            return
+        val sentence = sentences?.getOrNull(i).orEmpty()
+        val full = compactOf(sentence)
+        if (full.isEmpty()) return
+        // 列表项的朗读引导语（「第 1 项：」）界面上不存在，整句必然对不上，再拿正文试一次。
+        val body = compactOf(SpeechText.alignmentBody(sentence))
+        val needles = if (body.isEmpty() || body == full) listOf(full) else listOf(full, body)
+        for (needle in needles) {
+            val at = flat.compact.indexOf(needle, cursor)
+            if (at >= 0) {
+                spans[i] = Span(at, at + needle.length)
+                cursor = at + needle.length
+                return
+            }
         }
-        // 整句对不上时按句首逐级兜底：长度逐级缩短，短句同样能兜底。
+        // 整句对不上时按句首逐级兜底：长度逐级缩短，短句同样能兜底；剥离过引导语的版本优先。
+        val needle = needles.last()
         val fallback = FALLBACK_HEAD_LENGTHS
             .asSequence()
             .filter { needle.length >= it }
