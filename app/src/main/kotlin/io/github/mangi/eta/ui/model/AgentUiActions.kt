@@ -28,6 +28,8 @@ sealed interface AgentHomeAction {
     data class RegenerateMessage(val id: String) : AgentHomeAction
     data class BranchConversation(val conversationId: String, val messageId: String) : AgentHomeAction
     data class SelectReplyCandidate(val id: String, val index: Int) : AgentHomeAction
+    /** 提问卡片提交：messageId 上记下答案，答案同时作为下一条用户消息发出。 */
+    data class AnswerAskQuestion(val id: String, val answerText: String) : AgentHomeAction
     data object OpenTools : AgentHomeAction
     data object OpenSkills : AgentHomeAction
     data object OpenPermissions : AgentHomeAction

@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.model
 
+import io.github.mangi.eta.agent.model.AskQuestionCard
+
 import androidx.compose.runtime.Immutable
 import io.github.mangi.eta.agent.model.AgentFileReference
 import io.github.mangi.eta.agent.model.AgentModelClient
@@ -82,6 +84,10 @@ data class AgentMessageUi(
      * 不进入消息存储、归档与导出（重开会话后消失）。
      */
     val promptSuggestions: List<String> = emptyList(),
+    /** 模型通过 `ask_user_question` 提出的问题；null 表示这条回答不含提问。 */
+    val askCard: AskQuestionCard? = null,
+    /** 用户已经提交的答案原文（不含给模型的引导语），用于回显与去重。 */
+    val askAnswer: String? = null,
 ) : AgentChatMessageUi
 
 enum class SystemNoticeCode(val wireValue: String) {

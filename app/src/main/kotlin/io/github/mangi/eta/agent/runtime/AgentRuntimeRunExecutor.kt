@@ -4,8 +4,10 @@ import android.content.Context
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityKeeper
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
+import io.github.mangi.eta.agent.model.AgentAskQuestionToolCatalog
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentConversationToolCatalog
+import io.github.mangi.eta.agent.tool.AskQuestionSuspender
 import io.github.mangi.eta.agent.tool.ConversationHistoryTool
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.agent.model.AgentModelClient
@@ -283,6 +285,20 @@ internal class AgentRuntimeRunExecutor(
             localTools = executor
             toolExecutor = routingExecutor
             toolsBinding = runController.register(routingExecutor::close)
+            // 会话页发起的运行才挂起：停下来等用户在卡片上作答，答案随工具结果回到同一轮。
+            // 定时任务 / 语音面板 / 子智能体都不经过这里（子智能体直接用 routingExecutor），
+            // 仍是原来的「提问即收尾、答案下一条用户消息再发回」。
+            val askSuspender = if (uiPayload != null) {
+                AskQuestionSuspender(
+                    context = appContext,
+                    runId = request.runId,
+                    conversationId = conversationId,
+                    runController = runController,
+                    fallback = routingExecutor,
+                )
+            } else {
+                null
+            }
             timing.preparationFinished(skillContext.installedSkills.size)
             // 手动压缩复用主会话工具目录以保持 Provider 前缀缓存，必须暴露与 OP_CHAT 一致的 conversation_history。
             val historyTool = if (supportsHistoryTool(request.operation)) {
@@ -379,7 +395,9 @@ internal class AgentRuntimeRunExecutor(
                     null
                 }
             val runToolExecutor = AgentModelClient.ToolExecutor { call ->
-                if (call.name in ImageGenToolCatalog.names) {
+                if (call.name == AgentAskQuestionToolCatalog.TOOL_NAME && askSuspender != null) {
+                    askSuspender.execute(call)
+                } else if (call.name in ImageGenToolCatalog.names) {
                     if (!Prefs.isToolEnabled(call.name)) {
                         AgentModelClient.ToolResult(
                             JSONObject()

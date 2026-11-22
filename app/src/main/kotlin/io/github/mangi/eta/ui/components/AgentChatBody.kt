@@ -55,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -88,6 +89,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -214,6 +217,7 @@ internal fun AgentChatBody(
     onBranchMessage: (String) -> Unit,
     onSelectReplyCandidate: (String, Int) -> Unit,
     onSuggestionClick: (String) -> Unit,
+    onAskAnswer: (String, String) -> Unit,
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     hasEarlierMessages: Boolean = false,
@@ -233,7 +237,8 @@ internal fun AgentChatBody(
             messages = messages,
             targetMessageId = messageEdit?.takeUnless { it.preserveFollowingMessages }?.targetMessageId,
         ).filterNot { message ->
-            message is AgentMessageUi && message.content.isBlank()
+            // 没有正文的消息不进时间线；提问卡片那一条本来就只有卡片没有正文，必须留着。
+            message is AgentMessageUi && message.content.isBlank() && message.askCard == null
         }
     }
     val initialScrollIndex = remember {
@@ -347,6 +352,7 @@ internal fun AgentChatBody(
             onBranchMessage = onBranchMessage,
             onSelectReplyCandidate = onSelectReplyCandidate,
             onSuggestionClick = onSuggestionClick,
+            onAskAnswer = onAskAnswer,
             onRunTraceClick = onRunTraceClick,
             onOpenBrowser = onOpenBrowser,
             currentBrowserMessageId = currentBrowserMessageId,
@@ -409,6 +415,7 @@ private fun AgentChatScaffold(
     onBranchMessage: (String) -> Unit,
     onSelectReplyCandidate: (String, Int) -> Unit,
     onSuggestionClick: (String) -> Unit,
+    onAskAnswer: (String, String) -> Unit,
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     currentBrowserMessageId: String?,
@@ -434,6 +441,10 @@ private fun AgentChatScaffold(
         drawContent()
     }
 
+    // 主输入框是盖在列表上方的浮层，它的顶边（窗口坐标）决定列表里哪些内容算「被压住」。
+    // 键盘弹起时它会整块上移，这里跟着量，交给列表里的控件自己决定要不要抬。
+    val chatOverlayTopPx = remember { mutableStateOf(Float.NaN) }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = Color.Transparent,
@@ -445,6 +456,7 @@ private fun AgentChatScaffold(
         ),
         bottomBar = {
             AgentChatBottomBar(
+                onOverlayTopChanged = { chatOverlayTopPx.value = it },
                 messageBackdrop = messageBackdrop.takeIf { frostEnabled },
                 input = input,
                 isCompacting = isCompacting,
@@ -501,9 +513,11 @@ private fun AgentChatScaffold(
                     isStreaming = isStreaming,
                     topInset = topInset,
                     bottomInset = bottomPadding,
+                    overlayTopPx = chatOverlayTopPx,
                     keepBottomAnchored = keepBottomAnchored,
                     onBottomAnchorChanged = onBottomAnchorChanged,
                     onSuggestionClick = onSuggestionClick,
+                    onAskAnswer = onAskAnswer,
                     onRunTraceClick = onRunTraceClick,
                     onOpenBrowser = onOpenBrowser,
                     onEditMessage = onEditMessage,
@@ -537,10 +551,13 @@ internal fun AgentConversationMessages(
     isStreaming: Boolean,
     bottomInset: Dp,
     topInset: Dp = 0.dp,
+    /** 主输入框浮层顶边（窗口坐标 px）；不接线时列表内控件不做任何抬升。 */
+    overlayTopPx: State<Float>? = null,
     keepBottomAnchored: Boolean,
     onBottomAnchorChanged: (Boolean) -> Unit,
     assistantOverlay: Boolean = false,
     onSuggestionClick: (String) -> Unit = {},
+    onAskAnswer: (String, String) -> Unit = { _, _ -> },
     onRunTraceClick: () -> Unit = {},
     onOpenBrowser: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
@@ -610,7 +627,8 @@ internal fun AgentConversationMessages(
     }
     val earlierMessagesItemCount = if (hasEarlierMessages) 1 else 0
     val bottomItemIndex = timelineEntries.size + earlierMessagesItemCount
-    val isUserDragging by scrollState.interactionSource.collectIsDraggedAsState()
+    val draggingState = scrollState.interactionSource.collectIsDraggedAsState()
+    val isUserDragging by draggingState
     // 自己发出的消息在列表里的位置（升序，消息 id 与 item index 成对）。
     // 游标用 id 而不是 index：加载更早的一页时所有 index 会整体后移，存的 index 会指到别的消息上。
     val userMessageAnchors = remember(timelineEntries, earlierMessagesItemCount) {
@@ -1916,7 +1934,26 @@ internal fun AgentConversationMessages(
     // afterContentPadding，确保跟到底部时最后一行停在输入器上方。
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
     val messagesBackdrop = if (isCoui || assistantOverlay) null else rememberGlassBackdrop()
-    CompositionLocalProvider(LocalOnChatItemExpand provides onExpandItem) {
+    // 「被主输入框压住就最小幅度上抬」的接口：没有接线时（例如声音面板里的列表）保持 null。
+    val chatReveal = overlayTopPx?.let { overlayTop ->
+        remember(scrollState, overlayTop, draggingState) {
+            ChatRevealEnv(
+                overlayTopPx = overlayTop,
+                userDragging = draggingState,
+            ) { px ->
+                try {
+                    // 走正式滚动接口：用户正在拖动时手势优先级更高，这里会直接放弃，不和手抢。
+                    scrollState.scroll { scrollBy(px) }
+                } catch (cancelled: CancellationException) {
+                    if (!currentCoroutineContext().isActive) throw cancelled
+                }
+            }
+        }
+    }
+    CompositionLocalProvider(
+        LocalOnChatItemExpand provides onExpandItem,
+        LocalChatReveal provides chatReveal,
+    ) {
         Box(modifier = modifier.clipToBounds()) {
             LazyColumn(
                 state = scrollState,
@@ -1968,6 +2005,7 @@ internal fun AgentConversationMessages(
                                         streamingMarkdownCache.getOrCreate(agentMessage.id)
                                     },
                                 onSuggestionClick = onSuggestionClick,
+                                onAskAnswer = onAskAnswer,
                                 onRunTraceClick = onRunTraceClick,
                                 onOpenBrowser = onOpenBrowser,
                                 showBrowserShortcut = message is ToolActivityMessageUi &&
@@ -2404,11 +2442,15 @@ private fun AgentChatBottomBar(
     onCancelMessageEdit: () -> Unit,
     focusInputRequest: Int = 0,
     onFocusInputHandled: () -> Unit = {},
+    /** 上报输入器顶边（窗口坐标 px）：键盘弹起后它会整块上移，列表里的控件用它判断遮挡。 */
+    onOverlayTopChanged: (Float) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .imePadding(),
+            .imePadding()
+            // 放在 imePadding 之后量的是内容本身：imePadding 是背景留白，不算输入器可见区域。
+            .onGloballyPositioned { onOverlayTopChanged(it.boundsInWindow().top) },
     ) {
         // 输入框的底色面板与渐变已经下沉到 AgentChatInputBar 里，只包住胶囊本身：
         // 上面的图片/文件/路径/排队消息改为透明浮层，新增组件时背景不再整体被顶上去。

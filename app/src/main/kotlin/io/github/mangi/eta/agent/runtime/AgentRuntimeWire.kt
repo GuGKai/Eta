@@ -908,6 +908,13 @@ internal object AgentRuntimeWire {
                 putString("snapshot_json", safeSnapshot)
             }
 
+            is AgentEvent.AskQuestion -> {
+                putString(KEY_TYPE, "ask_question")
+                putInt("round", event.round)
+                putString("tool_call_id", event.toolCallId)
+                putString("card_json", event.cardJson)
+            }
+
             is AgentEvent.HostedToolStarted -> {
                 putString(KEY_TYPE, "hosted_tool_started")
                 putInt("round", event.round)
@@ -1072,6 +1079,12 @@ internal object AgentRuntimeWire {
             subagentId = bundle.getString("subagent_id").orEmpty(),
             subagentType = bundle.getString("subagent_type").orEmpty(),
             snapshotJson = bundle.getString("snapshot_json").orEmpty(),
+        )
+
+        "ask_question" -> AgentEvent.AskQuestion(
+            round = bundle.getInt("round"),
+            toolCallId = bundle.getString("tool_call_id").orEmpty(),
+            cardJson = bundle.getString("card_json").orEmpty(),
         )
 
         "hosted_tool_started" -> AgentEvent.HostedToolStarted(

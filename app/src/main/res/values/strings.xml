@@ -8,6 +8,7 @@
     <string name="tool_release_gui">Release phone control</string>
     <string name="tool_release_gui_description">Finish the current phone interaction and hand control to waiting tasks.</string>
     <string name="tool_present_to_user">Present to main screen</string>
+    <string name="tool_ask_user_question">Needs your confirmation</string>
     <string name="tool_present_to_user_description">Seamlessly hand off the prepared virtual display page to the physical main screen.</string>
     <string name="settings_virtual_display_title">Background virtual display</string>
     <string name="overlay_virtual_canvas_auto">Background canvas</string>
@@ -1749,6 +1750,12 @@
   <string name="route_scheduled_task_edit">Edit Scheduled Task</string>
   <string name="scheduled_notification_channel_results">Scheduled task results</string>
   <string name="scheduled_notification_channel_results_desc">Summaries and updates delivered by Eta scheduled tasks</string>
+  <string name="ask_notification_channel">Needs your answer</string>
+  <string name="ask_notification_channel_desc">Reminds you when a question is waiting; tap to return to that conversation</string>
+  <string name="ask_notification_title">Waiting for your answer</string>
+  <string name="ask_notification_text">%1$s</string>
+  <string name="ask_notification_text_multi">%1$s (%2$d questions)</string>
+  <string name="ask_notification_fallback">A question is waiting in your conversation</string>
   <string name="scheduled_notification_channel_alerts">Scheduled task alerts</string>
   <string name="scheduled_notification_channel_alerts_desc">Failures, auto-pause alerts, and actions awaiting unlock</string>
   <string name="scheduled_notification_completed_fallback">Scheduled task completed. Tap to view full conversation.</string>

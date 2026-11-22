@@ -54,7 +54,7 @@ android {
         minSdk = 34
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026112202
+        versionCode = 2026112221
         versionName = "3.5.0"
 
         ndk {
@@ -80,6 +80,9 @@ android {
             versionNameSuffix = "-debug" + buildMetadataSuffix
             isMinifyEnabled = false
             isPseudoLocalesEnabled = true
+            // 测试包用固定 release 签名：Debug 包才能覆盖安装已经装上的同包名版本，
+            // 不用每次都卸载（卸载会清掉会话与数据库）。正式构建不受影响。
+            signingConfig = signingConfigs.findByName("release")
         }
         release {
             versionNameSuffix = buildMetadataSuffix

@@ -56,6 +56,8 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
             return
         }
         AppForegroundState.install(this)
+        // 挂起只在进程内存在：新进程起来时把上一进程遗留的提问通知清掉。
+        io.github.mangi.eta.agent.runtime.AskNotificationManager.clearStale(this)
         io.github.mangi.eta.ui.components.ChatScrollDiag.install(java.io.File(filesDir, "scroll-diag"))
         LaunchUpdateNotice.install(this)
         TerminalRuntime.initialize(this)

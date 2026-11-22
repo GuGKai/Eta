@@ -280,6 +280,8 @@ internal fun rememberActivePulse(
 internal fun ChatMessageItem(
     message: AgentChatMessageUi,
     onSuggestionClick: (String) -> Unit,
+    /** 提问卡片提交：消息 id + 已格式化的答案文本。 */
+    onAskAnswer: (String, String) -> Unit = { _, _ -> },
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     showBrowserShortcut: Boolean,
@@ -326,6 +328,7 @@ internal fun ChatMessageItem(
             onEdit = { onEditMessage(message.id) },
             onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
             onSuggestionClick = onSuggestionClick,
+            onAskAnswer = { text -> onAskAnswer(message.id, text) },
             onAnswerFirstLineTop = onAnswerFirstLineTop,
             modifier = modifier,
         )
@@ -744,6 +747,7 @@ private fun AgentMessageBlock(
     onEdit: () -> Unit = {},
     onSelectCandidate: (Int) -> Unit = {},
     onSuggestionClick: (String) -> Unit = {},
+    onAskAnswer: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     /** 正文首行字顶相对本条消息顶边的偏移（px）：正文停靠要贴的是首行文字，不是条目顶边。 */
     onAnswerFirstLineTop: ((Float) -> Unit)? = null,
@@ -819,6 +823,9 @@ private fun AgentMessageBlock(
             CharacterReplyHeader(character = character, isGreeting = isGreeting)
         }
         when {
+            // 提问卡片自带完整信息，正文不再画：新消息正文为空，
+            // 历史消息里存着的旧引导语（「想先跟你确认几件事：」）也一并隐去。
+            message.askCard != null -> Unit
             message.content.isBlank() && message.isStreaming -> {
                 AITypingIndicator(
                     modifier = Modifier.padding(top = 4.dp)
@@ -867,6 +874,15 @@ private fun AgentMessageBlock(
 
         message.searchSuggestionsHtml.forEach { html ->
             SearchSuggestionsView(html = html, modifier = Modifier.padding(top = 8.dp))
+        }
+
+        message.askCard?.let { card ->
+            AskQuestionCardView(
+                card = card,
+                answeredText = message.askAnswer,
+                onSubmit = onAskAnswer,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
 
         if (promptSuggestions.isNotEmpty()) {

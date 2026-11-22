@@ -133,6 +133,7 @@ internal fun AgentHomeScreen(
                     onSuggestionClick = { prompt ->
                         onAction(AgentHomeAction.SubmitMessage(prompt))
                     },
+                    onAskAnswer = { id, text -> onAction(AgentHomeAction.AnswerAskQuestion(id, text)) },
                     onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
                     onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
                     hasEarlierMessages = state.hasEarlierMessages,

@@ -404,6 +404,8 @@ internal fun CouiTextField(
     onKeyboardAction: KeyboardActionHandler? = null,
     showClearButton: Boolean = singleLine,
     trailingIcon: (@Composable () -> Unit)? = null,
+    /** 聚焦状态变化回调；默认不关心，只有需要「聚焦后自动避让」的地方才传。 */
+    onFocusChanged: ((Boolean) -> Unit)? = null,
 ) {
     val dark = CouiTheme.isDark
     val colors = CouiPageDefaults.themeColors(dark)
@@ -462,7 +464,8 @@ internal fun CouiTextField(
                 .then(
                     if (focusAlpha.value > 0.01f && enabled) {
                         Modifier.border(
-                            width = 1.dp,
+                            // 与 Miuix TextField（余额胶囊长按弹出的校准框）一致：聚焦描边 2dp。
+                            width = 2.dp,
                             color = colors.accent.copy(alpha = 0.7f * focusAlpha.value),
                             shape = shape,
                         )
@@ -491,7 +494,10 @@ internal fun CouiTextField(
                 }
                 val fieldModifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { focused = it.isFocused }
+                    .onFocusChanged {
+                        focused = it.isFocused
+                        onFocusChanged?.invoke(it.isFocused)
+                    }
                 if (secretVisible != null) {
                     BasicSecureTextField(
                         state = state,

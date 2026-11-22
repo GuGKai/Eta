@@ -157,4 +157,11 @@ internal data class ConversationMessageEntity(
      */
     @ColumnInfo(name = "prompt_suggestions_json", defaultValue = "'[]'")
     val promptSuggestionsJson: String = "[]",
+    /**
+     * 模型通过 `ask_user_question` 提出的问题（JSON）；只有提问消息才有内容。
+     * 老消息为空串，解析为空卡片时界面不画任何东西。
+     */
+    @ColumnInfo(name = "ask_json", defaultValue = "''") val askJson: String = "",
+    /** 用户已经提交的答案原文（不含给模型的引导语），用于回显与去重。 */
+    @ColumnInfo(name = "ask_answer") val askAnswer: String? = null,
 )
