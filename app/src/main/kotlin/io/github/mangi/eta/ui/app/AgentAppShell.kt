@@ -94,6 +94,7 @@ import io.github.mangi.eta.ui.components.AgentTopBarChatHeader
 import io.github.mangi.eta.ui.components.ChatImagePreviewHost
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.EtaTopLayer
+import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
 import io.github.mangi.eta.ui.components.MiuixBackButton
 import io.github.mangi.eta.ui.components.NonFocusablePopupProperties
 import io.github.mangi.eta.ui.components.RoleplayChatUi
@@ -340,7 +341,8 @@ internal fun AgentAppShell(
     }
 
     // 壳层顶部的全屏图片查看器宿主：消息气泡通过 LocalChatImagePreviewer 打开原位预览。
-    ChatImagePreviewHost(modifier = modifier) {
+    // 外层（AgentAppRoot）已提供全局宿主时这里只当内容容器，不再套第二层宿主。
+    val shellContent: @Composable () -> Unit = {
         if (conversationPaneState != null && currentRoute is AppRoute.Home) {
             ConversationSidePaneScaffold(
                 state = conversationPaneState,
@@ -375,6 +377,16 @@ internal fun AgentAppShell(
             }
         } else {
             pageContent()
+        }
+    }
+
+    if (LocalChatImagePreviewer.current != null) {
+        Box(modifier = modifier.fillMaxSize()) {
+            shellContent()
+        }
+    } else {
+        ChatImagePreviewHost(modifier = modifier) {
+            shellContent()
         }
     }
 }
