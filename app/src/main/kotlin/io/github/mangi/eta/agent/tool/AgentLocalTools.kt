@@ -117,6 +117,9 @@ internal class AgentLocalTools(
     },
     private val lsposedAvailable: () -> Boolean = { EtaApp.serviceInstance != null },
     private val guiControl: GuiControlCoordinator.RunControl? = null,
+    private val imageBudgetProvider: () -> io.github.mangi.eta.agent.media.ModelImageBudget = {
+        io.github.mangi.eta.agent.media.ModelImageBudget.DEFAULT
+    },
     browserSession: AgentBrowserSession? = null,
     private val skillAuthoringService: SkillAuthoringService? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
@@ -134,7 +137,7 @@ internal class AgentLocalTools(
         rootAvailable = rootAvailable,
         foregroundAction = ::executeForegroundIntent,
     )
-    private val imageTools = AgentImageTools(context, rootCommandExecutor, rootAvailable)
+    private val imageTools = AgentImageTools(context, rootCommandExecutor, rootAvailable, imageBudgetProvider)
     private val webTools = AgentWebTools(
         transport = WebHttpTransport(AgentHttpClient.client),
         localNetworkAccess = { LocalNetworkPermission.accessState(context).name.lowercase(Locale.ROOT) },
