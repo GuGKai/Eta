@@ -1114,7 +1114,8 @@ internal fun AgentConversationMessages(
     // 这样看着是「气泡紧贴顶栏」，而不是气泡上方还留一道空白。
     suspend fun snapUserMessageToTop(itemIndex: Int) {
         val bubbleInsetPx = with(density) { UserBubbleTopInset.roundToPx() }
-        val structuralOffset = (chatTopPaddingPx - dockGapPx - bubbleInsetPx).coerceAtLeast(0)
+        // 气泡贴顶栏是固定语义，不跟随正文停靠的 DockGap：正文首行下移多少都不影响这里。
+        val structuralOffset = (chatTopPaddingPx - bubbleInsetPx).coerceAtLeast(0)
         // 用 scrollToItem 直接落位：远距离回溯时不给动画，避免一长串滚动过程。
         scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
     }
@@ -1138,8 +1139,9 @@ internal fun AgentConversationMessages(
         snapUserMessageToTop(target.second)
     }
 
-    // 历史会话打开时的落点：沿用当前结构对齐位置，不再按首行实测二次补偿。
-    // 用户已确认这个视觉落点合适；这里只把「条目位置稳定」作为成功判据。
+    // 历史会话打开时的落点：与流式停靠共用「正文首行字顶」这一个基准。
+    // 结构对齐（条目顶贴顶栏）只当首帧初跳：条目内边距与行高留白不参与落点计算。
+    // 以前只对齐条目顶边，历史会话的首行就总比流式停靠低十几 dp，两处必须是同一个物理位置。
     suspend fun snapAnswerToTop(key: String, itemIndex: Int): Boolean {
         val target = topInsetPx + dockGapPx
         // 列表顶部留白（顶栏高度 + ChatTopContentPadding）正好被吃掉时，条目顶就落在顶栏底边上。
@@ -1147,7 +1149,7 @@ internal fun AgentConversationMessages(
         // 必须用 scrollToItem：requestScrollToItem 只是登记请求，等下一次测量才采用，
         // 中间那几帧列表还停在原处，随后再被拉正，看上去就是「往上抽一下」。
         scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
-        // 等这一跳被布局采用；首行测量只用于诊断，不参与落点判定。
+        // 等这一跳被布局采用；首行测量要等条目内部完成排版才会回报，后面逐帧等。
         repeat(2) { withFrameNanos { } }
         var rounds = 0
         var previousItemOffset: Int? = null
@@ -1155,7 +1157,7 @@ internal fun AgentConversationMessages(
         var lastFirstLineY: Float? = null
         var lastItemOffset: Int? = null
         var lastDelta: Float? = null
-        while (rounds < 10 && currentCoroutineContext().isActive) {
+        while (rounds < SnapFirstLineFrameBudget && currentCoroutineContext().isActive) {
             if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) {
                 ChatScrollDiag.snapExit(
                     reason = if (isUserDragging) "dragging" else "tail_changed",
@@ -1179,54 +1181,93 @@ internal fun AgentConversationMessages(
                 scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
                 previousItemOffset = null
                 stableFrames = 0
-                lastItemOffset = null
                 rounds++
                 withFrameNanos { }
                 continue
             }
-
+            lastItemOffset = item.offset
             val rawFirstLineY = answerFirstLineWindowY
             val ownerMatched = answerFirstLineOwnerKey == key
-            lastFirstLineY = rawFirstLineY?.takeIf { ownerMatched }
-            lastItemOffset = item.offset
-            // 仅记录首行与旧目标的关系，绝不能据此再移动视口。
-            lastDelta = lastFirstLineY?.let { firstLineY -> firstLineY - target }
-
-            // 条目连续两帧保持同一位置，就说明结构落点已被布局采用。
-            // 不再交叉校验首行与 item.offset：两者还隔着条目内部上边距，
-            // 旧校验会把当前可用落点误判为测量无效，空转十轮后才退出。
-            if (previousItemOffset == item.offset) {
-                stableFrames++
-            } else {
-                previousItemOffset = item.offset
-                stableFrames = 1
+            val firstLineY = rawFirstLineY?.takeIf { ownerMatched }
+            if (firstLineY == null) {
+                // 首块不是文本块（代码/表格/引用）时量不到首行字顶，等够探测帧数就退回结构落点。
+                if (previousItemOffset == item.offset) {
+                    stableFrames++
+                } else {
+                    previousItemOffset = item.offset
+                    stableFrames = 1
+                }
+                if (stableFrames >= 2 && rounds >= SnapFirstLineProbeFrames) {
+                    ChatScrollDiag.snapExit(
+                        reason = "structural_stable",
+                        rounds = rounds,
+                        firstLineY = null,
+                        itemOffset = lastItemOffset,
+                        delta = null,
+                    )
+                    return true
+                }
+                rounds++
+                withFrameNanos { }
+                continue
             }
-            if (stableFrames >= 2) {
-                ChatScrollDiag.snapExit(
-                    reason = "structural_stable",
-                    rounds = rounds,
-                    firstLineY = lastFirstLineY,
-                    itemOffset = lastItemOffset,
-                    delta = lastDelta,
-                )
-                return true
-            }
-
+            lastFirstLineY = firstLineY
+            val delta = firstLineY - target
+            lastDelta = delta
             ChatScrollDiag.snapProbe(
-                label = "settling",
+                label = "first_line",
                 rounds = rounds,
                 rawFirstLineY = rawFirstLineY,
                 ownerMatched = ownerMatched,
                 itemOffset = item.offset,
             )
+            if (abs(delta) <= DockSnapPx) {
+                // 到线就一次对齐收口：整像素量化会让残差在 0/1px 之间反复，逐帧微调就是抽动。
+                if (abs(delta) >= 0.5f) {
+                    try {
+                        scrollState.scroll { scrollBy(delta) }
+                    } catch (cancelled: CancellationException) {
+                        if (!currentCoroutineContext().isActive) throw cancelled
+                    }
+                }
+                ChatScrollDiag.snapExit(
+                    reason = "first_line",
+                    rounds = rounds,
+                    firstLineY = lastFirstLineY,
+                    itemOffset = lastItemOffset,
+                    delta = delta,
+                )
+                return true
+            }
+            // 方向余量守卫：往目标方向已经没有可滚空间时不要发空 scroll，
+            // 否则边界上的回弹动画会被逐帧重启，屏幕上就是整段正文高频上下抽动。
+            if ((delta < 0f && !scrollState.canScrollBackward) ||
+                (delta > 0f && !scrollState.canScrollForward)
+            ) {
+                ChatScrollDiag.snapExit(
+                    reason = "no_room",
+                    rounds = rounds,
+                    firstLineY = lastFirstLineY,
+                    itemOffset = lastItemOffset,
+                    delta = delta,
+                )
+                return false
+            }
+            // 历史打开本身是瞬移：一次滚到位，不做缓出曲线（那会变成可见的上移动画）。
+            try {
+                scrollState.scroll { scrollBy(delta) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return true
+            }
             rounds++
             withFrameNanos { }
         }
 
-        // 即使排版仍在微调，也保留当前结构落点，不做首行补偿或回到底部。
+        // 帧预算耗尽：保留当前落点，既不回底部也不再跳一次。
         val reachedStructure = lastItemOffset != null
         ChatScrollDiag.snapExit(
-            reason = if (reachedStructure) "structural_timeout" else "item_missing",
+            reason = if (reachedStructure) "frame_budget" else "item_missing",
             rounds = rounds,
             firstLineY = lastFirstLineY,
             itemOffset = lastItemOffset,
@@ -2507,13 +2548,19 @@ internal const val KEYBOARD_LIFT_RESPONSE_SECONDS = 0.06f
 internal const val KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND = 2000f
 private const val BOTTOM_FOLLOW_MIN_STEP_PX = 0.5f
 private const val BOTTOM_FOLLOW_SNAP_DISTANCE_PX = 0.75f
-// 停靠后正文首行与顶栏底边的缝：必须远小于正文行距，看起来才是「贴着顶栏」。
-private val DockGap = 0.dp
+// 停靠后正文首行与顶栏底边的缝：0 就是贴死顶栏，这里按用户指定整体下移 15dp。
+// 落点 target、守卫门槛、历史落点三处共用它，改一处即全局一致。
+private val DockGap = 15.dp
 // 提前量：守卫比落点早这么多就冻结跟底，用来吃掉「一帧测量滞后 + 一帧跟底位移」。
 // 必须小于一个正文行高，否则矮正文会被误判成需要停靠。
 private val DockLookahead = 16.dp
 // 列表内容顶部内边距（顶栏高度之外的额外留白）。
 private val ChatTopContentPadding = 14.dp
+// 历史落点改成首行基准后的探测帧数（约 0.3 秒）：首块是代码/表格/引用时
+// 永远量不到首行字顶，等够这些帧就退回结构落点，不要一直挂在这里。
+private const val SnapFirstLineProbeFrames = 20
+// 首行闭环的总帧预算（约 1 秒）：历史打开本身是瞬移，够用即可。
+private const val SnapFirstLineFrameBudget = 60
 // 自己发的消息气泡在条目内部的上边距：回溯落点要把它吃掉，气泡才是「贴着顶栏」。
 private val UserBubbleTopInset = 8.dp
 // 停靠位移的时间常数（秒）：逐帧指数缓出，前段快、后段收敛，避免观感生硬或像瞬移。
