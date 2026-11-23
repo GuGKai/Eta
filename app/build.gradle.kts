@@ -178,8 +178,12 @@ dependencies {
     // Hook 侧用 XposedInterface.getRemotePreferences 读取当前进程持有的配置缓存。
     implementation(libs.libxposed.service)
     implementation(libs.dexkit)
-    implementation(libs.coui)
-    implementation(libs.coui.icons)
+    implementation(project(":coui"))
+    // coui-icons 会传递依赖 maven 版 io.github.itoseo:coui，与 vendor 的 :coui 模块
+    // 共用 namespace com.itos.coui 会让 manifest merger 直接报错，这里排掉传递依赖。
+    implementation(libs.coui.icons) {
+        exclude(group = "io.github.itoseo", module = "coui")
+    }
     implementation(libs.miuix.ui)
     implementation(libs.miuix.blur)
     implementation(libs.miuix.glass)

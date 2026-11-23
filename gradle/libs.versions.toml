@@ -6,7 +6,7 @@ ksp = "2.3.13"
 libxposedApi = "102.0.0"
 libxposedService = "102.0.0"
 dexkit = "2.3.0"
-coui = "0.0.1-alpha14"
+coui = "0.0.1-alpha16"
 miuix = "0.9.5-beta03"
 materialIcons = "1.7.8"
 androidx-navigationevent = "1.2.0"
@@ -71,6 +71,7 @@ robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
