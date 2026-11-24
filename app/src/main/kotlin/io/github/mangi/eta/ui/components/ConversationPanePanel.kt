@@ -21,6 +21,7 @@ import android.graphics.LinearGradient
 import android.graphics.Shader
 import android.graphics.BlendMode as AndroidBlendMode
 import android.graphics.RenderEffect as AndroidRenderEffect
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -176,6 +177,7 @@ import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import io.github.mangi.eta.ui.model.ConversationWorkspaceUi
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -253,6 +255,7 @@ internal fun ConversationPanePanel(
     width: Dp,
     listState: LazyListState,
     onSearchChange: (String) -> Unit,
+    onSubmitConversationSearch: (String) -> Unit = {},
     onConversationSelected: (String) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -283,7 +286,28 @@ internal fun ConversationPanePanel(
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
     val isSearching = query.isNotBlank()
+    // 第二阶段（全库正文扫描）在跑时，顶栏标题换成「正在搜索」；第一阶段与空闲时保持应用名。
+    val searchRunningTitle = if (state.isSearchRunning) {
+        stringResource(R.string.conversation_searching)
+    } else {
+        null
+    }
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    // 空槽位里的转圈先压住 150ms 再淡入：搜索一上来列表会从几百条骤减到空，
+    // LazyColumn 还要按旧偏移重排一帧，转圈立刻画会显得「先在老位置、下一帧往上跳」。
+    var searchProgressVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isSearchRunning) {
+        searchProgressVisible = false
+        if (!state.isSearchRunning) return@LaunchedEffect
+        delay(SearchProgressDelayMillis)
+        searchProgressVisible = true
+    }
+    // 没有会话可显示时那块区域当前该是哪种状态：三态共用同一个 item 与同一段交叉淡化。
+    val emptyPaneSlot = when {
+        !state.isSearchRunning -> EmptyPaneSlot.Message
+        searchProgressVisible -> EmptyPaneSlot.SearchProgress
+        else -> EmptyPaneSlot.Blank
+    }
     // 已归入工作区的会话在下方分组里不再出现第二次。
     val looseConversations = remember(state.conversations) {
         state.conversations.filter { it.workspaceId == null }
@@ -579,8 +603,24 @@ internal fun ConversationPanePanel(
                             val hasAnyConversation = looseConversations.isNotEmpty() ||
                                 state.workspaces.any { it.conversations.isNotEmpty() }
                             if (!hasAnyConversation) {
-                                item(key = "pane_empty_conversations") {
-                                    EmptyConversations(isSearching = isSearching)
+                                // 三态走同一个 item、同一个 key：状态切换只在槽位内部交叉淡化，
+                                // 换 key 会让整块 item 重建，位置就会跳一帧。
+                                item(key = "pane_empty_slot") {
+                                    Crossfade(
+                                        targetState = emptyPaneSlot,
+                                        animationSpec = tween(EmptyPaneSlotFadeMillis),
+                                        label = "pane-empty-slot",
+                                    ) { target ->
+                                        when (target) {
+                                            EmptyPaneSlot.SearchProgress -> PaneSearchProgress()
+                                            EmptyPaneSlot.Blank -> Spacer(
+                                                Modifier.height(EmptyPaneSlotHeight),
+                                            )
+                                            EmptyPaneSlot.Message -> EmptyConversations(
+                                                isSearching = isSearching,
+                                            )
+                                        }
+                                    }
                                 }
                             } else {
                                 groups.forEachIndexed { groupIndex, group ->
@@ -657,6 +697,7 @@ internal fun ConversationPanePanel(
                         couiBackdrop = couiBackdrop,
                         miuixBackdrop = miuixBackdrop,
                         paneBlurBackdrop = null,
+                        brandTitle = searchRunningTitle,
                         onNewConversation = {
                             // 当前选中的工作区跟着「新建会话」一起带下去，首条消息落库时直接归档。
                             onNewConversationWorkspace(
@@ -699,6 +740,7 @@ internal fun ConversationPanePanel(
                         couiBackdrop = couiBackdrop,
                         miuixBackdrop = miuixBackdrop,
                         onSearchChange = onSearchChange,
+                        onSubmitConversationSearch = onSubmitConversationSearch,
                         onOpenPermissions = onOpenPermissions,
                         onOpenSettings = onOpenSettings,
                     )
@@ -1927,6 +1969,52 @@ private fun ConversationHistoryRow(
     }
 }
 
+/**
+ * 全库正文扫描（第二阶段）进行中、列表还一条结果都没有时的转圈。
+ *
+ * 位置和「没有匹配的对话」空态里那个 44dp 图标卡完全重合：内边距、槽位高度都照抄 EmptyConversations，
+ * 只是把卡片图标换成转圈，所以搜索中→搜完无结果的切换不会跳位。
+ * 不写文字——顶栏标题这时已经写着「正在搜索」，重复一次只会显得啰嗦。
+ *//** 空槽位三态（空白占位 / 转圈 /「没有匹配的对话」）之间的交叉淡化时长。 */
+private const val EmptyPaneSlotFadeMillis = 200
+
+/**
+ * 转圈出现前的等待。
+ *
+ * 搜索一上来列表会从几百条骤减到空，LazyColumn 要先按旧偏移重排一帧才收回顶部；
+ * 转圈立刻画出来就会「先在老位置、下一帧往上跳」。等这一帧过去再淡入。
+ */
+private const val SearchProgressDelayMillis = 150L
+
+/** 延迟窗口里的占位高度，与转圈槽位一致（上下 36dp 内边距 + 44dp 槽位），避免高度抖动。 */
+private val EmptyPaneSlotHeight = 116.dp
+
+/** 没有会话可显示时，那块区域的三种状态。 */
+private enum class EmptyPaneSlot { Blank, SearchProgress, Message }
+
+/** 空态图标卡的槽位尺寸：搜索转圈复用同一尺寸，两种状态的位置完全重合。 */
+private val EmptyConversationBadgeSize = 44.dp
+
+@Composable
+private fun PaneSearchProgress() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = ConversationPanelMetrics.PaneHorizontalPadding + 12.dp,
+                vertical = ConversationPanelMetrics.EmptyVerticalPadding,
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier.size(EmptyConversationBadgeSize),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator()
+        }
+    }
+}
+
 @Composable
 private fun EmptyConversations(isSearching: Boolean) {
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
@@ -1949,7 +2037,7 @@ private fun EmptyConversations(isSearching: Boolean) {
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(EmptyConversationBadgeSize)
                 .then(
                     if (isCoui) {
                         Modifier

@@ -403,6 +403,7 @@ fun AgentAppRoot(
             onOpenConversationPane = { conversationPaneOpen = true },
             onDismissConversationPane = { conversationPaneOpen = false },
             onSearchConversations = { query -> agentState.updateSearchQuery(query) },
+            onSubmitConversationSearch = { query -> agentState.submitConversationSearch(query) },
             onNewConversation = { createConversation() },
             onNewConversationWorkspace = { workspaceId ->
                 agentState.setPendingNewConversationWorkspace(workspaceId)

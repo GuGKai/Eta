@@ -126,6 +126,8 @@ fun ConversationSidePaneScaffold(
     onOpen: () -> Unit,
     onDismiss: () -> Unit,
     onSearchChange: (String) -> Unit,
+    /** 键盘上的搜索键：这时才真的开始搜。 */
+    onSubmitConversationSearch: (String) -> Unit = {},
     onConversationSelected: (String) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -309,6 +311,7 @@ fun ConversationSidePaneScaffold(
                         onNewConversation = onNewConversation,
                         onNewConversationWorkspace = onNewConversationWorkspace,
                         onSearchChange = onSearchChange,
+                        onSubmitConversationSearch = onSubmitConversationSearch,
                         onConversationSelected = onConversationSelected,
                         onConversationTogglePin = onConversationTogglePin,
                         onConversationRename = onConversationRename,

@@ -217,6 +217,8 @@
   <string name="chat_round_cost">¥%1$s</string>
   <string name="conversation_empty">No conversations yet</string>
   <string name="conversation_no_results">No matching conversations</string>
+  <string name="conversation_searching">Searching</string>
+  <string name="conversation_search_failed">Search failed</string>
   <string name="conversation_rename_title">Rename conversation</string>
   <string name="conversation_rename_hint">Conversation name</string>
   <string name="conversation_delete_title">Delete conversation?</string>

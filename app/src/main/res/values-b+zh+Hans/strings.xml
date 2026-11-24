@@ -218,6 +218,8 @@
   <string name="chat_round_cost">¥%1$s</string>
   <string name="conversation_empty">还没有对话</string>
   <string name="conversation_no_results">没有匹配的对话</string>
+  <string name="conversation_searching">正在搜索</string>
+  <string name="conversation_search_failed">搜索失败</string>
   <string name="conversation_rename_title">重命名对话</string>
   <string name="conversation_rename_hint">对话名称</string>
   <string name="conversation_delete_title">删除对话？</string>
