@@ -131,9 +131,11 @@ import top.yukonga.miuix.kmp.glass.glassPopupAnchorContent
 import top.yukonga.miuix.kmp.glass.rememberGlassPopupAnchor
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Computer
+import top.yukonga.miuix.kmp.icon.glass.Filter
 import top.yukonga.miuix.kmp.icon.glass.GlobalVpn
 import top.yukonga.miuix.kmp.icon.glass.More
 import top.yukonga.miuix.kmp.icon.glass.NewMessage
+import top.yukonga.miuix.kmp.icon.glass.Schedule
 import top.yukonga.miuix.kmp.icon.glass.Sidebar
 import top.yukonga.miuix.kmp.icon.glass.VolumeOff
 import top.yukonga.miuix.kmp.icon.glass.VolumeUp
@@ -159,6 +161,7 @@ internal fun AgentAppShell(
     onOpenConversationPane: () -> Unit,
     onDismissConversationPane: () -> Unit,
     onSearchConversations: (String) -> Unit,
+    onSubmitConversationSearch: (String) -> Unit,
     onNewConversation: () -> Unit,
     onNewConversationWorkspace: (String?) -> Unit = {},
     onOpenTerminal: () -> Unit,
@@ -312,6 +315,8 @@ internal fun AgentAppShell(
                                 onNewConversation = onNewConversation,
                                 onOpenTerminal = onOpenTerminal,
                                 onOpenBrowser = onOpenBrowser,
+                                onOpenTasks = onOpenTasks,
+                                onOpenScheduledTasks = onOpenScheduledTasks,
                                 homeTitle = homeTitle,
                                 homeCharacter = homeCharacter,
                                 homeModelPickerState = homeModelPickerState,
@@ -351,6 +356,7 @@ internal fun AgentAppShell(
                 onOpen = onOpenConversationPane,
                 onDismiss = onDismissConversationPane,
                 onSearchChange = onSearchConversations,
+                onSubmitConversationSearch = onSubmitConversationSearch,
                 onNewConversation = onNewConversation,
                 onNewConversationWorkspace = onNewConversationWorkspace,
                 onConversationSelected = onSelectConversation,
@@ -493,6 +499,9 @@ private fun AgentTopBar(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    /** MIUIX 三点菜单里补上的两个入口：自动任务与定时任务。 */
+    onOpenTasks: () -> Unit,
+    onOpenScheduledTasks: () -> Unit,
     homeTitle: String?,
     homeCharacter: RoleplayChatUi?,
     homeModelPickerState: AgentModelPickerUiState?,
@@ -509,6 +518,8 @@ private fun AgentTopBar(
             onNewConversation = onNewConversation,
             onOpenTerminal = onOpenTerminal,
             onOpenBrowser = onOpenBrowser,
+            onOpenTasks = onOpenTasks,
+            onOpenScheduledTasks = onOpenScheduledTasks,
         ) {
             AgentTopBarChatHeader(
                 conversationTitle = homeTitle,
@@ -540,6 +551,8 @@ private fun HomeMiuixTopBar(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenTasks: () -> Unit,
+    onOpenScheduledTasks: () -> Unit,
     centerContent: @Composable () -> Unit,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -622,6 +635,8 @@ private fun HomeMiuixTopBar(
                     onNewConversation = onNewConversation,
                     onOpenTerminal = onOpenTerminal,
                     onOpenBrowser = onOpenBrowser,
+                    onOpenTasks = onOpenTasks,
+                    onOpenScheduledTasks = onOpenScheduledTasks,
                 )
             }
         },
@@ -649,6 +664,8 @@ private fun TopBarOverflowMenu(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenTasks: () -> Unit,
+    onOpenScheduledTasks: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     LaunchedEffect(isCurrentRoute) {
@@ -661,6 +678,8 @@ private fun TopBarOverflowMenu(
     val autoReadEnabled = speechSettings?.chatAutoSpeak == true
     val newConversationText = stringResource(R.string.action_new_conversation)
     val openBrowserText = stringResource(R.string.action_open_browser)
+    val openTasksText = stringResource(R.string.automation_title)
+    val openScheduledText = stringResource(R.string.route_scheduled_tasks)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
     )
@@ -707,6 +726,23 @@ private fun TopBarOverflowMenu(
                     onClick = {
                         showMenu = false
                         onNewConversation()
+                    },
+                )
+                // 自动任务、定时任务紧跟新建对话，和设置页的入口顺序一致。
+                GlassPopupItem(
+                    text = openTasksText,
+                    icon = MiuixIcons.Glass.Filter,
+                    onClick = {
+                        showMenu = false
+                        onOpenTasks()
+                    },
+                )
+                GlassPopupItem(
+                    text = openScheduledText,
+                    icon = MiuixIcons.Glass.Schedule,
+                    onClick = {
+                        showMenu = false
+                        onOpenScheduledTasks()
                     },
                 )
                 GlassPopupItem(

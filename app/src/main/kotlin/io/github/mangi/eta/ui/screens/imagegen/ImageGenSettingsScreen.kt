@@ -650,7 +650,8 @@ internal fun ImageGenSettingsScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .padding(horizontal = 12.dp)
+                            .padding(top = 6.dp, bottom = 12.dp),
                     ) {
                         SwitchPreference(
                             title = stringResource(R.string.imagegen_enable_title),
@@ -666,7 +667,8 @@ internal fun ImageGenSettingsScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
                     ) {
                         GlassDropdownPreference(
                             title = stringResource(R.string.imagegen_provider_channel),
@@ -712,7 +714,9 @@ internal fun ImageGenSettingsScreen(
                             text = stringResource(R.string.imagegen_linked_provider_footer, resolvedLink.name),
                             fontSize = 12.sp,
                             color = StatusSuccess,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .padding(horizontal = 20.dp)
+                                .padding(bottom = 12.dp),
                         )
                     }
                     capability.deprecationNotice?.let { notice ->
@@ -720,7 +724,9 @@ internal fun ImageGenSettingsScreen(
                             text = notice,
                             fontSize = 12.sp,
                             color = StatusWarning,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .padding(horizontal = 20.dp)
+                                .padding(bottom = 12.dp),
                         )
                     }
                 }
@@ -730,7 +736,8 @@ internal fun ImageGenSettingsScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
                     ) {
                         Column(
                             modifier = Modifier
@@ -882,7 +889,8 @@ internal fun ImageGenSettingsScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
                     ) {
                         GlassDropdownPreference(
                             title = stringResource(R.string.imagegen_default_aspect_ratio),
@@ -950,7 +958,8 @@ internal fun ImageGenSettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp)
+                            .padding(top = 4.dp, bottom = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         TextButton(
@@ -978,7 +987,8 @@ internal fun ImageGenSettingsScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
                     ) {
                         ArrowPreference(
                             title = stringResource(R.string.imagegen_open_gallery),

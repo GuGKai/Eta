@@ -436,28 +436,27 @@ internal fun ChatStatsPopoverPopup(
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
     val couiDark = CouiTheme.isDark
 
-    // COUI：不抢焦点，键盘保持打开。非焦点弹层收不到外部点击与返回键，所以自己补一层
-    // 应用内全屏遮罩 + BackHandler：点外面只关卡片，输入框的键盘始终不收起。
-    if (isCoui) {
-        BackHandler { onDismissRequest() }
-        EtaTopLayer {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = null,
-                        indication = null,
-                        onClick = onDismissRequest,
-                    ),
-            )
-        }
+    // 两种样式都不抢窗口焦点：键盘保持打开（MIUIX 原来 focusable = true，点一下就把键盘收走）。
+    // 非焦点弹层收不到外部点击与返回键，所以自己补一层应用内全屏遮罩 + BackHandler：
+    // 点外面只关卡片，输入框的键盘始终不收起。
+    BackHandler { onDismissRequest() }
+    EtaTopLayer {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    onClick = onDismissRequest,
+                ),
+        )
     }
     Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismissRequest,
         properties = PopupProperties(
-            focusable = !isCoui,
-            dismissOnClickOutside = !isCoui,
+            focusable = false,
+            dismissOnClickOutside = false,
         ),
     ) {
         val cardModifier = if (isCoui) {

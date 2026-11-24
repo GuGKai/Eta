@@ -1,9 +1,7 @@
 package io.github.mangi.eta.ui.components
 
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
@@ -54,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastRoundToInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigationevent.NavigationEventInfo
@@ -63,7 +62,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.app.LocalEtaTopLayer
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
-import kotlin.math.roundToInt
+import kotlin.math.PI
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -78,20 +77,45 @@ private object ConversationPaneMetrics {
     const val SettleStiffness = 146f
     const val SettleVisibilityThresholdPx = 0.5f
     const val SettlePositionThresholdFraction = 0.5f
-    /** 点击开/合的固定时长：侧栏一次打开或收起都由同一条曲线走完，不再有弹簧尾巴。 */
-    const val ClickDurationMillis = 400
+    /**
+     * 点击开/合的弹簧阻尼。玻璃弹窗用 0.8（约 1.5% 过冲），这里取临界阻尼：
+     * 侧栏位移在 [conversationPaneMotion] 里被钳在 [0, paneWidth]，过冲根本画不出来，
+     * 只会变成「提前到位→静止几十毫秒→内部回弹」，比无过冲更硬。
+     */
+    const val ClickDampingRatio = 1f
+    /** 打开借用玻璃弹窗位移进场的节奏（GlassMotion.arcPosition(entering = true)）。 */
+    const val OpenResponseSeconds = 0.22f
+    /** 收起借用玻璃弹窗位移退场的节奏（GlassMotion.arcPosition(entering = false)）。 */
+    const val CloseResponseSeconds = 0.35f
 }
 
 /**
- * 「点击」触发的侧栏开合动画，开与合共用。
- *
- * 原来走 spring：临界阻尼的指数尾巴让最后 1% 行程（约 12px）磨掉近 300ms，
- * 观感是「滑到一半停住、再突然贴齐」。这里换成有明确终点的贝塞尔缓出，
- * 400ms 到点即止；拖动松手后的 fling settle 仍走 spring，保留手指速度的承接。
+ * 与 miuix-glass 同一条 folme 弹簧公式：stiffness 由 response（固有周期，单位秒）反推。
+ * 对应 `top.yukonga.miuix.kmp.anim.MiuixEasingKt.folmeSpring`：stiffness = (2π / response)²。
  */
-private val ConversationPaneClickSpec: AnimationSpec<Float> = tween(
-    durationMillis = ConversationPaneMetrics.ClickDurationMillis,
-    easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f),
+private fun folmeStiffness(responseSeconds: Float): Float {
+    val omega = (2.0 * PI / responseSeconds).toFloat()
+    return omega * omega
+}
+
+/**
+ * 「点击」触发的侧栏开合：与设置页 MIUIX 玻璃弹窗同一族运动（弹簧），不再走固定时长 tween。
+ *
+ * - 打开 0.22s / 收起 0.35s，跟弹窗位移的进场、退场是同两组 response；
+ * - 收尾由弹簧自身的速度衰减给出，末端用 0.5px 的 visibilityThreshold 截断，
+ *   既不会像 400ms tween 那样「到点即止」，也不会退回旧 spring 那条几百毫秒的死尾巴；
+ * - 拖动松手后的 fling settle 仍走 [ConversationPaneMetrics.SettleStiffness]，保留手指速度的承接。
+ */
+private val ConversationPaneOpenSpec: AnimationSpec<Float> = spring(
+    dampingRatio = ConversationPaneMetrics.ClickDampingRatio,
+    stiffness = folmeStiffness(ConversationPaneMetrics.OpenResponseSeconds),
+    visibilityThreshold = ConversationPaneMetrics.SettleVisibilityThresholdPx,
+)
+
+private val ConversationPaneCloseSpec: AnimationSpec<Float> = spring(
+    dampingRatio = ConversationPaneMetrics.ClickDampingRatio,
+    stiffness = folmeStiffness(ConversationPaneMetrics.CloseResponseSeconds),
+    visibilityThreshold = ConversationPaneMetrics.SettleVisibilityThresholdPx,
 )
 
 @Composable
@@ -102,6 +126,8 @@ fun ConversationSidePaneScaffold(
     onOpen: () -> Unit,
     onDismiss: () -> Unit,
     onSearchChange: (String) -> Unit,
+    /** 键盘上的搜索键：这时才真的开始搜。 */
+    onSubmitConversationSearch: (String) -> Unit = {},
     onConversationSelected: (String) -> Unit,
     onConversationTogglePin: (ConversationSummaryUi) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -223,9 +249,12 @@ fun ConversationSidePaneScaffold(
             }
             val target = if (visible) ConversationPaneAnchor.Open else ConversationPaneAnchor.Closed
             if (paneDragState.targetValue != target || paneDragState.settledValue != target) {
-                // 点击触发的开与合都是静止起点，统一走固定时长曲线，400ms 到点即止；
+                // 点击开合走玻璃弹窗同族弹簧：进快出慢，尾巴由速度衰减收束，不再有硬终点。
                 // 拖动松手后的 fling settle 仍走 settleAnimation 的弹簧，保留速度承接。
-                paneDragState.animateTo(target, ConversationPaneClickSpec)
+                paneDragState.animateTo(
+                    target,
+                    if (visible) ConversationPaneOpenSpec else ConversationPaneCloseSpec,
+                )
             }
         }
 
@@ -282,6 +311,7 @@ fun ConversationSidePaneScaffold(
                         onNewConversation = onNewConversation,
                         onNewConversationWorkspace = onNewConversationWorkspace,
                         onSearchChange = onSearchChange,
+                        onSubmitConversationSearch = onSubmitConversationSearch,
                         onConversationSelected = onConversationSelected,
                         onConversationTogglePin = onConversationTogglePin,
                         onConversationRename = onConversationRename,
@@ -479,7 +509,7 @@ fun ConversationSidePaneScaffold(
                 },
             ) { measurables, constraints ->
                 val panel = measurables[0].measure(
-                    Constraints.fixed(paneWidthPx.roundToInt(), constraints.maxHeight),
+                    Constraints.fixed(paneWidthPx.fastRoundToInt(), constraints.maxHeight),
                 )
                 val page = measurables[1].measure(
                     Constraints.fixed(constraints.maxWidth, constraints.maxHeight),
@@ -487,7 +517,7 @@ fun ConversationSidePaneScaffold(
                 layout(constraints.maxWidth, constraints.maxHeight) {
                     // 物理左侧是会话区；不随 RTL 改变两个槽位的关系。
                     val motion = conversationPaneMotion(paneDragState.offset, paneWidthPx)
-                    val offset = motion.foregroundOffset.roundToInt()
+                    val offset = motion.foregroundOffset.fastRoundToInt()
                     panel.placeWithLayer(offset - panel.width, 0)
                     page.placeWithLayer(offset, 0)
                 }

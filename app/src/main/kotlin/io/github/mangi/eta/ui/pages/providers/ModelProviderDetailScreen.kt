@@ -263,13 +263,19 @@ internal fun ModelProviderDetailScreen(
             val modelsListState = rememberLazyListState()
             val configTopBarState = rememberTopAppBarState()
             val modelsTopBarState = rememberTopAppBarState()
+            val configScrollBehavior = MiuixScrollBehavior(state = configTopBarState)
+            val modelsScrollBehavior = MiuixScrollBehavior(state = modelsTopBarState)
             val activeListState = if (currentPage == 0) configListState else modelsListState
+            val scrollBehavior = if (currentPage == 0) configScrollBehavior else modelsScrollBehavior
             val isContentScrolled by remember(activeListState) {
                 derivedStateOf { activeListState.canScrollBackward }
             }
-            val scrollBehavior = MiuixScrollBehavior(
-                state = if (currentPage == 0) configTopBarState else modelsTopBarState,
-            )
+            val contentUnderTopBar by remember(activeListState, scrollBehavior) {
+                derivedStateOf {
+                    activeListState.canScrollBackward ||
+                        scrollBehavior.state.overscrollOffset < -1f
+                }
+            }
             MiuixScaffold(
                 title = title,
                 onBack = onBack,
@@ -286,7 +292,7 @@ internal fun ModelProviderDetailScreen(
                                 scope.launch { pagerState.springAnimateToPage(index) }
                             },
                             backdrop = backdrop ?: fallbackBackdrop,
-                            surfaceAlpha = if (backdrop != null) 1f else 0f,
+                            surfaceAlpha = if (backdrop != null && contentUnderTopBar) 1f else 0f,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = GlassTopAppBarDefaults.HorizontalPadding)
@@ -294,7 +300,7 @@ internal fun ModelProviderDetailScreen(
                         )
                     }
                 },
-            ) { paddingValues, activeScrollBehavior, sidePadding ->
+            ) { paddingValues, _, sidePadding ->
                 val topPadding = paddingValues.calculateTopPadding()
                 Box(
                     modifier = Modifier
@@ -308,7 +314,7 @@ internal fun ModelProviderDetailScreen(
                             onDraftChange = { configDraft = it },
                             scope = scope,
                             isNew = true,
-                            scrollBehavior = activeScrollBehavior,
+                            scrollBehavior = configScrollBehavior,
                             contentSidePadding = sidePadding,
                             contentTopPadding = topPadding,
                             listState = configListState,
@@ -330,7 +336,7 @@ internal fun ModelProviderDetailScreen(
                                     onDraftChange = { configDraft = it },
                                     scope = scope,
                                     isNew = false,
-                                    scrollBehavior = activeScrollBehavior,
+                                    scrollBehavior = configScrollBehavior,
                                     contentSidePadding = sidePadding,
                                     contentTopPadding = topPadding,
                                     listState = configListState,
@@ -340,7 +346,7 @@ internal fun ModelProviderDetailScreen(
                                 1 -> ProviderModelsTab(
                                     provider = initial,
                                     scope = scope,
-                                    scrollBehavior = activeScrollBehavior,
+                                    scrollBehavior = modelsScrollBehavior,
                                     contentSidePadding = sidePadding,
                                     contentTopPadding = topPadding,
                                     listState = modelsListState,

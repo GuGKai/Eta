@@ -81,6 +81,8 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
         val journal: List<AgentModelClient.ConversationMessage>,
         val isConversationLoaded: Boolean,
         val messageStartIndex: Int,
+        /** 未补全的会话不写后台存档，避免用空内容覆盖库里的完整转录。 */
+        val checkpointLoaded: Boolean = true,
         /** 最近一次模型用量；与其余元数据一样参与增量写入判定。 */
         val lastModelUsage: io.github.mangi.eta.ui.model.TokenUsageUi?,
     ) {
@@ -93,7 +95,7 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
             title, updatedAt, isPinned, state.reasoningEffort, state.appliedRuntimeRunIds,
             state.roleplay, if (state.roleplay == null) RoleplayMessageState() else state.roleplayMessages,
             state.modelId, state.messages, state.history, state.journal.ifEmpty { state.history },
-            state.isConversationLoaded, state.messageStartIndex,
+            state.isConversationLoaded, state.messageStartIndex, state.checkpointLoaded,
             lastModelUsage = state.lastModelUsage,
         )
 

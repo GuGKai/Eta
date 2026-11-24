@@ -91,6 +91,8 @@
     <string name="scheduled_editor_section_schedule">執行時間</string>
     <string name="scheduled_editor_trigger_time">觸發時間</string>
     <string name="scheduled_editor_interval_label">間隔週期</string>
+    <string name="scheduled_editor_hour_label">小時</string>
+    <string name="scheduled_editor_minute_label">分鐘</string>
     <string name="scheduled_editor_once_delay_label">從現在起延遲</string>
     <string name="scheduled_editor_cron_label">5 段 Cron 運算式（分 時 日 月 週）</string>
     <string name="scheduled_editor_schedule_preview">排程預覽</string>

@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.screens.tools
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -293,11 +294,11 @@ internal fun ToolSwitchRow(
                         color = MiuixTheme.colorScheme.onBackground,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
                     )
                     if (requirementText != null) {
                         Box(
                             modifier = Modifier
+                                .weight(1f, fill = false)
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.06f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
@@ -307,7 +308,8 @@ internal fun ToolSwitchRow(
                                 style = MiuixTheme.textStyles.footnote1.copy(fontSize = 11.sp),
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                softWrap = false,
+                                modifier = Modifier.basicMarquee(),
                             )
                         }
                     }

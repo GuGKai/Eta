@@ -48,15 +48,16 @@ import androidx.compose.material.icons.rounded.MapsUgc
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -158,6 +159,7 @@ import com.itos.coui.topappbar.CouiTopAppBarDefaults
 import com.itos.coui.topappbar.TopAppBarSurface
 import com.itos.coui.topappbar.TopAppBarButtonGroup
 import io.github.mangi.eta.R
+import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.app.LocalUiStyle
@@ -181,7 +183,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.NewMessage
 import top.yukonga.miuix.kmp.icon.glass.Search
 import top.yukonga.miuix.kmp.icon.glass.SecurityStatus
-import top.yukonga.miuix.kmp.icon.glass.SettingsOutline
+import top.yukonga.miuix.kmp.icon.glass.SettingsFill
 import top.yukonga.miuix.kmp.material.GlassDefaults
 import top.yukonga.miuix.kmp.material.GlassShadows
 import top.yukonga.miuix.kmp.material.GlassShape
@@ -326,21 +328,6 @@ private val EdgeStrokeWidthNone = 0.dp
 internal fun conversationPaneEdgeStrokeWidth(): Dp =
     if (conversationPaneEdgeStrokeColor().alpha > 0f) EdgeStrokeWidth else EdgeStrokeWidthNone
 
-/**
- * COUI 顶栏内部的子 backdrop（`LocalCouiToolbarBackdrop` 在源码里是 internal，只能反射拿一次）。
- *
- * 自己搭顶栏材质后需要它来手动 provide，让 `CouiTopAppBarIconButton` 这类只认该 local 的控件
- * 也能拿到同一层材质；取不到时按钮自动降级成实色圆钮。
- */
-private val CouiToolbarBackdropLocal: ProvidableCompositionLocal<CouiBackdrop?>? by lazy {
-    runCatching {
-        @Suppress("UNCHECKED_CAST")
-        Class.forName("com.itos.coui.topappbar.TopAppBarSurfaceKt")
-            .getMethod("getLocalCouiToolbarBackdrop")
-            .invoke(null) as? ProvidableCompositionLocal<CouiBackdrop?>
-    }.getOrNull()
-}
-
 @Composable
 internal fun ConversationPaneTopBar(
     containerColor: Color,
@@ -358,6 +345,8 @@ internal fun ConversationPaneTopBar(
      * 不能再自己 `rememberCouiBackdrop()`（独立采样会和顶栏互相顶掉，模糊失效）。
      */
     secondaryBar: (@Composable (CouiBackdrop?, LayerBackdrop?) -> Unit)? = null,
+    /** 品牌标题的临时替换文案：搜索第二阶段进行中传「正在搜索」，null 表示显示应用名。 */
+    brandTitle: String? = null,
 ) {
     val barContent: @Composable () -> Unit = {
         Row(
@@ -370,11 +359,11 @@ internal fun ConversationPaneTopBar(
                 .height(ConversationPanelMetrics.TopBarHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PaneBrandHeader(modifier = Modifier.weight(1f))
+            PaneBrandHeader(modifier = Modifier.weight(1f), title = brandTitle)
             NewConversationIconButton(
+                // COUI 风格下顶栏材质由 TopAppBarSurface 统一 provide，按钮直接走 COUI 实现。
                 hasCouiToolbarBackdrop = LocalUiStyle.current == AppearanceUiStyle.COUI &&
-                    couiBackdrop != null &&
-                    CouiToolbarBackdropLocal != null,
+                    couiBackdrop != null,
                 miuixBackdrop = miuixBackdrop,
                 onClick = onNewConversation,
             )
@@ -406,7 +395,7 @@ internal fun ConversationPaneTopBar(
                                 .padding(horizontal = ConversationPanelMetrics.PaneHorizontalPadding),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            PaneBrandHeader(Modifier.weight(1f))
+                            PaneBrandHeader(modifier = Modifier.weight(1f), title = brandTitle)
                             TopAppBarButtonGroup {
                                 CouiTopAppBarIconButton(
                                     icon = ChatActionIcons.NewChat,
@@ -473,7 +462,12 @@ internal fun ConversationPaneTopBar(
                         },
                     )
                     Box(modifier = Modifier.fillMaxWidth()) {
-                        barContent()
+                        Column(Modifier.fillMaxWidth()) {
+                            barContent()
+                            // MIUIX 也要渲染 chip 栏：布局与 COUI 一致，材质由 Miuix 组件自绘。
+                            // 放进前景 Column 后，上方 Layout 的模糊带高度会自动长到 chip 底部。
+                            secondaryBar?.invoke(null, null)
+                        }
                     }
                 },
             ) { measurables, constraints ->
@@ -496,7 +490,7 @@ internal fun ConversationPaneTopBar(
 }
 
 @Composable
-private fun PaneBrandHeader(modifier: Modifier = Modifier) {
+private fun PaneBrandHeader(modifier: Modifier = Modifier, title: String? = null) {
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
     val dark = if (isCoui) CouiTheme.isDark else MiuixTheme.colorScheme.surface.luminance() < 0.5f
     val accent = if (isCoui) CouiTheme.colorScheme.accent else MiuixTheme.colorScheme.primary
@@ -507,6 +501,14 @@ private fun PaneBrandHeader(modifier: Modifier = Modifier) {
                 lerp(accent, if (dark) Color.White else Color.Black, 0.12f),
             ),
         )
+    }
+    // 默认显示应用名；搜索第二阶段进行中时换成「正在搜索」。只换文字，圆形标记、字色、字重都不动，
+    // 切换直接硬切，不做渐变动画。
+    val brandText = title ?: stringResource(R.string.app_name)
+    val titleColor = if (isCoui) {
+        CouiPageDefaults.themeColors(dark).title
+    } else {
+        MiuixTheme.colorScheme.onSurface
     }
 
     Row(
@@ -524,18 +526,18 @@ private fun PaneBrandHeader(modifier: Modifier = Modifier) {
         Spacer(Modifier.width(10.dp))
         if (isCoui) {
             CouiText(
-                text = stringResource(R.string.app_name),
+                text = brandText,
                 kind = CouiTextKind.TopBar,
-                color = CouiPageDefaults.themeColors(dark).title,
+                color = titleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         } else {
             Text(
-                text = stringResource(R.string.app_name),
+                text = brandText,
                 style = MiuixTheme.textStyles.title3,
                 fontWeight = FontWeight.SemiBold,
-                color = MiuixTheme.colorScheme.onSurface,
+                color = titleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -637,6 +639,7 @@ internal fun ConversationPaneBottomDock(
     couiBackdrop: CouiBackdrop?,
     miuixBackdrop: LayerBackdrop?,
     onSearchChange: (String) -> Unit,
+    onSubmitConversationSearch: (String) -> Unit = {},
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -699,7 +702,23 @@ internal fun ConversationPaneBottomDock(
             runCatching { CouiFloatingRenderer.pair() }.isSuccess
     }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    // 输入框草稿：SearchBar 是受控组件，打字只更新这份草稿。
+    // 上层 updateSearchQuery 在文本非空时按设计不写 state（打字阶段不搜索），
+    // 如果直接把 query 当显示值，空串会把每敲的一个字立刻冲掉，表现为完全打不进字。
+    // 因此只有提交、清空、切会话等外部改变 query 的时刻才回写草稿。
+    var searchDraft by rememberSaveable { mutableStateOf(query) }
+    var dockSyncedQuery by rememberSaveable { mutableStateOf(query) }
+    // 搜索键每按一次自增一次，供「等落字后再提交」的 LaunchedEffect 触发。
+    var pendingSearchSubmit by remember { mutableIntStateOf(0) }
+    LaunchedEffect(query) {
+        if (dockSyncedQuery != query) {
+            dockSyncedQuery = query
+            if (searchDraft != query) searchDraft = query
+        }
+    }
     val searchState = rememberCouiSearchBarState(searchExpanded)
+    // 打字阶段一律不搜：只有键盘上的搜索键才触发，这是既定的交互约定。
+    val currentOnSubmitSearch by rememberUpdatedState(onSubmitConversationSearch)
     // COUI SearchBar 的材质层按矩形铺、不按胶囊裁剪，收起动画期间会在右侧按钮位置露出一块
     // 兜底底色（fallbackBackground）。把兜底底色设成全透明，那块矩形就不再可见；
     // 正常态胶囊由材质层自己绘制，不依赖这档颜色。
@@ -718,6 +737,8 @@ internal fun ConversationPaneBottomDock(
     LaunchedEffect(ConversationPaneSearchDock.dismissRequest) {
         if (ConversationPaneSearchDock.dismissRequest > 0 && searchExpanded) {
             searchExpanded = false
+            searchDraft = ""
+            dockSyncedQuery = ""
             onSearchChange("")
             keyboard?.hide()
             collapseSearch()
@@ -730,15 +751,13 @@ internal fun ConversationPaneBottomDock(
     }
     BackHandler(enabled = canUseCouiNativeSearchBar && searchExpanded) {
         searchExpanded = false
+        searchDraft = ""
+        dockSyncedQuery = ""
         onSearchChange("")
         keyboard?.hide()
     }
 
-    val permissionsDesc = if (hasPermissionAttention) {
-        stringResource(R.string.conversation_permission_attention)
-    } else {
-        stringResource(R.string.route_permissions)
-    }
+    // MIUIX：底栏只留搜索框与设置圆钮，权限健康入口按需求下线。
     val settingsDesc = stringResource(R.string.route_settings)
     val searchPlaceholder = stringResource(R.string.conversation_search_hint)
     val cancelText = stringResource(R.string.action_cancel)
@@ -785,11 +804,29 @@ internal fun ConversationPaneBottomDock(
                                         coordinates.boundsInWindow()
                                 },
                             state = searchState,
-                            query = query,
-                            onQueryChange = onSearchChange,
+                            query = searchDraft,
+                            onQueryChange = { next ->
+                                // 空串是取消搜索的触发器之一，落一条日志便于分辨谁在清空。
+                                if (next.isEmpty() && searchDraft.isNotEmpty()) {
+                                    AndroidAgentLogger.info(
+                                        "conversation-search draft cleared had=${searchDraft.length} " +
+                                            "expanded=$searchExpanded",
+                                    )
+                                }
+                                searchDraft = next
+                                // 非空时上层会忽略，这里主要是让清空立刻恢复列表。
+                                onSearchChange(next)
+                            },
                             onExpandedChange = { next ->
+                                AndroidAgentLogger.info(
+                                    "conversation-search expanded=$next draft=${searchDraft.length}",
+                                )
                                 searchExpanded = next
-                                if (!next) onSearchChange("")
+                                if (!next) {
+                                    searchDraft = ""
+                                    dockSyncedQuery = ""
+                                    onSearchChange("")
+                                }
                             },
                             placeholder = searchPlaceholder,
                             // COUI 的取消胶囊在收起动画里会把「取消」两字连同玻璃材质一起
@@ -809,8 +846,27 @@ internal fun ConversationPaneBottomDock(
                             // 侧栏底部 dock 没有滚动联动，固定喂 1，让投影与旁边的设置圆钮一致。
                             shadowProgress = 1f,
                             colors = searchBarColors,
-                            onSearch = { keyboard?.hide() },
+                            // 打字阶段不搜索，键盘搜索键是唯一入口：
+                            // 到这里才把草稿提交给上层，由它写 state 并扫描正文。
+                            onSearch = {
+                                // 不能在这里直接读 searchDraft：中文输入法的最后一段文本
+                                // 常常和「搜索」这个动作同一批送达，回调先跑、文本后落，
+                                // 结果就是搜「性能开销」实际只按「性能」去搜——少几个字就搜不到。
+                                // 先把提交排到下一拍，等受控状态把最后几个字收进来。
+                                keyboard?.hide()
+                                // 只记长度：用于分辨「IME 没走 Search 动作」与「落字晚了一步」。
+                                AndroidAgentLogger.info(
+                                    "conversation-search ime draft=${searchDraft.length}",
+                                )
+                                pendingSearchSubmit += 1
+                            },
                         )
+                        // 等输入法落字后再读 searchDraft 提交；60ms 足够跨过一帧重组。
+                        LaunchedEffect(pendingSearchSubmit) {
+                            if (pendingSearchSubmit == 0) return@LaunchedEffect
+                            delay(60)
+                            currentOnSubmitSearch(searchDraft)
+                        }
                         // 出现动画交给 COUI 材质本体（CouiFloatingSurface 的 alpha / scale），
                         // 不在 Row 上再套 graphicsLayer：外层 alpha 会让这一整棵子树走离屏合成，
                         // 节点矩形之外的投影和半影会被离屏缓冲裁成硬边方块——也就是之前
@@ -865,8 +921,7 @@ internal fun ConversationPaneBottomDock(
                 }
             } else {
                 val effectiveCouiBackdrop = activeCouiBackdrop
-                val permissionsIcon = if (isCoui) ConversationPaneIcons.Permissions else MiuixIcons.Glass.SecurityStatus
-                val settingsIcon = if (isCoui) ConversationPaneIcons.Settings else MiuixIcons.Glass.SettingsOutline
+                val settingsIcon = if (isCoui) ConversationPaneIcons.Settings else MiuixIcons.Glass.SettingsFill
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -875,18 +930,11 @@ internal fun ConversationPaneBottomDock(
                     PaneSearchCapsule(
                         query = query,
                         onSearchChange = onSearchChange,
+                        onSubmitSearch = onSubmitConversationSearch,
                         couiBackdrop = effectiveCouiBackdrop,
                         cancelText = cancelText,
                         miuixBackdrop = activeMiuixBackdrop,
                         modifier = Modifier.weight(1f),
-                    )
-                    PaneDockCircleButton(
-                        icon = permissionsIcon,
-                        contentDescription = permissionsDesc,
-                        showBadge = hasPermissionAttention,
-                        couiBackdrop = effectiveCouiBackdrop,
-                        miuixBackdrop = activeMiuixBackdrop,
-                        onClick = onOpenPermissions,
                     )
                     PaneDockCircleButton(
                         icon = settingsIcon,
@@ -909,6 +957,7 @@ private class PaneSearchSyncState(var lastSynced: String)
 private fun PaneSearchCapsule(
     query: String,
     onSearchChange: (String) -> Unit,
+    onSubmitSearch: (String) -> Unit = {},
     couiBackdrop: CouiBackdrop?,
     cancelText: String,
     miuixBackdrop: Backdrop?,
@@ -924,6 +973,7 @@ private fun PaneSearchCapsule(
     val textFieldState = rememberTextFieldState(initialText = query)
     val syncState = remember { PaneSearchSyncState(query) }
     val currentOnSearchChange by rememberUpdatedState(onSearchChange)
+    val currentOnSubmitSearch by rememberUpdatedState(onSubmitSearch)
 
     LaunchedEffect(query) {
         syncState.lastSynced = query
@@ -1028,6 +1078,10 @@ private fun PaneSearchCapsule(
                         cursorBrush = SolidColor(accentColor),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         onKeyboardAction = {
+                            // 打字一律不搜；只有这一下（键盘搜索键）才开始搜。
+                            val typed = textFieldState.text.toString()
+                            syncState.lastSynced = typed
+                            currentOnSubmitSearch(typed)
                             keyboard?.hide()
                             focusManager.clearFocus()
                         },

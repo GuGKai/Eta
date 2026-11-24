@@ -619,12 +619,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         postTerminalOverlay(
             run = run,
             result = outcome.result,
-            // 助理浮窗的任务可能已经没有入口浮层（用户关窗后后台续跑）：通知直接指向这轮会话。
-            replyConversationKey = run.request.handoff
-                ?.takeIf { it.source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE }
-                ?.payload
-                ?.let { payload -> AgentExternalArchivePayload.from(payload)?.conversationKey }
-                ?.takeIf(String::isNotBlank),
             completedContext = outcome.response?.let { completedResponse ->
                 outcome.completedRequest?.let { completedRequest ->
                     RuntimeRunRegistry.CompletedContext(
@@ -690,7 +684,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         run: RuntimeRunRegistry.Run,
         result: AgentRuntimeWire.RunResult,
         completedContext: RuntimeRunRegistry.CompletedContext? = null,
-        replyConversationKey: String? = null,
     ) {
         mainHandler.post {
             if (destroyed) return@post
@@ -698,7 +691,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             // 回复完成通知与窗口投影解耦：纯后台运行（本轮没接管手机、不是窗口投影对象）
             // 同样要提醒，否则用户离开界面后完全收不到结果。notifyReplyCompleted 内部
             // 已跳过「用户此刻能直接读到回复」的情形。
-            if (result.ok) notifyReplyCompleted(result.content, replyConversationKey)
+            // 定时任务例外：结果由 ScheduledTaskNotificationManager 按任务自身的投递模式通知，
+            // 这里再补一条「回复完成」就成了同一件事提醒两次。
+            if (result.ok && scheduledRunContext(run.request) == null) {
+                notifyReplyCompleted(result.content, replyConversationTarget(run.request))
+            }
             val guiState = guiControl.state.value
             if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
                 (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
@@ -742,10 +739,41 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     /**
-     * 回复完成后弹出的普通通知：走独立渠道，用户可在系统通知设置里配置是否响铃/震动。
-     * 带 [conversationKey]（助理浮窗的会话）时点击直接落在对应会话上。
+     * 回复完成后通知的落点。
+     *
+     * - 会话页发起的 run（[AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE]）：带会话 ID，点通知直达那轮对话；
+     * - 助理浮窗的会话：浮窗可能已经被收起，带浮窗会话 key 回去。
      */
-    private fun notifyReplyCompleted(content: String, conversationKey: String? = null) {
+    private data class ReplyConversationTarget(
+        val conversationId: String? = null,
+        val overlayConversationKey: String? = null,
+    )
+
+    private fun replyConversationTarget(request: AgentRuntimeWire.RunRequest): ReplyConversationTarget {
+        val handoff = request.handoff ?: return ReplyConversationTarget()
+        return when (handoff.source) {
+            AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE -> ReplyConversationTarget(
+                conversationId = AgentUiHandoffPayload.from(handoff.payload).conversationId
+                    .takeIf(String::isNotBlank),
+            )
+            AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE -> ReplyConversationTarget(
+                overlayConversationKey = AgentExternalArchivePayload.from(handoff.payload)
+                    ?.conversationKey
+                    ?.takeIf(String::isNotBlank),
+            )
+            else -> ReplyConversationTarget()
+        }
+    }
+
+    /**
+     * 回复完成后弹出的普通通知：走独立渠道，用户可在系统通知设置里配置是否响铃/震动。
+     *
+     * 点击落点与「需要你选择」通知一致：回到这一轮回复所在的会话，而不是只把 Eta 本体拉到前台。
+     */
+    private fun notifyReplyCompleted(
+        content: String,
+        target: ReplyConversationTarget = ReplyConversationTarget(),
+    ) {
         // 用户此刻能直接读到回复（Eta 本体界面，或语音唤醒的助理浮窗）时不发通知；
         // 只有浮窗已经收起、回答落在用户看不到的地方（关窗后台续跑）才提醒。
         if (AppForegroundState.hasVisibleSurface) return
@@ -761,12 +789,28 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 )
             }
             val body = MarkdownTextStripper.strip(content)
-            val openIntent = Intent(this, MainActivity::class.java).apply {
-                if (!conversationKey.isNullOrBlank()) {
-                    setAction(EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION)
-                    putExtra(EtaAssistantOverlayService.EXTRA_CONVERSATION_KEY, conversationKey)
+            // CLEAR_TOP + SINGLE_TOP 让已有界面走 onNewIntent 复用，避免叠出第二个会话页。
+            val openIntent = Intent(this, MainActivity::class.java)
+                .addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                )
+                .apply {
+                    when {
+                        target.conversationId != null -> {
+                            action = MainActivity.ACTION_OPEN_CONVERSATION_ID
+                            putExtra(MainActivity.EXTRA_CONVERSATION_ID, target.conversationId)
+                        }
+                        target.overlayConversationKey != null -> {
+                            action = EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION
+                            putExtra(
+                                EtaAssistantOverlayService.EXTRA_CONVERSATION_KEY,
+                                target.overlayConversationKey,
+                            )
+                        }
+                    }
                 }
-            }
             val open = PendingIntent.getActivity(
                 this,
                 0,
@@ -1259,15 +1303,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         return firstLine.take(12)
     }
 
-    private fun isSilentScheduledRun(request: AgentRuntimeWire.RunRequest): Boolean {
-        val handoff = request.handoff ?: return false
-        if (handoff.source != AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE) return false
-        val scheduled = AgentExternalArchivePayload.from(handoff.payload)
+    /** 定时任务运行（含「立即试跑」）的受控上下文；非定时任务返回 null。 */
+    private fun scheduledRunContext(request: AgentRuntimeWire.RunRequest): ScheduledTaskRunContext? {
+        val handoff = request.handoff ?: return null
+        if (handoff.source != AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE) return null
+        return AgentExternalArchivePayload.from(handoff.payload)
             ?.adapterPayload
             ?.let(ScheduledTaskRunContext::fromAdapterPayload)
-            ?: return false
-        return !scheduled.showRunningNotification
     }
+
+    private fun isSilentScheduledRun(request: AgentRuntimeWire.RunRequest): Boolean =
+        scheduledRunContext(request)?.showRunningNotification == false
 
     @SuppressLint("WakelockTimeout")
     private fun setKeepScreenOn(enabled: Boolean) {

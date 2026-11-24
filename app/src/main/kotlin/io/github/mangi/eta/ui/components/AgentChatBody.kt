@@ -103,6 +103,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastCoerceIn
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.layout.CouiPageDefaults
 import io.github.mangi.eta.ui.components.coui.CouiCircleIconButton
@@ -121,11 +122,11 @@ import io.github.mangi.eta.ui.model.branchMessageOutline
 import io.github.mangi.eta.ui.app.AgentConversationRevisionReducer
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.markdown.StreamingMarkdownStateCache
-import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
+import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
@@ -140,6 +141,7 @@ import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
@@ -241,10 +243,74 @@ internal fun AgentChatBody(
             message is AgentMessageUi && message.content.isBlank() && message.askCard == null
         }
     }
-    val initialScrollIndex = remember {
-        visibleMessages.toTimelineEntries().size + if (hasEarlierMessages) 1 else 0
+    // 首帧落点：落点条目和像素偏移都在列表创建之前算好，第一帧画出来就已经在
+    // 「正文首行字顶贴住顶栏底边 + DockGap」的位置上。
+    //
+    // 以前这里只给 index（列表末尾），第一帧先画在最底部，再由 snapAnswerToTop 逐帧
+    // 往上推着找首行字顶 —— 那是一个最多 60 帧、每帧一次 scrollToItem 的探测循环，
+    // 每帧都要重排一整屏，这就是「点开会话卡一下」的主因。
+    // 现在落点来自样式常量：条目内边距 + 首行字顶相对文本布局框的偏移，两者都跟内容无关。
+    val initialTimelineEntries = remember(visibleMessages) { visibleMessages.toTimelineEntries() }
+    val initialEarlierCount = if (hasEarlierMessages) 1 else 0
+    val firstDockKey = remember { (visibleMessages.lastOrNull() as? AgentMessageUi)?.id }
+    val initialDockContent = remember(firstDockKey, visibleMessages) {
+        firstDockKey
+            ?.let { id ->
+                (visibleMessages.firstOrNull { message -> message.id == id }) as? AgentMessageUi
+            }
+            ?.content
+            .orEmpty()
     }
-    val scrollState = rememberLazyListState(initialFirstVisibleItemIndex = initialScrollIndex)
+    // 首块是文字（段落/标题）才按条目 index 预定位：条目顶先放到目标线附近，
+    // 之后量一次首行真值、用一次 scrollBy 补齐残余。代码、表格、引用等首行量不到，
+    // 角色扮演的回答前面多一行角色名页眉，这两种都直接走老路径。
+    val initialDockIsText = remember(initialDockContent) { firstMarkdownBlockIsText(initialDockContent) }
+    val constantDockAvailable = initialDockIsText && LocalRoleplayChat.current == null
+    val layoutDensity = LocalDensity.current
+    val initialScrollPlan = remember(
+        firstDockKey,
+        initialTimelineEntries,
+        initialEarlierCount,
+        layoutDensity,
+        constantDockAvailable,
+    ) {
+        val dockIndex = firstDockKey
+            ?.let { id -> initialTimelineEntries.indexOfLast { entry -> entry.key == id } }
+            ?.takeIf { index -> index >= 0 }
+        if (dockIndex == null || !constantDockAvailable) {
+            (initialTimelineEntries.size + initialEarlierCount) to 0
+        } else {
+            // 只做粗定位：条目顶先抬到「目标线 - 条目内边距 - 首行字顶」，
+            // 首帧就应该贴住目标线；万一字体倍率变了没贴住，才用一次 scrollBy 补。
+            val dockGapPx = with(layoutDensity) { DockGap.roundToPx() }
+            val topPadPx = with(layoutDensity) { ChatTopContentPadding.roundToPx() }
+            val inkTopPx = with(layoutDensity) { LandingInkTopEstimate.roundToPx() }
+            // 条目顶距视口顶 = contentPadding.top - offset，所以目标偏移是
+            // 「顶部留白 + 首行墨迹 - 缝」。以前这里还多减了一个 AnswerBodyTopInset，
+            // 又把 inkTop 估成 9dp，算出来 64，跟实测 42 差 22px —— 落点偏上的真正来源。
+            val offset = (topPadPx + inkTopPx - dockGapPx).coerceAtLeast(0)
+            (dockIndex + initialEarlierCount) to offset
+        }
+    }
+    val scrollState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialScrollPlan.first,
+        initialFirstVisibleItemScrollOffset = initialScrollPlan.second,
+    )
+    // 诊断：首帧落点是怎么算出来的（条目数/是否预定位），出问题只看这一行就够。
+    // 属于「点开历史会话」这一路的诊断，随 ChatScrollDiag.HISTORY_DIAG 一起开关。
+    LaunchedEffect(initialScrollPlan, firstDockKey, constantDockAvailable) {
+        if (!ChatScrollDiag.HISTORY_DIAG) return@LaunchedEffect
+        ChatScrollDiag.event(
+            "DOCK_PLAN",
+            "key=" + firstDockKey +
+                " text=" + initialDockIsText +
+                " const=" + constantDockAvailable +
+                " idx=" + initialScrollPlan.first +
+                " off=" + initialScrollPlan.second +
+                " items=" + initialTimelineEntries.size +
+                " earlier=" + initialEarlierCount,
+        )
+    }
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
     val imeBottomPx = WindowInsets.ime.getBottom(density)
@@ -295,6 +361,7 @@ internal fun AgentChatBody(
             visibleMessages = visibleMessages,
             hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
             scrollState = scrollState,
+            initialDockKey = firstDockKey.takeIf { constantDockAvailable },
             input = input,
             isCompacting = isCompacting,
             isBranching = isBranching,
@@ -375,6 +442,8 @@ private fun AgentChatScaffold(
     visibleMessages: List<AgentChatMessageUi>,
     hasMessages: Boolean,
     scrollState: LazyListState,
+    /** 首帧初值已经把这轮回答放到落点上时传它的 key：下游不用再逐帧探测首行位置。 */
+    initialDockKey: String? = null,
     input: String,
     isCompacting: Boolean,
     isBranching: Boolean,
@@ -513,6 +582,7 @@ private fun AgentChatScaffold(
                     isStreaming = isStreaming,
                     topInset = topInset,
                     bottomInset = bottomPadding,
+                    initialDockKey = initialDockKey,
                     overlayTopPx = chatOverlayTopPx,
                     keepBottomAnchored = keepBottomAnchored,
                     onBottomAnchorChanged = onBottomAnchorChanged,
@@ -551,6 +621,8 @@ internal fun AgentConversationMessages(
     isStreaming: Boolean,
     bottomInset: Dp,
     topInset: Dp = 0.dp,
+    /** 首帧初值已经把这轮回答放到落点上时传它的 key：此时不必再逐帧探测首行位置。 */
+    initialDockKey: String? = null,
     /** 主输入框浮层顶边（窗口坐标 px）；不接线时列表内控件不做任何抬升。 */
     overlayTopPx: State<Float>? = null,
     keepBottomAnchored: Boolean,
@@ -710,6 +782,11 @@ internal fun AgentConversationMessages(
     val chatTopPaddingPx = with(density) { ChatTopContentPadding.roundToPx() }
     // 首行与顶栏底边之间只留这么点缝：必须远小于正文行距，看起来才是「贴着顶栏」。
     val dockGapPx = with(density) { DockGap.roundToPx() }
+    // 首行墨迹上沿距条目顶的实测像素（见 LandingInkTopEstimate 注释）。
+    val landingInkTopPx = with(density) { LandingInkTopEstimate.roundToPx() }
+    // 历史会话落点用的滚动偏移：条目顶距视口顶 = contentPadding.top - offset。
+    // 把「顶部留白 + 首行墨迹」抵掉再让出 DockGap，首行就正好落在顶栏下沿。
+    val historyDockOffsetPx = (chatTopPaddingPx + landingInkTopPx - dockGapPx).coerceAtLeast(0)
     // 守卫的提前量（px）：首行进到这个范围就冻结跟底，再交给停靠闭环慢慢收到落点。
     val dockLookaheadPx = with(density) { DockLookahead.roundToPx() }
     // 看门狗的偏离容差：必须远大于像素舍入与行高留白的正常波动，否则就成了逐帧微调。
@@ -812,6 +889,9 @@ internal fun AgentConversationMessages(
     // 上面这个测量值属于哪一条：换轮之后旧值必须作废，否则会拿上一轮的首行位置误判。
     var answerFirstLineOwnerKey by remember { mutableStateOf<String?>(null) }
     val latestTimelineEntries by rememberUpdatedState(timelineEntries)
+    // 顶栏高度：打开会话后 240ms 内它自己会收缩 14dp，落点要按「当下这一帧」的值算，
+    // 不能捕获 effect 启动时的旧值，否则每帧都在追一个已经过时的目标线。
+    val latestTopInsetPx by rememberUpdatedState(topInsetPx)
     val latestIsStreaming by rememberUpdatedState(isStreaming)
     val streamingAnswerId = tailMessage
         ?.takeIf { message -> message.content.isNotBlank() }
@@ -860,7 +940,7 @@ internal fun AgentConversationMessages(
         val index = historyDockItemIndex
         if (index != null && historyDockRequested[0] != index) {
             historyDockRequested[0] = index
-            scrollState.requestScrollToItem(index, scrollOffset = chatTopPaddingPx)
+            scrollState.requestScrollToItem(index, scrollOffset = historyDockOffsetPx)
         }
     }
 
@@ -1113,7 +1193,8 @@ internal fun AgentConversationMessages(
     // 这样看着是「气泡紧贴顶栏」，而不是气泡上方还留一道空白。
     suspend fun snapUserMessageToTop(itemIndex: Int) {
         val bubbleInsetPx = with(density) { UserBubbleTopInset.roundToPx() }
-        val structuralOffset = (chatTopPaddingPx - dockGapPx - bubbleInsetPx).coerceAtLeast(0)
+        // 气泡贴顶栏是固定语义，不跟随正文停靠的 DockGap：正文首行下移多少都不影响这里。
+        val structuralOffset = (chatTopPaddingPx - bubbleInsetPx).coerceAtLeast(0)
         // 用 scrollToItem 直接落位：远距离回溯时不给动画，避免一长串滚动过程。
         scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
     }
@@ -1137,8 +1218,9 @@ internal fun AgentConversationMessages(
         snapUserMessageToTop(target.second)
     }
 
-    // 历史会话打开时的落点：沿用当前结构对齐位置，不再按首行实测二次补偿。
-    // 用户已确认这个视觉落点合适；这里只把「条目位置稳定」作为成功判据。
+    // 历史会话打开时的落点：与流式停靠共用「正文首行字顶」这一个基准。
+    // 结构对齐（条目顶贴顶栏）只当首帧初跳：条目内边距与行高留白不参与落点计算。
+    // 以前只对齐条目顶边，历史会话的首行就总比流式停靠低十几 dp，两处必须是同一个物理位置。
     suspend fun snapAnswerToTop(key: String, itemIndex: Int): Boolean {
         val target = topInsetPx + dockGapPx
         // 列表顶部留白（顶栏高度 + ChatTopContentPadding）正好被吃掉时，条目顶就落在顶栏底边上。
@@ -1146,7 +1228,7 @@ internal fun AgentConversationMessages(
         // 必须用 scrollToItem：requestScrollToItem 只是登记请求，等下一次测量才采用，
         // 中间那几帧列表还停在原处，随后再被拉正，看上去就是「往上抽一下」。
         scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
-        // 等这一跳被布局采用；首行测量只用于诊断，不参与落点判定。
+        // 等这一跳被布局采用；首行测量要等条目内部完成排版才会回报，后面逐帧等。
         repeat(2) { withFrameNanos { } }
         var rounds = 0
         var previousItemOffset: Int? = null
@@ -1154,7 +1236,7 @@ internal fun AgentConversationMessages(
         var lastFirstLineY: Float? = null
         var lastItemOffset: Int? = null
         var lastDelta: Float? = null
-        while (rounds < 10 && currentCoroutineContext().isActive) {
+        while (rounds < SnapFirstLineFrameBudget && currentCoroutineContext().isActive) {
             if (isUserDragging || latestTimelineEntries.lastOrNull()?.key != key) {
                 ChatScrollDiag.snapExit(
                     reason = if (isUserDragging) "dragging" else "tail_changed",
@@ -1178,54 +1260,93 @@ internal fun AgentConversationMessages(
                 scrollState.scrollToItem(itemIndex, scrollOffset = structuralOffset)
                 previousItemOffset = null
                 stableFrames = 0
-                lastItemOffset = null
                 rounds++
                 withFrameNanos { }
                 continue
             }
-
+            lastItemOffset = item.offset
             val rawFirstLineY = answerFirstLineWindowY
             val ownerMatched = answerFirstLineOwnerKey == key
-            lastFirstLineY = rawFirstLineY?.takeIf { ownerMatched }
-            lastItemOffset = item.offset
-            // 仅记录首行与旧目标的关系，绝不能据此再移动视口。
-            lastDelta = lastFirstLineY?.let { firstLineY -> firstLineY - target }
-
-            // 条目连续两帧保持同一位置，就说明结构落点已被布局采用。
-            // 不再交叉校验首行与 item.offset：两者还隔着条目内部上边距，
-            // 旧校验会把当前可用落点误判为测量无效，空转十轮后才退出。
-            if (previousItemOffset == item.offset) {
-                stableFrames++
-            } else {
-                previousItemOffset = item.offset
-                stableFrames = 1
+            val firstLineY = rawFirstLineY?.takeIf { ownerMatched }
+            if (firstLineY == null) {
+                // 首块不是文本块（代码/表格/引用）时量不到首行字顶，等够探测帧数就退回结构落点。
+                if (previousItemOffset == item.offset) {
+                    stableFrames++
+                } else {
+                    previousItemOffset = item.offset
+                    stableFrames = 1
+                }
+                if (stableFrames >= 2 && rounds >= SnapFirstLineProbeFrames) {
+                    ChatScrollDiag.snapExit(
+                        reason = "structural_stable",
+                        rounds = rounds,
+                        firstLineY = null,
+                        itemOffset = lastItemOffset,
+                        delta = null,
+                    )
+                    return true
+                }
+                rounds++
+                withFrameNanos { }
+                continue
             }
-            if (stableFrames >= 2) {
-                ChatScrollDiag.snapExit(
-                    reason = "structural_stable",
-                    rounds = rounds,
-                    firstLineY = lastFirstLineY,
-                    itemOffset = lastItemOffset,
-                    delta = lastDelta,
-                )
-                return true
-            }
-
+            lastFirstLineY = firstLineY
+            val delta = firstLineY - target
+            lastDelta = delta
             ChatScrollDiag.snapProbe(
-                label = "settling",
+                label = "first_line",
                 rounds = rounds,
                 rawFirstLineY = rawFirstLineY,
                 ownerMatched = ownerMatched,
                 itemOffset = item.offset,
             )
+            if (abs(delta) <= DockSnapPx) {
+                // 到线就一次对齐收口：整像素量化会让残差在 0/1px 之间反复，逐帧微调就是抽动。
+                if (abs(delta) >= 0.5f) {
+                    try {
+                        scrollState.scroll { scrollBy(delta) }
+                    } catch (cancelled: CancellationException) {
+                        if (!currentCoroutineContext().isActive) throw cancelled
+                    }
+                }
+                ChatScrollDiag.snapExit(
+                    reason = "first_line",
+                    rounds = rounds,
+                    firstLineY = lastFirstLineY,
+                    itemOffset = lastItemOffset,
+                    delta = delta,
+                )
+                return true
+            }
+            // 方向余量守卫：往目标方向已经没有可滚空间时不要发空 scroll，
+            // 否则边界上的回弹动画会被逐帧重启，屏幕上就是整段正文高频上下抽动。
+            if ((delta < 0f && !scrollState.canScrollBackward) ||
+                (delta > 0f && !scrollState.canScrollForward)
+            ) {
+                ChatScrollDiag.snapExit(
+                    reason = "no_room",
+                    rounds = rounds,
+                    firstLineY = lastFirstLineY,
+                    itemOffset = lastItemOffset,
+                    delta = delta,
+                )
+                return false
+            }
+            // 历史打开本身是瞬移：一次滚到位，不做缓出曲线（那会变成可见的上移动画）。
+            try {
+                scrollState.scroll { scrollBy(delta) }
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                return true
+            }
             rounds++
             withFrameNanos { }
         }
 
-        // 即使排版仍在微调，也保留当前结构落点，不做首行补偿或回到底部。
+        // 帧预算耗尽：保留当前落点，既不回底部也不再跳一次。
         val reachedStructure = lastItemOffset != null
         ChatScrollDiag.snapExit(
-            reason = if (reachedStructure) "structural_timeout" else "item_missing",
+            reason = if (reachedStructure) "frame_budget" else "item_missing",
             rounds = rounds,
             firstLineY = lastFirstLineY,
             itemOffset = lastItemOffset,
@@ -1319,8 +1440,34 @@ internal fun AgentConversationMessages(
             streaming = isStreaming,
             topInsetPx = topInsetPx,
             targetY = topInsetPx + dockGapPx,
+            detail = "dockKey=" + initialDockKey +
+                " planIdx=" + scrollState.firstVisibleItemIndex +
+                " planOff=" + scrollState.firstVisibleItemScrollOffset +
+                " itemIdx=" + itemIndex +
+                " visible=" + scrollState.layoutInfo.visibleItemsInfo.size,
         )
         if (!isStreaming) {
+            // 首帧初值已经把这条回答放到落点上：等两帧拿到首行实测量，偏差在容差内就直接收工。
+            // 以前这里无条件跑 20~60 帧逐帧探测（每帧一次 scrollToItem + 整屏重排），
+            // 那正是「点开会话卡一下」的开销；现在只有常量算偏时才回落到探测。
+            if (initialDockKey != null && initialDockKey == answerId) {
+                // 打开历史会话时不做任何滚动干预，停在列表自己的位置（底部）。
+                // 实测为什么必须这样：
+                //   1) 首帧的 LazyList 会忽略 initialFirstVisibleItemScrollOffset —— off 报 42，
+                //      实际渲染在 y=478（底部），首帧初值这条路走不通；
+                //   2) 任何事后修正都会过冲：答案首行的回调值滞后一帧，修 50px 实际动 81px；
+                //   3) 逐帧跟随把 1) 2) 一起放大，实测 14 帧里 478→397→418→421→425→426 地抖。
+                // 收益（首行贴顶栏）远小于代价（每次打开都抖），所以关掉，需要时用户自己滑一下。
+                ChatScrollDiag.event(
+                    "DOCK_SKIP",
+                    "reason=no_scroll_policy itemIndex=" + itemIndex,
+                )
+                finalAnswerAnchored = false
+                finalAnswerHandledId = answerId
+                ChatScrollDiag.snapResult(false, itemIndex)
+                ChatScrollDiag.endRound(answerId, "history_no_scroll")
+                return@LaunchedEffect
+            }
             // 历史会话：打开就该停在「首行贴顶栏」的位置，不要先停在底部、再当面上移一次。
             // 所以这里跳过守卫和缓出曲线，直接把视口跳到落点（没有可见的上移动画）。
             // 两种情况都算处理完：true = 停靠到位并冻结跟底；false = 落点不可达/被用户打断，
@@ -1883,7 +2030,7 @@ internal fun AgentConversationMessages(
             val elapsedSeconds = if (previousFrameNanos == 0L) {
                 1f / 60f
             } else {
-                ((frameNanos - previousFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                ((frameNanos - previousFrameNanos) / 1_000_000_000f).fastCoerceIn(0f, 0.05f)
             }
             previousFrameNanos = frameNanos
 
@@ -2506,13 +2653,55 @@ internal const val KEYBOARD_LIFT_RESPONSE_SECONDS = 0.06f
 internal const val KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND = 2000f
 private const val BOTTOM_FOLLOW_MIN_STEP_PX = 0.5f
 private const val BOTTOM_FOLLOW_SNAP_DISTANCE_PX = 0.75f
-// 停靠后正文首行与顶栏底边的缝：必须远小于正文行距，看起来才是「贴着顶栏」。
-private val DockGap = 0.dp
+// 停靠后正文首行与顶栏底边的缝：0 就是贴死顶栏，这里按用户指定整体下移 15dp。
+// 落点 target、守卫门槛、历史落点三处共用它，改一处即全局一致。
+private val DockGap = 15.dp
 // 提前量：守卫比落点早这么多就冻结跟底，用来吃掉「一帧测量滞后 + 一帧跟底位移」。
 // 必须小于一个正文行高，否则矮正文会被误判成需要停靠。
 private val DockLookahead = 16.dp
 // 列表内容顶部内边距（顶栏高度之外的额外留白）。
 private val ChatTopContentPadding = 14.dp
+// 回答条目自身的上下内边距：与 ChatMessageItem 里回答列的 padding(vertical = 8.dp) 必须一致，
+// 历史会话首帧落点用它把「条目顶」换算成「首行文本顶」。
+private val AnswerBodyTopInset = 8.dp
+// （落点容差已并入 DOCK_FOLLOW 的逐帧闭环：|delta| <= 1px 即视为贴住，不再需要单独的常量。）
+// 首行字顶的经验值（dp）：条目顶到首行墨迹上沿。实测在 15 次打开里稳定为 9dp
+// （20sp 标题与 16sp 正文同值），把它算进首帧落点，第一帧就贴住目标线，
+// 一次 scrollBy 都不用做——滚动修正本身是一次可见位移，能省则省。
+// 首行字顶到条目顶的距离（dp）。以前写的 9dp 是估的，20261123 的日志反算出来不对：
+// off=56 时首行稳定在 414、目标 428，差 14px，说明实际约 11.5dp。落点整体偏上就是这个少吃掉的 14px。
+private val LandingInkTopEstimate = 11.5.dp
+
+/**
+ * 首个 markdown 块的「首行」是不是文字：段落和标题算文字，能靠条目 index 预定位；
+ * 代码块、表格、引用、图片、公式、列表的首行各有固定版式（有的根本不是文字），
+ * 预定位不成立，直接走原来的逐帧探测。
+ */
+private fun firstMarkdownBlockIsText(content: String): Boolean {
+    val text = content.trimStart()
+    if (text.isEmpty()) return false
+    if (text.startsWith("#")) {
+        val level = text.takeWhile { it == '#' }.length
+        // ATX 标题最多 6 级，且 # 之后必须是空格或行尾；否则只是段落里的普通 #。
+        val next = text.getOrNull(level)
+        return level in 1..6 && (next == null || next == ' ' || next == '\t')
+    }
+    return when {
+        text.startsWith("```") -> false
+        text.startsWith("|") -> false
+        text.startsWith(">") -> false
+        text.startsWith("![") -> false
+        text.startsWith("$$") -> false
+        text.startsWith("- ") || text.startsWith("* ") || text.startsWith("+ ") -> false
+        Regex("^\\d+\\.\\s").containsMatchIn(text) -> false
+        else -> true
+    }
+}
+// 历史落点改成首行基准后的探测帧数（约 0.3 秒）：首块是代码/表格/引用时
+// 永远量不到首行字顶，等够这些帧就退回结构落点，不要一直挂在这里。
+private const val SnapFirstLineProbeFrames = 20
+// 首行闭环的总帧预算（约 1 秒）：历史打开本身是瞬移，够用即可。
+private const val SnapFirstLineFrameBudget = 60
 // 自己发的消息气泡在条目内部的上边距：回溯落点要把它吃掉，气泡才是「贴着顶栏」。
 private val UserBubbleTopInset = 8.dp
 // 停靠位移的时间常数（秒）：逐帧指数缓出，前段快、后段收敛，避免观感生硬或像瞬移。

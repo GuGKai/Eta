@@ -124,7 +124,15 @@ class AgentAppStateConversationLoadingTest {
         seed("first" to conversation("first"), "second" to conversation("second", count = 150))
         val state = AgentAppState(context, scope)
 
+        // 打字不搜索：列表原样不动，一个字都不触发。
         state.updateSearchQuery("second-message-0-end")
+        assertEquals(
+            setOf("first", "second"),
+            state.conversationPaneState.conversations.map { it.id }.toSet(),
+        )
+
+        // 按搜索键（提交）才真的扫全库正文，窗口外的消息也能定位到所属会话。
+        state.submitConversationSearch("second-message-0-end")
         awaitCondition { state.conversationPaneState.conversations.map { it.id } == listOf("second") }
         assertEquals("first", state.conversationPaneState.selectedConversationId)
 

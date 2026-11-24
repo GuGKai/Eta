@@ -110,11 +110,15 @@ internal fun EtaChoiceChip(
         }
         AppearanceUiStyle.MIUIX -> {
             val isDark = MiuixTheme.colorScheme.background.luminance() < 0.5f
+            // 选中底色按「中等加深」定档：暗色 48% 的偏移感刚好，白字在它上面清楚；
+            // 亮色若同样停在三分之一左右，白字会落在近白的浅蓝上读不出来，
+            // 所以亮色取更实的 92%，保证白字对比。
+            val selectedAlpha = if (isDark) 0.48f else 0.92f
             val container by animateColorAsState(
                 targetValue = if (selected) {
-                    MiuixTheme.colorScheme.primary.copy(alpha = if (isDark) 0.22f else 0.12f)
+                    MiuixTheme.colorScheme.primary.copy(alpha = selectedAlpha)
                 } else {
-                    MiuixTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.09f else 0.059f)
+                    MiuixTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.20f else 0.16f)
                 },
                 animationSpec = tween(durationMillis = 160),
                 label = "choice_chip_container",
@@ -122,7 +126,8 @@ internal fun EtaChoiceChip(
             val content by animateColorAsState(
                 targetValue = when {
                     !enabled -> MiuixTheme.colorScheme.disabledOnSecondaryVariant
-                    selected -> MiuixTheme.colorScheme.primary
+                    // 选中态文字统一走白字，和实心主题色胶囊配套。
+                    selected -> Color.White
                     else -> MiuixTheme.colorScheme.onSurfaceSecondary
                 },
                 animationSpec = tween(durationMillis = 160),

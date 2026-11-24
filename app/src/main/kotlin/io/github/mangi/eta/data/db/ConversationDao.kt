@@ -151,6 +151,36 @@ internal interface ConversationDao : ChunkedTextDao {
         "FROM conversation_messages ORDER BY conversation_id, sort_index")
     fun messageSearchCursor(): Cursor
 
+    /**
+     * 全库正文搜索的粗筛：字符串比较交给 SQLite 的 C 层一次扫完。
+     *
+     * 之前用 [messageSearchCursor] 逐行在 Kotlin 里建流比较，12 万条消息光缓冲区
+     * 分配就要十几秒（实测 9.6 秒还没扫完），期间用户看到的是「搜了没反应」。
+     * lower() 只折叠 ASCII，中文不受影响，和原来的 ignoreCase 语义一致。
+     */
+    @Query(
+        "SELECT DISTINCT conversation_id FROM conversation_messages WHERE " +
+            "(type IN ('user','assistant','thinking','tool') AND instr(lower(content), lower(:query)) > 0) " +
+            "OR (type = 'tool' AND (instr(lower(tool_name), lower(:query)) > 0 " +
+            "OR instr(lower(arguments_summary), lower(:query)) > 0 " +
+            "OR instr(lower(result_summary), lower(:query)) > 0)) " +
+            "OR (type = 'system_notice' AND instr(lower(result_summary), lower(:query)) > 0) " +
+            "OR (type = 'tool_summary' AND instr(lower(tools_json), lower(:query)) > 0)"
+    )
+    suspend fun searchConversationIdsByText(query: String): List<String>
+
+    /**
+     * 正文被分块存进 agent_text_chunks 的消息：content 列只有 [ChunkedTextDao.REFERENCE_PREFIX]
+     * 开头的引用串，SQL 的字符串函数扫不到正文，得单独取出来按块拼。
+     * 数量很少（约 200 条），逐条读成本可以接受。
+     */
+    @Query(
+        "SELECT id, conversation_id, content FROM conversation_messages " +
+            "WHERE type IN ('user','assistant','thinking','tool') " +
+            "AND content LIKE '@eta:chunks:v1:%'"
+    )
+    suspend fun chunkedMessageRefs(): List<ChunkedMessageRef>
+
     @Query("SELECT id, content FROM conversation_messages WHERE conversation_id = :conversationId AND id IN (:messageIds)")
     suspend fun messageContents(conversationId: String, messageIds: List<String>): List<ConversationMessageContent>
 

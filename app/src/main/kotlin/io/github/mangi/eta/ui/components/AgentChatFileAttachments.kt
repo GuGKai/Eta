@@ -85,12 +85,12 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassPopupDefaults
 import top.yukonga.miuix.kmp.glass.GlassPopupItem
 import top.yukonga.miuix.kmp.glass.GlassPopupSizing
+import top.yukonga.miuix.kmp.glass.GlassTextField
 import top.yukonga.miuix.kmp.glass.GlassTransformPopup
 import top.yukonga.miuix.kmp.glass.glassPopupAnchor
 import top.yukonga.miuix.kmp.glass.glassPopupAnchorContent
@@ -124,6 +124,23 @@ internal fun couiSendIdleCircleColor(dark: Boolean): Color =
  */
 @Composable
 internal fun couiSendIdleIconColor(): Color = MiuixTheme.colorScheme.onSurfaceVariantActions
+
+/**
+ * 输入栏右侧发送/终止按钮与左侧附件加号按钮共用的一块圆底色。
+ *
+ * - COUI：与「空草稿」态完全同色（[couiSendIdleCircleColor]）；
+ * - MIUIX：surfaceContainerHigh，即空草稿发送按钮那一档灰。
+ *
+ * 附件加号、不可发送、生成中终止三处都从这里取色；任何一处单独写字面量
+ * 都会让左右两颗圆钮在任何一套主题下出现肉眼可见的色差。
+ */
+@Composable
+internal fun chatInputActionCircleColor(): Color =
+    if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+        couiSendIdleCircleColor(CouiTheme.isDark)
+    } else {
+        MiuixTheme.colorScheme.surfaceContainerHigh
+    }
 
 /**
  * 输入框到屏幕左、右、下三边的外边距。
@@ -290,14 +307,13 @@ internal fun AgentAttachmentPickerButton(
     BackHandler(enabled = showPopup) { showPopup = false }
     // COUI 的附件按钮补一块与输入栏操作区同风格的浅色圆底；
     // 直径跟随发送按钮的可视圆形，图标则沿用发送按钮的 18dp 视觉尺寸。
-    val attachmentCircleModifier = if (isCoui) {
-        Modifier.background(
-            color = couiSendIdleCircleColor(CouiTheme.isDark),
-            shape = CircleShape,
-        )
-    } else {
-        Modifier
-    }
+    // 两种样式统一：加号按钮都带一块与发送按钮同直径的圆底。
+    // MIUIX 的底色直接取发送按钮「空草稿」那一档灰（surfaceContainerHigh），随亮暗主题自动切换。
+    val attachmentCircleColor = chatInputActionCircleColor()
+    val attachmentCircleModifier = Modifier.background(
+        color = attachmentCircleColor,
+        shape = CircleShape,
+    )
     val popupLayout = rememberInputBarPopupLayout(
         inputContainerTopPx = inputContainerTopPx,
         anchorTopPx = buttonTopPx,
@@ -326,18 +342,21 @@ internal fun AgentAttachmentPickerButton(
         ) {
             Box(
                 modifier = Modifier
-                    .size(if (isCoui) 32.dp else 23.dp)
+                    .size(32.dp)
                     .clip(CircleShape)
-                    .then(attachmentCircleModifier),
+                    .then(attachmentCircleModifier)
+                    // 标记的必须是「连圆底一起」的这块 32dp 内容：GlassTransformPopup 会用
+                    // 这里的尺寸当复制框（fixed 约束），只标 18dp 的图标会把圆底压成小圆。
+                    .then(if (isCoui) Modifier else Modifier.glassPopupAnchorContent(popupAnchor)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = if (isCoui) Icons.Rounded.Add else MiuixIcons.Glass.Add,
                     contentDescription = stringResource(R.string.ui_add_attachment_dba9e8),
                     modifier = Modifier
-                        .size(if (isCoui) 18.dp else 23.dp)
-                        .then(if (isCoui) Modifier else Modifier.glassPopupAnchorContent(popupAnchor)),
-                    tint = if (isCoui) couiSendIdleIconColor() else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                        .size(18.dp),
+                    // 与发送按钮空态箭头同一个色值，亮暗两套主题都不会跑偏。
+                    tint = couiSendIdleIconColor(),
                 )
             }
         }
@@ -379,12 +398,23 @@ internal fun AgentAttachmentPickerButton(
                         sizing = GlassPopupSizing(maxHeight = popupLayout.maxHeight),
                         onMeasured = { measuredPopupHeightPx = it.height },
                         anchorContent = {
-                            Icon(
-                                imageVector = MiuixIcons.Glass.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(23.dp),
-                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                            )
+                            // 锚点内容要连圆底一起画：展开/收起时真实按钮的内容会被弹层接管，
+                            // 弹层在这里按锚点尺寸重画一份；只画 23dp 的图标，动画期间就会
+                            // 看见「加号后面的圆底消失」，动画结束才回来。
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(attachmentCircleColor),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Glass.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = couiSendIdleIconColor(),
+                                )
+                            }
                         },
                     ) {
                         options.forEachIndexed { index, option ->
@@ -430,11 +460,10 @@ internal fun AgentAttachmentPickerButton(
                 onDismissRequest = { showPathDialog = false },
             ) {
                 Column {
-                    TextField(
+                    GlassTextField(
                         state = pathInputState,
                         lineLimits = TextFieldLineLimits.SingleLine,
                         label = stringResource(R.string.ui_absolute_path_9ac6fc),
-                        colors = glassOverlayTextFieldColors(),
                         useLabelAsPlaceholder = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth(),

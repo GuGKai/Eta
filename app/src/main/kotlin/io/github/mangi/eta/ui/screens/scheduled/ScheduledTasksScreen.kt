@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,13 +22,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
@@ -66,7 +65,6 @@ import io.github.mangi.eta.data.model.ScheduledTaskPreset
 import io.github.mangi.eta.data.model.ScheduledTaskPresets
 import io.github.mangi.eta.data.repository.ScheduledTaskRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
@@ -81,6 +79,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
@@ -99,8 +98,15 @@ internal fun ScheduledTasksScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val tasks by remember(context) { ScheduledTaskRepository.observeTasks(context) }
-        .collectAsState(initial = emptyList())
+    // Room 冷 Flow 首帧还没有值：用可空状态区分「未加载」与「确实没有任务」，
+    // 否则每次进入都会先渲染一遍「快速开始 + 预设」的空态，再切换成真实任务列表。
+    val taskFlow = remember(context) { ScheduledTaskRepository.observeTasks(context) }
+    val tasksState by produceState<List<ScheduledTask>?>(
+        initialValue = ScheduledTaskRepository.lastKnownTasks(),
+        key1 = taskFlow,
+    ) {
+        taskFlow.collect { value = it }
+    }
     val activeTaskIds by ScheduledTaskRunner.activeTaskIds.collectAsState()
     var health by remember(context) { mutableStateOf(ScheduledTaskHealthChecker.inspect(context)) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -162,7 +168,11 @@ internal fun ScheduledTasksScreen(
                         )
                     }
                 }
-                if (tasks.isEmpty()) {
+                val tasks = tasksState
+                if (tasks == null) {
+                    // 首帧任务还没查出来：留一行占位，别把「快速开始 + 预设」当空态闪一下。
+                    item(key = "tasks_loading") { Spacer(modifier = Modifier.size(1.dp)) }
+                } else if (tasks.isEmpty()) {
                     item(key = "presets_group") {
                         Group(title = stringResource(R.string.scheduled_section_quick_start)) {
                             ScheduledTaskPresets.all.forEachIndexed { index, preset ->
@@ -223,7 +233,11 @@ internal fun ScheduledTasksScreen(
                         )
                     }
                 }
-                if (tasks.isEmpty()) {
+                val tasks = tasksState
+                if (tasks == null) {
+                    // 首帧任务还没查出来：留一行占位，别把「快速开始 + 预设」当空态闪一下。
+                    item(key = "tasks_loading") { Spacer(modifier = Modifier.size(1.dp)) }
+                } else if (tasks.isEmpty()) {
                     item(key = "empty_intro") {
                         SmallTitle(text = stringResource(R.string.scheduled_section_quick_start))
                     }
@@ -316,7 +330,8 @@ private fun MiuixHealthBannerCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp)
+            .padding(top = 8.dp, bottom = 12.dp),
     ) {
         Column(
             modifier = Modifier
@@ -339,6 +354,8 @@ private fun MiuixHealthBannerCard(
             TextButton(
                 text = actionText,
                 onClick = onFix,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
             )
         }
     }

@@ -5,7 +5,6 @@ import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient.ConversationMessage
 import io.github.mangi.eta.agent.roleplay.RoleplayHistoryProjection
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
-import io.github.mangi.eta.data.db.ChunkedTextDao
 import io.github.mangi.eta.data.db.ConversationDao
 import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.EtaDatabase
@@ -37,8 +36,10 @@ internal object ConversationBranchRepository {
         val rawJournal = decodeCheckpoint(dao, sourceId, "journal", checkpoint.journalJson)
             .takeIf { it.isNotEmpty() } ?: throw ConversationBranchUnavailable()
         val journal = ConversationBranchBoundary.resolve(outline, rawJournal, roleplay, targetMessageId)
+        // 两列由同一事务成对写入，引用串本身带着片数与总长，字符串相同即同一份内容；
+        // 与打开会话的读取路径保持一致，分块引用相同也直接复用已解好的 rawJournal。
         val rawHistory = checkpoint.historyJson.takeIf { it.isNotBlank() }?.let { stored ->
-            if (stored == checkpoint.journalJson && !stored.startsWith(ChunkedTextDao.REFERENCE_PREFIX)) {
+            if (stored == checkpoint.journalJson) {
                 rawJournal
             } else {
                 decodeCheckpoint(dao, sourceId, "history", stored)

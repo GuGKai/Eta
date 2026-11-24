@@ -1,6 +1,5 @@
 package io.github.mangi.eta.ui.components
 
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -28,12 +27,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.itos.coui.checkbox.Checkbox
@@ -51,9 +50,6 @@ import io.github.mangi.eta.agent.model.AskQuestionCard
 import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiTextField
 import kotlin.math.max
-
-/** 提问卡避让键盘的诊断标签：`adb logcat -s AskReveal` 能看到量到的几何与补偿量。 */
-private const val AskRevealTag = "AskReveal"
 
 /**
  * 模型提问卡片（COUI 版，对齐 OpenMausBot 的 QuestionCardView 行为）。
@@ -77,10 +73,13 @@ internal fun AskQuestionCardView(
 
     val dark = CouiTheme.isDark
     val colors = CouiPageDefaults.themeColors(dark)
-    // 与 EtaChoiceChip（回答末尾的建议胶囊）同一套容器色。
-    val chipColor = if (dark) Color(0x1AFFFFFF) else Color(0x0D000000)
-    val segmentColor = if (dark) Color(0x1FFFFFFF) else Color(0x14000000)
-    val indicatorColor = if (dark) Color(0x33FFFFFF) else Color(0xEEFFFFFF)
+    // 深色下整张卡片的底色对齐设置页的选项列表：取 COUI 卡片色合成在页面底色上的实色，
+    // 不再用半透明叠在聊天背景上（那样会比设置页列表亮一档）。浅色沿用原容器色。
+    val chipColor = if (dark) colors.card.compositeOver(colors.background) else Color(0x0D000000)
+    // 选项卡向设置页选项列表看齐：深色下容器直接用列表项的卡片色（colors.card），
+    // 选中项比它亮一档，留出可见的选中块；浅色沿用 COUI 分段控件默认值。
+    val segmentColor = if (dark) colors.card else Color(0x14000000)
+    val indicatorColor = if (dark) Color(0x26FFFFFF) else Color(0xEEFFFFFF)
 
     val settledAnswer = answeredText?.takeIf { it.isNotBlank() }
 
@@ -116,7 +115,6 @@ internal fun AskQuestionCardView(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val revealGapPx = with(density) { 8.dp.toPx() }
-    val windowHeightPx = with(density) { LocalWindowInfo.current.containerSize.height.toFloat() }
     var focusedPosition by remember { mutableStateOf(-1) }
     var cardBottomPx by remember { mutableStateOf(0f) }
     var fieldHeightPx by remember { mutableIntStateOf(0) }
@@ -126,35 +124,22 @@ internal fun AskQuestionCardView(
     // 键盘落下再弹起、输入换行变高都会重新对齐，不用重新点一次输入框。
     // 触发源只有「浮层顶边」和「输入框自身高度」，单纯滚动不触发，所以盯着也不会和手动滑动抢。
     LaunchedEffect(reveal, revealActive) {
-        val env = reveal
-        if (env == null) {
-            if (focusedPosition == index) {
-                Log.i(AskRevealTag, "skip: 卡片没有拿到 ChatRevealEnv（没接上图层的浮层几何）")
-            }
-            return@LaunchedEffect
-        }
+        val env = reveal ?: return@LaunchedEffect
         if (!revealActive) return@LaunchedEffect
         snapshotFlow { env.overlayTopPx.value to fieldHeightPx }
-            .collect { (top, height) ->
+            .collect { (top, _) ->
                 if (top.isNaN()) return@collect
                 // 手指正在滑列表时不补：这时候抬一下等于把用户刚翻走的内容又拽回来。
                 if (env.userDragging.value) return@collect
                 val cardBottom = cardBottomPx
                 if (cardBottom <= 0f) return@collect
                 val overlap = cardBottom + revealGapPx - top
-                Log.i(
-                    AskRevealTag,
-                    "check: window=" + windowHeightPx + " occupiedBottom=" + (windowHeightPx - top) +
-                        " top=" + top + " cardBottom=" + cardBottom +
-                        " overlap=" + overlap + " fieldHeight=" + height,
-                )
                 if (overlap <= 1f) return@collect
                 env.scrollBy(overlap)
                 // 滚动要到下一帧才落到布局，这里再确认一次：键盘还在动画时不能欠账。
                 withFrameNanos { }
                 val rest = cardBottomPx + revealGapPx - env.overlayTopPx.value
                 if (!env.overlayTopPx.value.isNaN() && rest > 1f) {
-                    Log.i(AskRevealTag, "check2: rest=" + rest)
                     env.scrollBy(rest)
                 }
             }
@@ -168,7 +153,6 @@ internal fun AskQuestionCardView(
         snapshotFlow { env.userDragging.value }
             .collect { dragging ->
                 if (!dragging) return@collect
-                Log.i(AskRevealTag, "drag: 收掉提问卡里的输入状态")
                 focusManager.clearFocus()
                 keyboard?.hide()
                 focusedPosition = -1

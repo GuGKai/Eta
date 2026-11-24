@@ -30,7 +30,7 @@ import androidx.room.migration.Migration
         ScheduledTaskEntity::class,
         ScheduledTaskRunEntity::class,
     ],
-    version = 45,
+    version = 44,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -93,7 +93,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_41_42,
                         MIGRATION_42_43,
                         MIGRATION_43_44,
-                        MIGRATION_44_45,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -498,29 +497,6 @@ internal abstract class EtaDatabase : RoomDatabase() {
         internal val MIGRATION_40_41 = Migration(40, 41) { _ -> }
         internal val MIGRATION_41_42 = Migration(41, 42) { _ -> }
         internal val MIGRATION_42_43 = Migration(42, 43) { _ -> }
-
-        /**
-         * 44 → 45：清理一次早前实验包留下的 `plan_json`。
-         *
-         * 手机上现装的库可能是「计划卡片」实验版建的 44（带 plan_json、没有 ask_*），
-         * Room 只认同版本的 identity hash，直接开 44 会报 schema 校验失败。
-         * 这里把版本抬到 45，删掉那一列、补齐新列，迁移后可继续沿用旧会话。
-         */
-        internal val MIGRATION_44_45 = Migration(44, 45) { database ->
-            if (database.columnExists("conversation_messages", "plan_json")) {
-                database.execSQL("ALTER TABLE conversation_messages DROP COLUMN plan_json")
-            }
-            if (!database.columnExists("conversation_messages", "ask_json")) {
-                database.execSQL(
-                    "ALTER TABLE conversation_messages ADD COLUMN ask_json TEXT NOT NULL DEFAULT ''"
-                )
-            }
-            if (!database.columnExists("conversation_messages", "ask_answer")) {
-                database.execSQL(
-                    "ALTER TABLE conversation_messages ADD COLUMN ask_answer TEXT"
-                )
-            }
-        }
 
         /** 43 → 44：加两列承载「模型提问卡片」及其已答内容。旧库逐列补齐，可重复执行。 */
         internal val MIGRATION_43_44 = Migration(43, 44) { database ->

@@ -59,6 +59,9 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.squircle.squircleBackground
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.graphics.luminance
+import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.ui.app.LocalUiStyle
 
 internal enum class StickyModifier { OFF, ONCE, LOCKED }
 
@@ -247,11 +250,17 @@ private fun KeyCap(
     val currentOnPress by rememberUpdatedState(onPress)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
     var pressed by remember { mutableStateOf(false) }
+    // 只改 MIUIX：粘滞键半挂（ONCE）时原来的浅色底配主题色文字属于「蓝底蓝字」，
+    // 这里加深到白字可读的实底；COUI 保持它自己的配色不动。
+    val miuixTone = LocalUiStyle.current == AppearanceUiStyle.MIUIX
+    val isDarkTheme = colors.background.luminance() < 0.5f
 
     val idle = if (subtle) Color.Transparent else colors.surfaceContainer
     val background by animateColorAsState(
         targetValue = when {
             sticky == StickyModifier.LOCKED -> colors.primary
+            sticky == StickyModifier.ONCE && miuixTone ->
+                colors.primary.copy(alpha = if (isDarkTheme) 0.48f else 0.92f)
             sticky == StickyModifier.ONCE -> colors.primary.copy(alpha = 0.16f)
             pressed -> colors.surfaceContainerHighest
             else -> idle
@@ -260,7 +269,7 @@ private fun KeyCap(
     )
     val content = when (sticky) {
         StickyModifier.LOCKED -> colors.onPrimary
-        StickyModifier.ONCE -> colors.primary
+        StickyModifier.ONCE -> if (miuixTone) Color.White else colors.primary
         StickyModifier.OFF -> if (subtle) colors.onSurfaceVariantSummary else colors.onSurface
     }
 

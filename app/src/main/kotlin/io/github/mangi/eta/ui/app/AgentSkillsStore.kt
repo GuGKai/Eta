@@ -16,7 +16,10 @@ import io.github.mangi.eta.ui.model.canDeleteUserSkill
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
 
 /** Skills 管理页状态：列表、开关、删除与本地 ZIP 安装的二次确认流程。 */
 internal class AgentSkillsStore(
@@ -29,11 +32,15 @@ internal class AgentSkillsStore(
     private var skillNoticeSequence = 0L
     private var pendingSkillZipUri: Uri? = null
     private var pendingSkillZipSha256: String? = null
+    private val toggleMutex = Mutex()
+    private val toggleGeneration = HashMap<String, Long>()
+    private val toggleRevision = AtomicLong(0L)
 
     var skillsState by mutableStateOf(AgentSkillsUiState(isLoading = true))
         private set
 
     fun refreshSkills(forceRefresh: Boolean = true) {
+        val startRevision = toggleRevision.get()
         scope.launch(Dispatchers.IO) {
             val entries = runCatching {
                 SkillRuntime.createIndexService(appContext)
@@ -69,45 +76,47 @@ internal class AgentSkillsStore(
                 )
             }
             withContext(Dispatchers.Main) {
-                skillsState = skillsState.copy(skills = items, isLoading = false)
+                if (toggleRevision.get() != startRevision) {
+                    refreshSkills(forceRefresh)
+                } else {
+                    skillsState = skillsState.copy(skills = items, isLoading = false)
+                }
             }
         }
     }
 
     fun toggleSkill(skillId: String, enabled: Boolean) {
         if (skillsState.isImporting || skillsState.busySkillId != null) return
-        val previousSkills = skillsState.skills
-        // 乐观更新：先把这一行的开关切到目标状态。
-        // COUI 的开关是受控组件，若等 IO 落盘后再改 state，开关会先弹回原位再跳过去，整页跟着闪。
+        val current = skillsState.skills.firstOrNull { it.id == skillId && it.installed } ?: return
+        if (current.enabled == enabled) return
+        val generation = (toggleGeneration[skillId] ?: 0L) + 1L
+        toggleGeneration[skillId] = generation
+        toggleRevision.incrementAndGet()
         skillsState = skillsState.copy(
-            busySkillId = skillId,
-            skills = previousSkills.map { item ->
+            skills = skillsState.skills.map { item ->
                 if (item.id == skillId) item.copy(enabled = enabled) else item
             },
         )
-        scope.launch(Dispatchers.IO) {
-            val succeeded = runCatching {
-                SkillRuntime.createIndexService(appContext).setSkillEnabled(skillId, enabled)
-            }.isSuccess
-            withContext(Dispatchers.Main) {
-                skillsState = if (succeeded) {
-                    skillsState.copy(busySkillId = null)
-                } else {
-                    // 写入失败才回滚这一行的开关，并给出提示。
-                    skillsState.copy(
-                        busySkillId = null,
-                        skills = previousSkills,
+        scope.launch(Dispatchers.Main.immediate) {
+            toggleMutex.withLock {
+                val succeeded = withContext(Dispatchers.IO) {
+                    runCatching {
+                        SkillRuntime.createIndexService(appContext).setSkillEnabled(skillId, enabled)
+                    }.isSuccess
+                }
+                if (!succeeded && toggleGeneration[skillId] == generation) {
+                    skillsState = skillsState.copy(
+                        skills = skillsState.skills.map { item ->
+                            if (item.id == skillId) item.copy(enabled = !enabled) else item
+                        },
                         notice = newSkillNotice(
                             title = appContext.getString(R.string.state_unable_to_update_skills_04e56c),
                             message = appContext.getString(R.string.state_the_skill_switch_has_not_changed_please_try_again_la_fa262f),
                             isError = true,
                         ),
                     )
+                    refreshSkills()
                 }
-            }
-            if (succeeded) {
-                // 已经按写入结果更新过界面，这里只做一次轻量核对，不再强制重建内置技能索引。
-                refreshSkills(forceRefresh = false)
             }
         }
     }

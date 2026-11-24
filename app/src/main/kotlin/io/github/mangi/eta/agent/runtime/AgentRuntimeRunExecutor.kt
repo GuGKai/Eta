@@ -208,6 +208,9 @@ internal class AgentRuntimeRunExecutor(
                 browserRunId = request.runId,
                 browserSession = BrowserSessionRegistry.get(browserKey),
                 guiControl = guiRun,
+                imageBudgetProvider = {
+                    io.github.mangi.eta.agent.media.ModelImageBudget.forProviderType(request.config.providerType)
+                },
                 browserToolsEnabled = {
                     request.config.browserTools && currentPermissions().browserTools
                 },

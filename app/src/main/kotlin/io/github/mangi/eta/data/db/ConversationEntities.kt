@@ -70,6 +70,17 @@ internal data class ConversationIdentity(
 
 internal data class ConversationMessageContent(val id: String, val content: String)
 
+/**
+ * 分块存储的消息：conversation_messages.content 只是一串引用，
+ * 正文在 agent_text_chunks 里，SQL 的字符串函数扫不到，需要单独取出来比对。
+ */
+internal data class ChunkedMessageRef(
+    val id: String,
+    @ColumnInfo(name = "conversation_id") val conversationId: String,
+    val content: String,
+)
+
+
 @Serializable
 @Entity(
     tableName = "conversation_context_checkpoints",

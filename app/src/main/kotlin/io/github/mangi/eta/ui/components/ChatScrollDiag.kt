@@ -23,6 +23,18 @@ internal object ChatScrollDiag {
     /** 诊断开关。定版发版前必须置 false。 */
     const val ENABLED = true
 
+    /**
+     * 点开历史会话时的落点诊断。
+     *
+     * 默认关闭：这一路的日志只在排查「点开会话停在哪个位置」时有用，而正常使用每点开
+     * 一个会话都会刷一串 DOCK_PLAN / ROUND_BEGIN(streaming=false) / DOCK_SKIP / SNAP_* /
+     * ROUND_END，把真正要看的流式跟顶与收尾判定淹掉。
+     *
+     * 关掉后：位置计算与滚动手势完全不变，只是不再写这一路的日志；
+     * 流式跟顶、收尾落点、回底请求、用户接管等一律照常记录。
+     */
+    val HISTORY_DIAG: Boolean = false
+
     private const val TAG = "EtaScrollDiag"
 
     /** 保留的日志文件数上限：超出时删最旧的。 */
@@ -60,6 +72,8 @@ internal object ChatScrollDiag {
     /** 当前轮次的状态累积。 */
     private var roundOpen = false
     private var roundAnswerId: String? = null
+    /** 本轮是「点开历史会话」且这路诊断已关：状态照旧累积，只是不落盘。 */
+    private var roundSilent = false
     private var roundStartedAt = 0L
     private var dockAttempts = 0
     private var dockFrames = 0
@@ -128,13 +142,21 @@ internal object ChatScrollDiag {
      * 一轮回答开始。同一 answerId 已在进行中时不重置累积状态：
      * 停靠 effect 会因时间线末尾条目变化而重启，重启不该把前面测到的过冲等证据清掉。
      */
-    fun beginRound(answerId: String?, streaming: Boolean, topInsetPx: Int, targetY: Int) {
+    fun beginRound(
+        answerId: String?,
+        streaming: Boolean,
+        topInsetPx: Int,
+        targetY: Int,
+        detail: String = "",
+    ) {
         if (!ENABLED) return
         val alreadyOpen = synchronized(lock) { roundOpen && roundAnswerId != null && roundAnswerId == answerId }
         if (alreadyOpen) return
         synchronized(lock) {
             roundOpen = true
             roundAnswerId = answerId
+            // 点开历史会话且这路诊断关着：整轮静默，只维护状态机，不写任何行。
+            roundSilent = !streaming && !HISTORY_DIAG
             roundStartedAt = System.currentTimeMillis()
             dockAttempts = 0
             dockFrames = 0
@@ -163,9 +185,11 @@ internal object ChatScrollDiag {
             frozenByJitter = false
             keyboardLiftDuringRound = false
         }
+        if (synchronized(lock) { roundSilent }) return
         append(
             "ROUND_BEGIN id=" + answerId + " streaming=" + streaming +
-                " topInset=" + topInsetPx + " target=" + targetY,
+                " topInset=" + topInsetPx + " target=" + targetY +
+                (if (detail.isEmpty()) "" else " " + detail),
         )
     }
 
@@ -294,6 +318,7 @@ internal object ChatScrollDiag {
     /** 历史会话首帧落点（snapAnswerToTop）的结果。 */
     fun snapResult(ok: Boolean, itemIndex: Int) {
         if (!ENABLED) return
+        if (synchronized(lock) { roundSilent }) return
         synchronized(lock) { snapOk = ok }
         append("SNAP_RESULT ok=" + ok + " itemIndex=" + itemIndex)
     }
@@ -314,6 +339,7 @@ internal object ChatScrollDiag {
         itemOffset: Int?,
     ) {
         if (!ENABLED) return
+        if (synchronized(lock) { roundSilent }) return
         synchronized(lock) { snapRounds = rounds }
         append(
             "SNAP_PROBE what=" + label + " rounds=" + rounds +
@@ -340,6 +366,7 @@ internal object ChatScrollDiag {
         delta: Float?,
     ) {
         if (!ENABLED) return
+        if (synchronized(lock) { roundSilent }) return
         synchronized(lock) {
             snapRounds = rounds
             snapExitReason = reason
@@ -384,6 +411,7 @@ internal object ChatScrollDiag {
      */
     fun dockSkipped(reason: String) {
         if (!ENABLED) return
+        if (synchronized(lock) { roundSilent }) return
         val since = synchronized(lock) {
             dockSkipCount++
             if (lastInterruptAt == 0L) -1L else System.currentTimeMillis() - lastInterruptAt
@@ -417,6 +445,15 @@ internal object ChatScrollDiag {
         if (!ENABLED) return
         // 幂等：同一轮可能从「流式结束」与「收尾判定」两处到达，只认第一次。
         if (synchronized(lock) { !roundOpen }) return
+        // 静默轮（点开历史会话）：只负责把轮次关掉，不留任何结论行。
+        if (synchronized(lock) { roundSilent }) {
+            synchronized(lock) {
+                roundOpen = false
+                roundAnswerId = null
+                roundSilent = false
+            }
+            return
+        }
         val detail: String
         synchronized(lock) {
             val delta = finalDeltaPx
