@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.app
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.JsonReader
 import android.util.JsonToken
 import androidx.room.withTransaction
@@ -124,7 +125,8 @@ internal object AgentConversationStore {
                                 phase = "write_metadata"
                                 dao.insertConversations(listOf(row))
                             }
-                            if (old == null || state.history != old.history || state.journal != old.journal) {
+                            // 未补全的后台存档不写库：空列表会把库里的完整转录覆盖掉。
+                            if (state.checkpointLoaded && (old == null || state.history != old.history || state.journal != old.journal)) {
                                 val missing = dao.contextCheckpointRow(id) == null
                                 phase = "encode_history"
                                 val history = if (missing || old == null || state.history != old.history) {
@@ -252,36 +254,84 @@ internal object AgentConversationStore {
         val hasEarlierMessages: Boolean,
     )
 
-    suspend fun loadConversation(context: Context, conversationId: String): AgentChatHomeUiState? = withContext(Dispatchers.IO) {
-        val database = EtaDatabase.get(context.applicationContext)
-        database.withTransaction {
-            val dao = database.conversationDao()
-            val conversation = dao.conversation(conversationId) ?: return@withTransaction null
-            val page = loadMessagePage(dao, conversationId, Int.MAX_VALUE)
-            val checkpoint = dao.contextCheckpointRow(conversationId)
-            val journal = decodeCheckpoint(dao, conversationId, "journal", checkpoint?.journalJson)
-            val history = if (checkpoint != null && checkpoint.historyJson == checkpoint.journalJson &&
-                !checkpoint.historyJson.startsWith(io.github.mangi.eta.data.db.ChunkedTextDao.REFERENCE_PREFIX)
-            ) journal else decodeCheckpoint(dao, conversationId, "history", checkpoint?.historyJson)
-            val state = AgentChatHomeUiState(
-                roleplay = conversation.roleplayJson.takeIf(String::isNotBlank)?.let { json.decodeFromString<RoleplayBinding>(it) },
-                roleplayMessages = conversation.revisionsJson.takeIf(String::isNotBlank)?.let {
-                    json.decodeFromString<RoleplayMessageState>(it)
-                } ?: RoleplayMessageState(),
-                journal = journal,
-                messages = page.messages,
-                history = history.ifEmpty { loadLegacyHistory(dao, conversationId) },
-                appliedRuntimeRunIds = conversation.appliedRuntimeRunIdsJson.toStringList(),
-                input = "", isStreaming = false,
-                thinkingEnabled = conversation.reasoningEffortValue.enablesReasoning,
-                reasoningEffort = conversation.reasoningEffortValue,
-                modelId = conversation.modelId,
-                messageStartIndex = page.startIndex,
-                hasEarlierMessages = page.hasEarlierMessages,
-            )
-            RoleplayConversationReducer.decorate(state.copy(roleplayOriginalContents =
-                loadRoleplayMessageContents(dao, conversationId, RoleplayConversationReducer.requiredOriginalContentIds(state))))
+    data class CheckpointLoad(
+        val journal: List<AgentModelClient.ConversationMessage>,
+        val history: List<AgentModelClient.ConversationMessage>,
+    )
+
+    /** 完整加载：展示窗口与后台存档同一事务内完成，供分支、导入等一次性场景使用。 */
+    suspend fun loadConversation(context: Context, conversationId: String): AgentChatHomeUiState? =
+        withContext(Dispatchers.IO) {
+            val database = EtaDatabase.get(context.applicationContext)
+            database.withTransaction {
+                val dao = database.conversationDao()
+                val window = loadConversationWindow(dao, conversationId) ?: return@withTransaction null
+                val checkpoint = loadConversationCheckpoint(dao, conversationId)
+                window.copy(
+                    journal = checkpoint.journal,
+                    history = checkpoint.history,
+                    checkpointLoaded = true,
+                )
+            }
         }
+
+    /** 只加载展示窗口与会话元数据；打开会话先走这条路，后台存档随后补全。 */
+    suspend fun loadConversationMessages(context: Context, conversationId: String): AgentChatHomeUiState? =
+        withContext(Dispatchers.IO) {
+            val database = EtaDatabase.get(context.applicationContext)
+            database.withTransaction { loadConversationWindow(database.conversationDao(), conversationId) }
+        }
+
+    suspend fun loadConversationCheckpoint(context: Context, conversationId: String): CheckpointLoad? =
+        withContext(Dispatchers.IO) {
+            val database = EtaDatabase.get(context.applicationContext)
+            database.withTransaction { loadConversationCheckpoint(database.conversationDao(), conversationId) }
+        }
+
+    private suspend fun loadConversationWindow(dao: ConversationDao, conversationId: String): AgentChatHomeUiState? {
+        val startedAt = SystemClock.elapsedRealtime()
+        val conversation = dao.conversation(conversationId) ?: return null
+        val page = loadMessagePage(dao, conversationId, Int.MAX_VALUE)
+        val state = AgentChatHomeUiState(
+            roleplay = conversation.roleplayJson.takeIf(String::isNotBlank)?.let { json.decodeFromString<RoleplayBinding>(it) },
+            roleplayMessages = conversation.revisionsJson.takeIf(String::isNotBlank)?.let {
+                json.decodeFromString<RoleplayMessageState>(it)
+            } ?: RoleplayMessageState(),
+            messages = page.messages,
+            appliedRuntimeRunIds = conversation.appliedRuntimeRunIdsJson.toStringList(),
+            input = "", isStreaming = false,
+            thinkingEnabled = conversation.reasoningEffortValue.enablesReasoning,
+            reasoningEffort = conversation.reasoningEffortValue,
+            modelId = conversation.modelId,
+            messageStartIndex = page.startIndex,
+            hasEarlierMessages = page.hasEarlierMessages,
+            checkpointLoaded = false,
+        )
+        val decorated = RoleplayConversationReducer.decorate(state.copy(roleplayOriginalContents =
+            loadRoleplayMessageContents(dao, conversationId, RoleplayConversationReducer.requiredOriginalContentIds(state))))
+        AndroidAgentLogger.info(
+            "chat-open stage=db-window id=${conversationId.take(12)} " +
+                "ms=${SystemClock.elapsedRealtime() - startedAt} messages=${page.messages.size}",
+        )
+        return decorated
+    }
+
+    private suspend fun loadConversationCheckpoint(dao: ConversationDao, conversationId: String): CheckpointLoad {
+        val startedAt = SystemClock.elapsedRealtime()
+        val checkpoint = dao.contextCheckpointRow(conversationId)
+        val journal = decodeCheckpoint(dao, conversationId, "journal", checkpoint?.journalJson)
+        // 两列由同一事务成对写入（updateContextCheckpoint 一次写 history 与 journal），
+        // 引用串本身带着片数与总长，字符串相同即同一份内容；journal 侧解码仍会逐块校验，
+        // 因此分块引用相同也能安全复用，省掉大会话那一遍 history 解码（约占一半耗时）。
+        val history = if (checkpoint != null && checkpoint.historyJson == checkpoint.journalJson) journal
+        else decodeCheckpoint(dao, conversationId, "history", checkpoint?.historyJson)
+        val result = CheckpointLoad(journal, history.ifEmpty { loadLegacyHistory(dao, conversationId) })
+        AndroidAgentLogger.info(
+            "chat-open stage=db-checkpoint id=${conversationId.take(12)} " +
+                "ms=${SystemClock.elapsedRealtime() - startedAt} " +
+                "journal=${result.journal.size} history=${result.history.size}",
+        )
+        return result
     }
 
     suspend fun loadEarlierMessages(context: Context, conversationId: String, before: Int): MessagePage =

@@ -141,6 +141,8 @@ internal class AgentAppState(
     private var defaultProviderId: String? = null
     private var fileAttachmentOwnerVersion = 0L
     private val conversationLoadMutex = Mutex()
+    /** 延后补全的后台存档任务：按会话去重，等待发送前可 join。 */
+    private val checkpointLoadJobs = mutableMapOf<String, Job>()
     private val conversationContentPins = mutableMapOf<String, Int>()
     private var conversationSelectionJob: Job? = null
     private var conversationSelectionVersion = 0L
@@ -1293,7 +1295,7 @@ internal class AgentAppState(
                 val state = conversationsById[conversationId] ?: return@withLock false
                 if (state.isConversationLoaded) return@withLock true
                 synchronized(persistenceLock) { persistenceJob }?.join()
-                val loaded = AgentConversationStore.loadConversation(appContext, conversationId)
+                val loaded = AgentConversationStore.loadConversationMessages(appContext, conversationId)
                     ?: return@withLock false
                 val current = conversationsById[conversationId] ?: return@withLock false
                 val restored = loaded.copy(
@@ -1313,9 +1315,61 @@ internal class AgentAppState(
                     pendingFileReferences = latest.pendingFileReferences,
                 ), updateTimestamp = false)
                 refreshConversationSummaries()
+                startCheckpointLoad(conversationId)
                 true
             }
         }
+
+    /** 展示窗口就位即返回；后台存档交给独立任务补全，不阻塞打开。 */
+    private fun startCheckpointLoad(conversationId: String) {
+        if (conversationsById[conversationId]?.checkpointLoaded != false) return
+        if (checkpointLoadJobs[conversationId]?.isActive == true) return
+        checkpointLoadJobs[conversationId] = scope.launch(Dispatchers.IO) {
+            try {
+                val checkpoint = AgentConversationStore.loadConversationCheckpoint(appContext, conversationId)
+                    ?: return@launch
+                mergeCheckpoint(conversationId, checkpoint)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.error(
+                    "Agent conversation checkpoint load failed: type=${failure.safeLogType()}",
+                )
+            }
+        }
+    }
+
+    private suspend fun mergeCheckpoint(
+        conversationId: String,
+        checkpoint: AgentConversationStore.CheckpointLoad,
+    ) = withContext(Dispatchers.Main.immediate) {
+        conversationLoadMutex.withLock {
+            val current = conversationsById[conversationId] ?: return@withLock
+            // 已卸载或已补全的会话不再写回，避免旧存档盖到新窗口上。
+            if (!current.isConversationLoaded || current.checkpointLoaded) return@withLock
+            val merged = current.copy(
+                journal = checkpoint.journal,
+                history = checkpoint.history,
+                checkpointLoaded = true,
+            )
+            // 补全结果直接成为保存基线，避免同一份存档被重新编码写回。
+            conversationPersistence.adoptConversation(
+                conversationId, merged, conversationTitles[conversationId].orEmpty(),
+                conversationUpdatedAt[conversationId] ?: 0L,
+                conversationId in conversationPinnedIds,
+            )
+            updateConversation(conversationId, merged, updateTimestamp = false)
+        }
+    }
+
+    /** 发送前确认后台存档就位；正常情况 join 的是已经在跑的任务。 */
+    private suspend fun awaitCheckpointLoaded(conversationId: String) {
+        checkpointLoadJobs[conversationId]?.join()
+        val state = withContext(Dispatchers.Main.immediate) { conversationsById[conversationId] } ?: return
+        if (!state.isConversationLoaded || state.checkpointLoaded) return
+        val checkpoint = AgentConversationStore.loadConversationCheckpoint(appContext, conversationId) ?: return
+        mergeCheckpoint(conversationId, checkpoint)
+    }
 
     private suspend fun <T> withLoadedConversations(ids: Set<String>, block: suspend () -> T): T {
         withContext(Dispatchers.Main.immediate) {
@@ -1926,6 +1980,19 @@ internal class AgentAppState(
     ) {
         if (!homeState.isConversationLoaded || homeState.isCompacting ||
             selectedConversationId in pendingConversationDeletes) return
+        // 后台存档尚未补全就发送：先等它到位再按原路走一遍，避免拿空历史发请求。
+        val checkpointConversationId = selectedConversationId
+        if (checkpointConversationId != null && !homeState.checkpointLoaded) {
+            scope.launch {
+                awaitCheckpointLoaded(checkpointConversationId)
+                withContext(Dispatchers.Main.immediate) {
+                    if (selectedConversationId == checkpointConversationId) {
+                        submitOrQueueCurrentMessage(submittedText, immediateInterrupt)
+                    }
+                }
+            }
+            return
+        }
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
@@ -2212,7 +2279,8 @@ internal class AgentAppState(
     }
 
     fun beginMessageEdit(messageId: String) {
-        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation) return
+        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation ||
+            !homeState.checkpointLoaded) return
         if (homeState.roleplay != null) {
             if (messageId !in homeState.roleplayMessages.links) return
             val content = when (val message = homeState.messages.firstOrNull { it.id == messageId }) {
@@ -2273,7 +2341,8 @@ internal class AgentAppState(
     }
 
     fun messageRevisionImpact(messageId: String): MessageRevisionImpact? =
-        if (homeState.roleplay != null && messageId.startsWith("greeting-")) MessageRevisionImpact(0)
+        if (!homeState.checkpointLoaded) null
+        else if (homeState.roleplay != null && messageId.startsWith("greeting-")) MessageRevisionImpact(0)
         else revisionBoundary(messageId)?.let { boundary ->
             MessageRevisionImpact(laterTurnCount = boundary.laterTurnCount)
         }
@@ -2286,7 +2355,9 @@ internal class AgentAppState(
         }
 
     fun deleteMessageTurn(messageId: String) {
-        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation) return
+        // 存档未补全时整段转录为空，删除会把删错的范围写回库里。
+        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation ||
+            !homeState.checkpointLoaded) return
         val conversationId = selectedConversationId ?: return
         if (homeState.roleplay != null && messageId.startsWith("greeting-")) {
             val originalId = homeState.roleplayMessages.links[messageId]?.transcriptMessageId ?: return
