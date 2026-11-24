@@ -1,7 +1,6 @@
 package io.github.mangi.eta.ui.app
 
 import android.content.Context
-import android.os.SystemClock
 import android.util.JsonReader
 import android.util.JsonToken
 import androidx.room.withTransaction
@@ -289,7 +288,6 @@ internal object AgentConversationStore {
         }
 
     private suspend fun loadConversationWindow(dao: ConversationDao, conversationId: String): AgentChatHomeUiState? {
-        val startedAt = SystemClock.elapsedRealtime()
         val conversation = dao.conversation(conversationId) ?: return null
         val page = loadMessagePage(dao, conversationId, Int.MAX_VALUE)
         val state = AgentChatHomeUiState(
@@ -309,15 +307,10 @@ internal object AgentConversationStore {
         )
         val decorated = RoleplayConversationReducer.decorate(state.copy(roleplayOriginalContents =
             loadRoleplayMessageContents(dao, conversationId, RoleplayConversationReducer.requiredOriginalContentIds(state))))
-        AndroidAgentLogger.info(
-            "chat-open stage=db-window id=${conversationId.take(12)} " +
-                "ms=${SystemClock.elapsedRealtime() - startedAt} messages=${page.messages.size}",
-        )
         return decorated
     }
 
     private suspend fun loadConversationCheckpoint(dao: ConversationDao, conversationId: String): CheckpointLoad {
-        val startedAt = SystemClock.elapsedRealtime()
         val checkpoint = dao.contextCheckpointRow(conversationId)
         val journal = decodeCheckpoint(dao, conversationId, "journal", checkpoint?.journalJson)
         // 两列由同一事务成对写入（updateContextCheckpoint 一次写 history 与 journal），
@@ -326,11 +319,6 @@ internal object AgentConversationStore {
         val history = if (checkpoint != null && checkpoint.historyJson == checkpoint.journalJson) journal
         else decodeCheckpoint(dao, conversationId, "history", checkpoint?.historyJson)
         val result = CheckpointLoad(journal, history.ifEmpty { loadLegacyHistory(dao, conversationId) })
-        AndroidAgentLogger.info(
-            "chat-open stage=db-checkpoint id=${conversationId.take(12)} " +
-                "ms=${SystemClock.elapsedRealtime() - startedAt} " +
-                "journal=${result.journal.size} history=${result.history.size}",
-        )
         return result
     }
 
