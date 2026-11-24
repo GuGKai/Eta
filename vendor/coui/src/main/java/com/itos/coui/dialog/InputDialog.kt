@@ -64,6 +64,7 @@ import kotlinx.coroutines.flow.first
  * 清除只回调空值，不提交确认。accent 用于焦点线和光标，clearContentDescription 由宿主本地化。
  * 默认等待窗口获焦后请求输入焦点和键盘；autoFocus=false 时由用户点击输入区进入编辑。
  * properties 保留 decorFitsSystemWindows=true；键盘避让由预设处理，勿再叠加 imePadding。
+ * themeTint 为模糊材质染色基准色（强度由库统一控制，Color.Transparent 关闭染色，仅 material != null 时生效）。
  */
 @Composable
 fun InputDialog(
@@ -88,10 +89,11 @@ fun InputDialog(
     autoFocus: Boolean = true,
     properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true),
     visible: Boolean? = null,
+    themeTint: Color = CouiTheme.materialTintFor(dark),
 ) {
     InputDialogFrame(modifier, value.text, { onValueChange(TextFieldValue("", TextRange.Zero)) },
         onDismissRequest, confirmAction, dark, accent, clearContentDescription, title, message, placeholder,
-        counter, counterIsError, dismissAction, placement, colors, material, backdrop, autoFocus, properties, visible) { field, style ->
+        counter, counterIsError, dismissAction, placement, colors, material, backdrop, autoFocus, properties, visible, themeTint) { field, style ->
         BasicTextField(value, onValueChange, modifier = field, singleLine = true, enabled = visible != false,
             textStyle = style, cursorBrush = SolidColor(accent))
     }
@@ -100,6 +102,7 @@ fun InputDialog(
 /**
  * 基于宿主 TextFieldState 的同一输入预设。inputTransformation 接收真实编辑事务及替换范围，
  * 适合粘贴过滤和 IME 组合编辑；程序性 state.edit 不经过输入转换。布局与窗口沿用值回调版本。
+ * themeTint 为模糊材质染色基准色（强度由库统一控制，Color.Transparent 关闭染色，仅 material != null 时生效）。
  */
 @Composable
 fun InputDialog(
@@ -124,10 +127,11 @@ fun InputDialog(
     properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true),
     inputTransformation: InputTransformation? = null,
     visible: Boolean? = null,
+    themeTint: Color = CouiTheme.materialTintFor(dark),
 ) {
     InputDialogFrame(modifier, state.text.toString(), { state.edit { replace(0, length, "") } },
         onDismissRequest, confirmAction, dark, accent, clearContentDescription, title, message, placeholder,
-        counter, counterIsError, dismissAction, placement, colors, material, backdrop, autoFocus, properties, visible) { field, style ->
+        counter, counterIsError, dismissAction, placement, colors, material, backdrop, autoFocus, properties, visible, themeTint) { field, style ->
         BasicTextField(state = state, modifier = field, textStyle = style, cursorBrush = SolidColor(accent), enabled = visible != false,
             lineLimits = TextFieldLineLimits.SingleLine, inputTransformation = inputTransformation)
     }
@@ -156,6 +160,7 @@ private fun InputDialogFrame(
     autoFocus: Boolean,
     properties: DialogProperties,
     visible: Boolean?,
+    themeTint: Color,
     editor: @Composable (Modifier, TextStyle) -> Unit,
 ) {
     require(properties.decorFitsSystemWindows) { "输入型弹窗需保留 decorFitsSystemWindows=true，由预设统一处理键盘避让" }
@@ -164,7 +169,8 @@ private fun InputDialogFrame(
     CompositionLocalProvider(LocalCouiDialogSoftInputMode provides softInputMode) {
         Dialog(modifier = modifier, onDismissRequest = onDismissRequest, confirmAction = confirmAction,
             dark = dark, title = title, dismissAction = dismissAction, placement = placement,
-            colors = colors, material = material, backdrop = backdrop, properties = properties, visible = visible) {
+            colors = colors, material = material, backdrop = backdrop, properties = properties,
+            visible = visible, themeTint = themeTint) {
             // SingleInput 属于 BottomAssignment：正文到 customPanel 是 4dp，不沿用普通警告的 16dp。
             if (!message.isNullOrEmpty()) DialogText(Modifier.fillMaxWidth()
                 .padding(horizontal = CouiDialogDefaults.contentPadding)

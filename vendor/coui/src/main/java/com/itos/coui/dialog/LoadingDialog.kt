@@ -56,6 +56,7 @@ private object LoadingDialogDefaults {
  * 提供 [onDismissRequest] 时，返回键会请求宿主关闭。外点请求还需启用 [dismissOnClickOutside]。
  * 任务的完成和取消由宿主处理。
  * [material] 使用 API 33 及以上的窗口背景源，可显式传入 [backdrop]。
+ * [themeTint] 为模糊材质染色基准色（强度由库统一控制，Color.Transparent 关闭染色，仅 material != null 时生效）。
  */
 @Composable
 fun LoadingDialog(
@@ -68,6 +69,7 @@ fun LoadingDialog(
     material: CouiDialogMaterial? = null,
     backdrop: CouiBackdrop? = null,
     dismissOnClickOutside: Boolean = false,
+    themeTint: Color = CouiTheme.materialTintFor(dark),
 ) {
     require(message.isNotBlank()) { "加载提示不能为空" }
     CouiDialogWindow(
@@ -86,6 +88,7 @@ fun LoadingDialog(
         visible = visible,
         maxWidth = LoadingDialogDefaults.windowWidth,
         horizontalMargin = 0.dp,
+        themeTint = themeTint,
     ) {
         Column(
             modifier = Modifier.align(Alignment.Center)

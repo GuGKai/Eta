@@ -115,6 +115,7 @@ data class CouiChipTabItem(
  * selectedColor / selectedContentColor 分别覆盖选中背景与前景；未指定选中前景时沿用 contentColor。
  * 前景色传入 Color.Unspecified 时继承当前内容色。
  * 禁用项的选中与未选中前景均使用 disabledContentColor。
+ * themeTint 为中性玻璃底层的染色基准色（强度由库统一控制，透明关闭，不干扰 selectedColor）。
  */
 @RequiresApi(34)
 @Composable
@@ -139,6 +140,7 @@ fun ChipTabRow(
     renderers: List<CouiFloatingRenderer> = remember(items.map { it.key }) { items.map { CouiFloatingRenderer.standalone() } },
     selectedColor: Color? = null,
     selectedContentColor: Color = contentColor,
+    themeTint: Color = CouiTheme.materialTintFor(dark),
 ) {
     require(items.map { it.key }.distinct().size == items.size) { "分类项的 key 必须唯一" }
     val selectedIndex = items.indexOfFirst { it.key == selectedKey }
@@ -246,6 +248,7 @@ fun ChipTabRow(
                             textStyle = textStyle, contourGlowEnabled = contourGlowEnabled, renderer = renderers[index],
                             selectedColor = selectedColor,
                             selectedContentColor = if (enabled && item.enabled) selectedContentColor else disabledContentColor,
+                            themeTint = themeTint,
                         )
                     }
                 }

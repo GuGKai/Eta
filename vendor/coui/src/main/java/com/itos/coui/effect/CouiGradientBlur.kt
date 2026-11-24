@@ -1,5 +1,6 @@
 package com.itos.coui.effect
 
+import android.graphics.BlendMode
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.os.Build
@@ -110,6 +111,18 @@ internal fun Modifier.drawComposeGradientBackdrop(
             }
         """.trimIndent())
         val radiusSpec = BlurRadiusSpec.shader(with(density) { referenceBlurRadiusPx.toDp() }) { radiusMask }
+        val normalizeEffect = RenderEffect.createRuntimeShaderEffect(
+            RuntimeShader("""
+                uniform shader child;
+                half4 main(float2 coord) {
+                    float4 c = child.eval(coord);
+                    if (c.a <= 0.0) return half4(0.0);
+                    return half4(float4(c.rgb / c.a, 1.0));
+                }
+            """.trimIndent()),
+            "child",
+        )
+        val identityEffect = RenderEffect.createOffsetEffect(0f, 0f)
         val tintShader = RuntimeShader("""
             uniform shader child;
             float4 blur(float2 coord) { return child.eval(coord); }
@@ -128,7 +141,10 @@ internal fun Modifier.drawComposeGradientBackdrop(
                 val gradientHeight = if (gradientSpeed == null) fadeHeightPx else size.height
                 radiusMask.setFloatUniform("gradientTop", paddingPx + size.height - gradientHeight)
                 radiusMask.setFloatUniform("gradientHeight", gradientHeight)
-                blur = radiusSpec.createRenderEffect(layerSize, density).asAndroidRenderEffect()
+                val rawBlur = radiusSpec.createRenderEffect(layerSize, density).asAndroidRenderEffect()
+                val normalized = RenderEffect.createChainEffect(normalizeEffect, rawBlur)
+                // 屏幕外透明外沿会拉低边界 alpha；还原有效颜色并按原图 alpha 裁回，避免顶边透出未模糊正文或外溢不透明边。
+                blur = RenderEffect.createBlendModeEffect(normalized, identityEffect, BlendMode.DST_IN)
                 lastLayerSize = layerSize
             }
             // 搜索页随滚动改变遮罩透明度时继续复用模糊效果。
@@ -310,7 +326,7 @@ private fun RuntimeShader.setGradientTint(tint: CouiGradientTint, padding: Float
 // 固定渐隐长度使用 smoothstep；全高渐隐使用原厂幂曲线。
 private fun gradientPosition(gradientSpeed: Float?): String = """
     float position = clamp((coord.y - gradientTop) / gradientHeight, 0.0, 1.0);
-    float ratio = ${if (gradientSpeed == null) "smoothstep(0.0, 1.0, 1.0 - position)" else "1.0 - pow(position, ${gradientSpeed})"};
+    float ratio = ${if (gradientSpeed == null) "smoothstep(0.0, 1.0, 1.0 - position)" else "position <= 0.0 ? 1.0 : 1.0 - pow(position, ${gradientSpeed})"};
 """.trimIndent()
 
 private const val GradientNoiseShader = """

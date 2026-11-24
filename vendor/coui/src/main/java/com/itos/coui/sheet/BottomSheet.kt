@@ -138,7 +138,8 @@ object CouiSheetDefaults {
  * 关闭请求默认将 visible.value 设为 false，可通过 onDismissRequest 接管。
  * 确认、草稿、页面导航和二级面板属于宿主。
  * API 33 及以上且有宿主窗口源时，默认模糊背景并应用材质混色，material = null 可关闭。
- * themeTint 仅对模糊材质表面作保亮度染色，默认为当前主题的染色配置，透明色关闭染色。
+ * themeTint 为模糊材质染色基准色（强度由库统一控制，默认为当前主题的染色配置，透明色关闭染色，
+ * 顶部操作按钮采样面板底图且不二次染色）。
  * 窗口源须排除当前面板和遮罩。
  */
 @Composable

@@ -492,7 +492,7 @@ outputCol = blendEdge(rectData, outputCol, rawCol, sdf, useMenuLightEdge);
 outputCol = clamp(outputCol, 0.0, 1.0);
 // 只染材质与背景光效, 在覆盖率之前处理, 不填充透明区域或影响前景。
 if(u_themeTint.a > 0.0){
-outputCol.rgb = mix(outputCol.rgb, luminosity(outputCol.rgb, u_themeTint.rgb), u_themeTint.a);
+outputCol.rgb = applyCouiThemeTint(outputCol.rgb, u_themeTint);
 }
 outputCol *= shape*originCol.a;
 outputCol.rgb = clamp(outputCol.rgb, vec3(0.0), vec3(outputCol.a));

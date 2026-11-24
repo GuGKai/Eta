@@ -90,6 +90,7 @@ import kotlin.math.roundToInt
  * 设置式常驻搜索与分裂取消胶囊；在所属页面的浮层使用，backdrop 不包含当前搜索。
  * 宿主持有查询、展开和结果；取消只请求关闭，清空只提交空查询，不持有导航。
  * enabled 为 false 时停止输入、点击和交互反馈，释放自身焦点；查询和展开目标仍由宿主持有。
+ * themeTint 为浮动材质染色基准色（仅 API 34+ 生效，强度由库统一控制，透明关闭）。
  */
 @Composable
 fun SearchBar(
@@ -109,6 +110,7 @@ fun SearchBar(
     shadowProgress: Float = 0f,
     colors: CouiSearchBarColors = CouiSearchBarDefaults.colors(dark),
     enabled: Boolean = true,
+    themeTint: Color = CouiTheme.materialTintFor(dark),
 ) {
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -187,7 +189,6 @@ fun SearchBar(
             alpha = (f / .2f).coerceIn(0f, 1f), visible = state.active)
     }
     val contour = LocalCouiContourGlowEnabled.current
-    val themeTint = CouiTheme.materialTintFor(dark)
     var normalShadow by remember { mutableFloatStateOf(shadowProgress) }
     if (!state.active) SideEffect { normalShadow = shadowProgress }
     // 首页在搜索弹簧期间暂停滚动投影回调；不能用搜索主动折叠产生的 offset 提前点亮投影。

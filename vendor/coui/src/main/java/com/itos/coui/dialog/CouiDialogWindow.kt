@@ -112,6 +112,7 @@ internal fun CouiDialogWindow(
     visible: Boolean? = null,
     maxWidth: Dp = CouiDialogDefaults.maxWidth,
     horizontalMargin: Dp = CouiDialogDefaults.horizontalMargin,
+    themeTint: Color = Color.Transparent,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val hostView = LocalView.current
@@ -291,7 +292,7 @@ internal fun CouiDialogWindow(
                 .onGloballyPositioned { windowSize = it.size }
                 .padding(horizontal = horizontalMargin).padding(bottom = padding)) {
                 DialogCard(modifier.fillMaxWidth().heightIn(max = minOf(maxCardHeight, availableHeight)),
-                    material, windowBackdrop, colors, shape, edge, dark, radiusPx, edgeWeight,
+                    material, windowBackdrop, colors, shape, edge, dark, radiusPx, edgeWeight, themeTint,
                     frameScale, frameTranslation?.minus(imeTranslation), frameAlpha,
                     with(density) { bottomPadding.toPx() }, { cardCoordinates = it }, content)
             }
@@ -313,6 +314,7 @@ private fun DialogCard(
     dark: Boolean,
     radiusPx: Float,
     edgeWeight: Float,
+    themeTint: Color,
     frameScale: Float,
     frameTranslationY: Float?,
     frameAlpha: Float,
@@ -324,7 +326,7 @@ private fun DialogCard(
     val materialEffect = if (Build.VERSION.SDK_INT >= 33 && material != null) {
         rememberCouiMaterialEffect(
             material.mix, material.blend, material.blendMode,
-            rgbMix = true, slightDither = material.blurRadius > 0,
+            rgbMix = true, slightDither = material.blurRadius > 0, themeTint = themeTint,
         )
     } else null
     val surfaceEffect = remember(materialEffect) { materialEffect?.asComposeRenderEffect() }

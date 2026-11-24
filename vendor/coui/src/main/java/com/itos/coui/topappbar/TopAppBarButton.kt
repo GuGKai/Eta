@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
@@ -65,6 +66,7 @@ fun TopAppBarButton(
     text: Boolean = false,
     renderer: CouiFloatingRenderer = remember { CouiFloatingRenderer.standalone() },
     style: CouiToolbarStyle = CouiTopAppBarButtonDefaults.style(),
+    themeTint: Color = Color.Unspecified,
     content: @Composable RowScope.() -> Unit,
 ) {
     val backdrop = checkNotNull(LocalCouiToolbarBackdrop.current) { "顶栏按钮必须位于顶栏效果作用域内" }
@@ -79,7 +81,10 @@ fun TopAppBarButton(
         }
     }
     val shape = if (capsule) style.capsuleShape else style.circleShape
-    val material = remember(style, capsule) { style.material(capsule) }
+    val baseMaterial = remember(style, capsule) { style.material(capsule) }
+    val material = remember(baseMaterial, themeTint) {
+        if (themeTint.isSpecified) baseMaterial.copy(themeTint = themeTint) else baseMaterial
+    }
     val contourStyle = remember(style, capsule) { style.contourStyle?.invoke(capsule) }
     require(contourStyle != CouiContourStyle.Menu) { "顶栏 Drawable 轮廓不可使用菜单组合预设" }
     val drawableContour = remember(contour, contourStyle) {
