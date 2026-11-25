@@ -38,7 +38,6 @@ import io.github.mangi.eta.agent.device.RootScrollMotionContract
 import io.github.mangi.eta.core.AndroidAgentLogger
 import java.util.ArrayDeque
 import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -94,17 +93,8 @@ class AgentAccessibilityService : AccessibilityService() {
     )
     private val windowContentGenerations = WindowContentGenerations()
 
-    /** 各 display 的内容事件代数：动作前后比较它就能判断界面是否真的变了。 */
-    private val displayContentGenerations = ConcurrentHashMap<Int, Long>()
-
-    /** 各 display 最近一次内容事件的时刻，用来判断界面是否已安静。 */
-    private val displayLastContentEventUptime = ConcurrentHashMap<Int, Long>()
-
-    /** 最近一次交互动作开始时各 display 的代数，作为"是否变了"的基准。 */
-    private val actionBaselineGenerations = ConcurrentHashMap<Int, Long>()
-
-    /** 记录动作起点的时刻，用于丢弃过期基准。 */
-    private val actionStartUptime = ConcurrentHashMap<Int, Long>()
+    /** fork 本地：动作后"界面是否真的变了"的判定，实现见 AgentAccessibilityServiceLocal.kt。 */
+    private val settleTracker = AccessibilitySettleTracker { windows.orEmpty() }
     private val queryExecutor = AccessibilityQueryExecutor()
     @Volatile
     private var serviceToken = SERVICE_TOKENS.incrementAndGet()
@@ -135,7 +125,7 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        event?.let(::recordContentEvent)
+        event?.let(settleTracker::recordContentEvent)
         when (event?.eventType) {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
@@ -482,53 +472,20 @@ class AgentAccessibilityService : AccessibilityService() {
 
     private fun windowContentGeneration(windowId: Int): Long = windowContentGenerations.current(windowId)
 
+    // fork 本地的三项能力都是薄委托：实现见 AgentAccessibilityServiceLocal.kt，签名保持不变。
+
     /** 记录动作起点，必须在真正派发动作之前调用。 */
-    fun markActionStart(displayId: Int = android.view.Display.DEFAULT_DISPLAY) {
-        actionBaselineGenerations[displayId] = contentGenerationOf(displayId)
-        actionStartUptime[displayId] = SystemClock.uptimeMillis()
-    }
+    fun markActionStart(displayId: Int = android.view.Display.DEFAULT_DISPLAY) =
+        settleTracker.markActionStart(displayId)
 
-    fun contentGenerationOf(displayId: Int): Long = displayContentGenerations[displayId] ?: 0L
+    fun contentGenerationOf(displayId: Int): Long = settleTracker.contentGenerationOf(displayId)
 
-    /**
-     * 等界面"确实变了且事件安静"，最多等 [maxMs]。
-     *
-     * 返回 changed：已变化且安静；changed_busy：变了但事件还在刷，到点返回；
-     * unchanged：[idleGiveUpMs] 内没有任何内容事件，说明该界面不产生内容事件；
-     * timeout：始终没等到变化；no_baseline：动作没经过无障碍，调用方应回退固定等待。
-     */
     fun awaitActionSettled(
         displayId: Int,
         quietMs: Long = SETTLE_QUIET_MS,
         idleGiveUpMs: Long = SETTLE_IDLE_GIVE_UP_MS,
         maxMs: Long = SETTLE_MAX_MS,
-    ): String {
-        val baseline = actionBaselineGenerations[displayId] ?: return "no_baseline"
-        val startedAt = actionStartUptime[displayId] ?: return "no_baseline"
-        if (SystemClock.uptimeMillis() - startedAt > SETTLE_BASELINE_TTL_MS) return "no_baseline"
-        while (true) {
-            SystemClock.sleep(SETTLE_POLL_MS)
-            val now = SystemClock.uptimeMillis()
-            val changed = contentGenerationOf(displayId) > baseline
-            val quiet = now - (displayLastContentEventUptime[displayId] ?: 0L) >= quietMs
-            if (changed && quiet) return "changed"
-            if (!changed && now - startedAt >= idleGiveUpMs) return "unchanged"
-            if (now - startedAt >= maxMs) return if (changed) "changed_busy" else "timeout"
-        }
-    }
-
-    private fun recordContentEvent(event: AccessibilityEvent) {
-        val displayId = resolveEventDisplayId(event)
-        displayContentGenerations.merge(displayId, 1L) { current, delta -> current + delta }
-        displayLastContentEventUptime[displayId] = SystemClock.uptimeMillis()
-    }
-
-    private fun resolveEventDisplayId(event: AccessibilityEvent): Int {
-        val direct = event.displayId
-        if (direct >= 0) return direct
-        return windows.orEmpty().firstOrNull { window -> window.id == event.windowId }?.displayId
-            ?: android.view.Display.DEFAULT_DISPLAY
-    }
+    ): String = settleTracker.awaitActionSettled(displayId, quietMs, idleGiveUpMs, maxMs)
 
     private fun <T> runAccessibilityQuery(block: () -> T): T? {
         if (instance !== this || Looper.myLooper() == Looper.getMainLooper()) return null
@@ -2695,21 +2652,6 @@ class AgentAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val CLIP_LABEL = "eta_agent"
-
-        /** 动作后判定界面已稳定要求内容事件停满的时间窗口。 */
-        private const val SETTLE_QUIET_MS = 400L
-
-        /** 界面完全不产生内容事件时的提前放弃时间，避免把不报事件的页面拖慢。 */
-        private const val SETTLE_IDLE_GIVE_UP_MS = 500L
-
-        /** 动作后等待的硬上限，避免持续动画的页面把动作卡住。 */
-        private const val SETTLE_MAX_MS = 1_200L
-
-        /** 等待期间的轮询间隔。 */
-        private const val SETTLE_POLL_MS = 120L
-
-        /** 动作起点超过这个时长即视为过期，改用固定等待，避免拿旧基准误判。 */
-        private const val SETTLE_BASELINE_TTL_MS = 3_000L
         private const val WINDOW_POLL_FALLBACK_MS = 80L
         private const val MAX_UI_TREE_DEPTH = 24
         private const val UI_TREE_VISIT_MULTIPLIER = 8

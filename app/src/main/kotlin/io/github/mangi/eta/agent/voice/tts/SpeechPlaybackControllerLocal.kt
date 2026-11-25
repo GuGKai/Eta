@@ -1,0 +1,218 @@
+package io.github.mangi.eta.agent.voice.tts
+
+import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.data.model.SpeechSettings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechPcmOutput
+import io.github.mangi.eta.agent.voice.audio.speechFailure
+import io.github.mangi.eta.agent.voice.SystemTtsClip
+import io.github.mangi.eta.agent.voice.SystemTtsSynthesizer
+
+/*
+ * fork 本地：朗读的"系统 TTS 引擎"整条链路、暂停/继续的挂起与收尾、以及播放收尾判据。
+ *
+ * 抽离自 SpeechPlaybackController.kt（挂载点化，原文件只留调用）。上游只有一条云端合成
+ * → 自有音轨的路径；本地在这之上补了：
+ *  1. 系统 TTS 引擎逐句合成到本地音频再统一写音轨，并带"哪一句在播"的高亮进度；
+ *  2. 引擎不支持 synthesizeToFile 时退回引擎自己播报；
+ *  3. 暂停/继续：暂停期间合成与高亮都停住，恢复后从断点接着读。
+ *
+ * 这些函数都在 SpeechPlaybackController 的实例上跑，只用它暴露给同包的 internal 状态，
+ * 不改变任何行为。
+ */
+
+/** 一句已合成好的音频，带上它在句列表里的序号，供界面高亮当前句。 */
+private class SystemTtsSentence(val index: Int, val clip: SystemTtsClip)
+
+/** 高亮比音频晚这么久生效：抵消音轨缓冲带来的提前量。 */
+private const val HIGHLIGHT_DELAY_MS = 300L
+
+/**
+ * 系统引擎逐句合成时最多领先播放的句数：多留一句，让某句合成特别慢时也有余量，
+ * 又不会在暂停时白合成整篇。
+ */
+private const val PREFETCH_CLIPS = 3
+
+private const val DRAIN_POLL_MS = 20L
+private const val DRAIN_TIMEOUT_MS = 180_000L
+
+/** 系统引擎逐句合成到本地音频，再交给我们自己的音轨播放；暂停只停音轨，不丢位置。 */
+internal suspend fun SpeechPlaybackController.speakWithSystemEngine(
+    session: Long,
+    messageId: String,
+    readable: String,
+    config: SpeechSettings,
+) {
+    val sentences = SpeechText.sentences(readable)
+    if (sentences.isEmpty()) throw SpeechFailure(SpeechErrorCode.NO_SPEECH, "这条消息没有可朗读的正文")
+    val synthesizer = createSystemSynthesizer(config)
+    systemSynthesizer = synthesizer
+    try {
+        playSystemClips(session, messageId, sentences, config, synthesizer)
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        // 还没出声就合成失败（引擎不支持 synthesizeToFile 或输出格式不符）时退回引擎直接播报；
+        // 已经出声则直接报错，不从头重读。
+        if (systemClipPlayed) throw error
+        AndroidAgentLogger.warn("Eta system TTS synthesis unavailable, falling back: code=${error.speechFailure().code}")
+        speakWithEngineSpeaker(session, messageId, readable, config)
+    } finally {
+        synthesizer.close()
+        if (systemSynthesizer === synthesizer) systemSynthesizer = null
+    }
+}
+
+/** 逐句合成并写入同一音轨：合成与播放并行，下一句在上一句还播着时就已备好。 */
+internal suspend fun SpeechPlaybackController.playSystemClips(
+    session: Long,
+    messageId: String,
+    sentences: List<String>,
+    config: SpeechSettings,
+    synthesizer: SystemTtsSynthesizer,
+) = coroutineScope {
+    val queue = Channel<SystemTtsSentence>(Channel.UNLIMITED)
+    // 只允许领先播放若干句：暂停时不会把整篇合成出来，恢复后立刻有下一句可用。
+    val ahead = Semaphore(PREFETCH_CLIPS)
+    launch(Dispatchers.IO) {
+        try {
+            sentences.forEachIndexed { index, sentence ->
+                ahead.acquire()
+                queue.send(SystemTtsSentence(index, synthesizer.synthesize(sentence, config.systemTtsVoice)))
+            }
+            queue.close()
+        } catch (error: Throwable) {
+            // 合成失败经队列交给播放端，避免子协程异常直接取消这个作用域。
+            queue.close(error)
+        }
+    }
+    withContext(Dispatchers.IO) {
+        var player: SpeechPcmOutput? = null
+        var playerRate = 0
+        var announced = false
+        // 高亮比“交给音轨”晚一点亮：写入本身跑在出声前面，直接跟着写就会提前半秒。
+        val highlights = Channel<Int>(Channel.UNLIMITED)
+        val highlightJob = launch {
+            for (index in highlights) {
+                delay(HIGHLIGHT_DELAY_MS)
+                // 暂停期间声音停住，高亮也不许往前跑。
+                awaitResume()
+                if (session == generation) {
+                    AndroidAgentLogger.info("Eta speech highlight $index")
+                    mutableState.value = mutableState.value.copy(sentenceIndex = index)
+                }
+            }
+        }
+        try {
+            for (spoken in queue) {
+                val clip = spoken.clip
+                if (session != generation) throw CancellationException("Speech playback replaced")
+                if (player == null || clip.sampleRate != playerRate) {
+                    // 采样率随引擎与音色变化，换了就必须换音轨，否则会变调变速。
+                    player?.let { previous ->
+                        previous.finish()
+                        awaitDrained(session, previous)
+                        previous.close()
+                    }
+                    player = SpeechPcmOutput(clip.sampleRate)
+                    output = player
+                    playerRate = clip.sampleRate
+                }
+                val current = checkNotNull(player) { "Speech playback stopped" }
+                // 高亮跟着“准备交给音轨的这一句”走：写入是跟着播放节奏一点点灌进缓冲的，
+                // 等 write 返回该句已经快读完了，所以在这之前就把高亮排进队列（延时生效）。
+                if (session == generation) highlights.trySend(spoken.index)
+                // write 会在音轨缓冲写满时阻塞轮询，必须留在 IO 线程，挪到主线程会冻住界面。
+                runInterruptible { current.write(clip.pcm) }
+                ahead.release()
+                if (!announced) {
+                    announced = true
+                    systemClipPlayed = true
+                    markPlaying(session, messageId)
+                }
+            }
+            player?.let {
+                it.finish()
+                awaitDrained(session, it)
+            }
+        } finally {
+            highlights.close()
+            highlightJob.join()
+        }
+    }
+}
+
+/** 回退路径：引擎自己合成并播放，这里只负责分段喂文本并等待每段结束。 */
+internal suspend fun SpeechPlaybackController.speakWithEngineSpeaker(
+    session: Long,
+    messageId: String,
+    readable: String,
+    config: SpeechSettings,
+) {
+    val speaker = createSystemSpeaker(config)
+    systemSpeaker = speaker
+    val chunks = SpeechText.chunks(readable)
+    val announced = java.util.concurrent.atomic.AtomicBoolean(false)
+    var index = 0
+    // 暂停打断当前段时，引擎最后回报的朗读位置；继续后只补读这一段剩下的字。
+    var offset = 0
+    try {
+        while (index < chunks.size) {
+            awaitResume()
+            if (session != generation) throw CancellationException("Speech playback replaced")
+            val chunk = chunks[index]
+            if (offset >= chunk.length) {
+                index++
+                offset = 0
+                continue
+            }
+            speaker.speak(chunk.substring(offset), config.systemTtsVoice) {
+                if (announced.compareAndSet(false, true)) scope.launch(Dispatchers.Main.immediate) {
+                    markPlaying(session, messageId)
+                }
+            }
+            if (session != generation) throw CancellationException("Speech playback replaced")
+            if (mutableState.value.paused) {
+                // 被暂停打断：不前进到下一段，恢复后从这段的断点续读。
+                offset = (offset + speaker.spokenOffset).coerceAtMost(chunk.length)
+                continue
+            }
+            index++
+            offset = 0
+        }
+    } finally {
+        speaker.close()
+        if (systemSpeaker === speaker) systemSpeaker = null
+    }
+}
+
+/** 暂停期间挂起播放循环，继续后返回；停止朗读会随 job 取消一起退出。 */
+internal suspend fun SpeechPlaybackController.awaitResume() {
+    mutableState.first { !it.paused }
+}
+
+/** 等音轨把已写入的音频放完；暂停的时间不计入超时，暂停多久都能接着读。 */
+internal suspend fun SpeechPlaybackController.awaitDrained(session: Long, player: SpeechAudioOutput) {
+    var waited = 0L
+    while (!player.drained()) {
+        if (session != generation) throw CancellationException("Speech playback replaced")
+        if (mutableState.value.paused) waited = 0 else waited += DRAIN_POLL_MS
+        if (waited > DRAIN_TIMEOUT_MS) throw SpeechFailure(SpeechErrorCode.TIMEOUT, "朗读播放超时，请重试")
+        delay(DRAIN_POLL_MS)
+    }
+}
+
+internal fun SpeechPlaybackController.markPlaying(session: Long, messageId: String) {
+    if (session != generation) return
+    mutableState.value = mutableState.value.copy(messageId = messageId, loading = false)
+}
