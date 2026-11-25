@@ -2,20 +2,24 @@ package io.github.mangi.eta.agent.voice
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings
+import io.github.mangi.eta.ui.markdown.ChatGfmFlavourDescriptor
+import io.github.mangi.eta.ui.markdown.TexMathDelimiters
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
-import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.parser.MarkdownParser
 
 internal object SpeechText {
     fun readable(markdown: CharSequence): String {
+        // 与聊天排版用同一个 GFM 扩展（含数学公式识别），保证「读什么」与「显示什么」出自同一棵树。
+        val source: CharSequence = TexMathDelimiters.normalize(markdown.toString())
         val root = MarkdownParser(
-            flavour = GFMFlavourDescriptor(),
+            flavour = ChatGfmFlavourDescriptor(originalSource = markdown.toString()),
             cancellationToken = CancellationToken.NonCancellable,
-        ).buildMarkdownTreeFromString(markdown)
+        ).buildMarkdownTreeFromString(source)
         fun StringBuilder.appendNode(node: ASTNode) {
             when (node.type) {
                 MarkdownElementTypes.LINK_DEFINITION,
@@ -32,34 +36,38 @@ internal object SpeechText {
                 MarkdownTokenTypes.EMPH,
                 GFMTokenTypes.TILDE,
                 GFMTokenTypes.TABLE_SEPARATOR -> Unit
-                // 代码块照读：跳过围栏标记，只把内容读出来；行与行之间保留换行，自然断句。
-                MarkdownElementTypes.CODE_FENCE -> {
-                    append('\n')
-                    var inBody = false
-                    for (child in node.children) {
-                        when (child.type) {
-                            MarkdownTokenTypes.CODE_FENCE_END -> break
-                            MarkdownTokenTypes.EOL -> if (inBody) append('\n') else inBody = true
-                            MarkdownTokenTypes.CODE_FENCE_CONTENT ->
-                                if (inBody) append(markdown, child.startOffset, child.endOffset)
-                        }
-                    }
-                    append('\n')
-                }
+                // 整块代码不朗读：内容一句不念，每块只补一句占位提示；占位自成一行，也就自成一句。
+                MarkdownElementTypes.CODE_FENCE,
                 MarkdownElementTypes.CODE_BLOCK -> {
                     append('\n')
-                    for (child in node.children) {
-                        when (child.type) {
-                            MarkdownTokenTypes.CODE_LINE -> append(markdown, child.startOffset, child.endOffset)
-                            MarkdownTokenTypes.EOL -> append('\n')
-                        }
-                    }
+                    append(
+                        AppStrings.get(
+                            R.string.voice_i18n_speech_text_code_block_skipped,
+                            "代码块，略。",
+                        ),
+                    )
                     append('\n')
                 }
+                // 显示公式块同样跳过并占位；行内小公式照读源码，只剥掉定界 $（如「$x^2$」读作 x^2）。
+                GFMElementTypes.BLOCK_MATH -> {
+                    append('\n')
+                    append(
+                        AppStrings.get(
+                            R.string.voice_i18n_speech_text_math_block_skipped,
+                            "公式，略。",
+                        ),
+                    )
+                    append('\n')
+                }
+                GFMElementTypes.INLINE_MATH -> append(
+                    source.substring(node.startOffset, node.endOffset).trim()
+                        .removePrefix("$$").removePrefix("$")
+                        .removeSuffix("$$").removeSuffix("$"),
+                )
                 MarkdownElementTypes.ORDERED_LIST -> {
                     val items = node.children.filter { it.type == MarkdownElementTypes.LIST_ITEM }
                     val marker = items.firstOrNull()?.children?.firstOrNull { it.type == MarkdownTokenTypes.LIST_NUMBER }
-                    val start = marker?.let { markdown.substring(it.startOffset, it.endOffset).trim().dropLast(1).toIntOrNull() } ?: 1
+                    val start = marker?.let { source.substring(it.startOffset, it.endOffset).trim().dropLast(1).toIntOrNull() } ?: 1
                     for ((index, item) in items.withIndex()) {
                         append('\n')
                         append(
@@ -74,7 +82,7 @@ internal object SpeechText {
                     append('\n')
                 }
                 GFMTokenTypes.CHECK_BOX -> {
-                    val marker = markdown.substring(node.startOffset, node.endOffset)
+                    val marker = source.substring(node.startOffset, node.endOffset)
                     append(
                         if ('x' in marker || 'X' in marker) {
                             AppStrings.get(R.string.voice_i18n_speech_text_task_done, "已完成：")
@@ -103,10 +111,10 @@ internal object SpeechText {
                     append(withoutUrls(text).ifBlank { " " })
                 }
                 MarkdownElementTypes.AUTOLINK -> append(withoutUrls(
-                    markdown.substring(node.startOffset, node.endOffset).removeSurrounding("<", ">"),
+                    source.substring(node.startOffset, node.endOffset).removeSurrounding("<", ">"),
                 ))
-                GFMTokenTypes.GFM_AUTOLINK -> append(withoutUrls(markdown.substring(node.startOffset, node.endOffset)))
-                else -> if (node.children.isEmpty()) append(markdown, node.startOffset, node.endOffset)
+                GFMTokenTypes.GFM_AUTOLINK -> append(withoutUrls(source.substring(node.startOffset, node.endOffset)))
+                else -> if (node.children.isEmpty()) append(source, node.startOffset, node.endOffset)
                     else node.children.forEach { appendNode(it) }
             }
         }
@@ -163,6 +171,16 @@ internal object SpeechText {
         return clean.split('\n').flatMap { line ->
             if (line.isBlank()) emptyList() else mergeShortPieces(splitLine(line, limit), minLength)
         }
+    }
+
+    /**
+     * 占位句判定：整块代码与显示公式被跳过朗读时念的是「代码块，略。」这类固定文案，
+     * 正文里并不存在这几个字，高亮定位要按近似落点处理，不能去正文里搜（会撞上远处同字内容）。
+     */
+    fun isSkipNotice(sentence: String): Boolean {
+        val trimmed = sentence.trim()
+        return trimmed == AppStrings.get(R.string.voice_i18n_speech_text_code_block_skipped, "代码块，略。") ||
+            trimmed == AppStrings.get(R.string.voice_i18n_speech_text_math_block_skipped, "公式，略。")
     }
 
     /**
@@ -245,6 +263,7 @@ internal object SpeechText {
     private const val LEAD_MAX = 24
     private val SENTENCE_END = setOf('。', '！', '？', '…', '；', ';', '!', '?')
     private val SENTENCE_TAIL = SENTENCE_END + setOf('”', '』', '」', '）', ')')
-    private val SECONDARY_END = setOf('，', '、', '：', ':', ',', ' ')
+    /** 超长句的次级切点只认逗号与冒号；顿号与空格都还在「完整一句话」内部，不再当断点。 */
+    private val SECONDARY_END = setOf('，', '：', ':', ',')
     private val PIECE_END = SENTENCE_TAIL + SECONDARY_END
 }

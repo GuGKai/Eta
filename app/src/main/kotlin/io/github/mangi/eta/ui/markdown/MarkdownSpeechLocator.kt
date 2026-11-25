@@ -57,6 +57,13 @@ internal class MarkdownSpeechHighlightCache {
             scanned++
             locate(scanned, flat)
         }
+        // 占位句（「代码块，略。」）不给高亮：正文里没有对应文字，涂一段近似区间反而误导，
+        // 读占位提示时页面保持上一段高亮消退后的干净状态。
+        if (SpeechText.isSkipNotice(sentences.getOrNull(index).orEmpty())) {
+            current = null
+            currentIndex = index
+            return null
+        }
         val span = spans[index] ?: return current
         val range = flat.flatRange(span.start, span.end) ?: return current
         current = flat.highlightSpan(range.first, range.last + 1)
@@ -70,6 +77,9 @@ internal class MarkdownSpeechHighlightCache {
         val sentence = sentences?.getOrNull(i).orEmpty()
         val full = compactOf(sentence)
         if (full.isEmpty()) return
+        // 占位句不记录区间：正文里没有这几个字，游标保持原位（通常正指着被跳过的那块），
+        // 下一句从这里继续往后找；高亮端对占位句返回 null，不在代码框里涂近似区间。
+        if (SpeechText.isSkipNotice(sentence)) return
         // 列表项的朗读引导语（「第 1 项：」）界面上不存在，整句必然对不上，再拿正文试一次。
         val body = compactOf(SpeechText.alignmentBody(sentence))
         val needles = if (body.isEmpty() || body == full) listOf(full) else listOf(full, body)
@@ -78,6 +88,15 @@ internal class MarkdownSpeechHighlightCache {
             if (at >= 0) {
                 spans[i] = Span(at, at + needle.length)
                 cursor = at + needle.length
+                return
+            }
+            // 行内公式在块文本里保留带 $ 定界符的原始源码（appendInlineContent 的 alternateText），
+            // 朗读文本却把 $ 剥掉了：允许块文本里的 '$' 被跳过再逐字对齐，命中区间含定界符
+            // 本身，高亮恰好完整盖住公式绘制区域，游标也不会因字符数对不上而漂移。
+            val mathMatch = indexOfSkippingMathDollars(flat.compact, needle, cursor)
+            if (mathMatch != null) {
+                spans[i] = Span(mathMatch.first, mathMatch.second)
+                cursor = mathMatch.second
                 return
             }
         }
@@ -107,6 +126,50 @@ internal class MarkdownSpeechHighlightCache {
 
 /** 整句匹配失败时按这些长度依次用句首兜底：先长后短，既避免撞车，也保证短句有得兜。 */
 private val FALLBACK_HEAD_LENGTHS = intArrayOf(10, 6, 4, 2)
+
+/**
+ * 在 [haystack] 的 [from] 之后寻找 [needle]，允许跳过 haystack 里的 '$'（行内公式定界符）。
+ * 朗读文本不念定界符，块文本每含一处公式就比朗读文本多出两个 '$'，整句精确匹配必然失败。
+ * 跳过时贪婪即可：needle 里若真的有 '$'（价格等普通文本），逐字相等分支会优先消费它，
+ * 不会把金额误判成公式。命中返回紧凑文本区间（起点到终点，不含），找不到返回 null。
+ */
+private fun indexOfSkippingMathDollars(haystack: String, needle: String, from: Int): Pair<Int, Int>? {
+    if (needle.isEmpty()) return null
+    var start = from.coerceAtLeast(0)
+    while (start < haystack.length) {
+        val first = haystack[start]
+        // 句首就是公式时，起点本身可能是 '$'，也要作为候选。
+        if (first == needle[0] || first == '$') {
+            val end = matchEndSkippingMathDollars(haystack, needle, start)
+            if (end >= 0) return start to end
+        }
+        start++
+    }
+    return null
+}
+
+/**
+ * 从 [haystack] 的 [start] 起与 [needle] 逐字对齐：字符相等就同时前进；
+ * haystack 里的 '$' 在不等时跳过（朗读不念它）；其余不等即失败。
+ * 句尾正好停在公式上时，把收尾的定界符 '$' 一并并入区间，保证公式区域被高亮盖全。
+ */
+private fun matchEndSkippingMathDollars(haystack: String, needle: String, start: Int): Int {
+    var h = start
+    var n = 0
+    while (n < needle.length && h < haystack.length) {
+        when {
+            haystack[h] == needle[n] -> {
+                h++
+                n++
+            }
+            haystack[h] == '$' -> h++
+            else -> return -1
+        }
+    }
+    if (n < needle.length) return -1
+    while (h < haystack.length && haystack[h] == '$') h++
+    return h
+}
 
 /** 朗读文本与渲染文本共同的清洗规则：空白（含渲染端补的窄空格）一律不参与匹配。 */
 private fun isIgnorableSpace(char: Char): Boolean =
