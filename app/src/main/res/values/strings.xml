@@ -1353,7 +1353,7 @@
   <string name="tool_edit_file_description">使用旧文本定位片段，检查匹配和版本后替换。</string>
   <string name="tool_stat_file">查看文件信息</string>
   <string name="tool_stat_file_description">查询 Android 或 Linux 文件的类型、大小和版本。</string>
-  <string name="tool_glob_files">按路径查找文件</string>
+  <string name="tool_glob_files">查找路径文件</string>
   <string name="tool_glob_files_description">使用路径模式递归查找文件，支持有界续查。</string>
   <string name="tool_grep_files">搜索文件内容</string>
   <string name="tool_grep_files_description">搜索 UTF-8 文本，返回匹配路径、行号与采集范围。</string>

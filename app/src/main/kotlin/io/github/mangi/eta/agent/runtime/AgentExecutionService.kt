@@ -149,8 +149,13 @@ internal class AgentExecutionService : Service() {
     private fun cardContent(notice: ExecutionRunNotice, multi: Boolean): RenderedText {
         val title = if (notice.paused) getString(R.string.execution_paused) else currentStepLabel(notice.status)
         val steps = resources.getQuantityString(R.plurals.work_completed_steps, notice.completedSteps, notice.completedSteps)
-        // 并行跑多个任务时，卡片之间只剩环节名往往无法区分，前面补上任务摘要。
-        val text = if (multi && notice.taskLabel.isNotBlank()) "${notice.taskLabel} · $steps" else steps
+        // 并行跑多个任务时，卡片之间只剩环节名往往无法区分，后面补上会话标题（步数先进，
+        // 超长交给 SystemUI 省略号，代码侧不再自己截字）。
+        val text = if (multi && notice.conversationTitle.isNotBlank()) {
+            "$steps · ${notice.conversationTitle}"
+        } else {
+            steps
+        }
         return RenderedText(title = title, text = text)
     }
 
@@ -273,7 +278,9 @@ internal class AgentExecutionService : Service() {
             // 而 ProgressStyle（哪怕是空实例）都会在卡片上画出进度条与左侧图标。
             // 3.3.4 一直用「shortCriticalText + setRequestPromotedOngoing」这条写法，
             // 卡片只有标题、副标题与两个按钮，没有任何进度条。
-            builder.setShortCriticalText(liveTextLabel(content.title))
+            // 状态栏胶囊右侧文字用完整环节名，不再按 4 字截断：截断会把「查找录音摘要」压成「查找录音」，
+            // 长标题显示不全。是否省略交给 SystemUI，这里不提前裁剪。
+            builder.setShortCriticalText(content.title)
             requestPromotedOngoing(builder)
         }
         if (notice != null) {
@@ -332,10 +339,6 @@ internal class AgentExecutionService : Service() {
         else -> status.localizedText(resources)
     }
 
-    /** 状态栏胶囊右侧文字：固定 4 个中文字符宽度，超出直接截断，不做补齐、省略号或翻页。 */
-    private fun liveTextLabel(label: String): String =
-        if (label.length <= LIVE_TEXT_LIMIT) label else label.take(LIVE_TEXT_LIMIT)
-
     companion object {
         private const val CHANNEL = "eta_execution"
         /** 第一张卡片（同时承载前台服务）；后续卡片按序号顺延：1108、1109…… */
@@ -347,9 +350,6 @@ internal class AgentExecutionService : Service() {
         private const val ACTION_PAUSE = "io.github.mangi.eta.action.PAUSE_USER_EXECUTION"
         private const val ACTION_RESUME = "io.github.mangi.eta.action.RESUME_USER_EXECUTION"
         private const val ACTION_TOGGLE_VIRTUAL_CAPSULE = "io.github.mangi.eta.action.TOGGLE_VIRTUAL_CAPSULE"
-
-        /** 状态栏胶囊右侧文字：固定 4 个中文字符宽度。 */
-        private const val LIVE_TEXT_LIMIT = 4
 
         /** 通知合并窗口：距上次发布不足该时长的新变化合并成一次尾发，避免流体云胶囊反复重建。 */
         private const val MIN_PUBLISH_INTERVAL_MS = 400L
@@ -370,7 +370,7 @@ internal class AgentExecutionService : Service() {
                 this.taskCount = taskCount
                 // 去重键覆盖卡片的全部可见内容：步数、暂停态、任务名在变而文字没变时也要刷新。
                 val key = notices.joinToString("|") {
-                    "${it.runId},${it.status},${it.completedSteps},${it.paused},${it.taskLabel}"
+                    "${it.runId},${it.status},${it.completedSteps},${it.paused},${it.conversationTitle}"
                 } + "#$taskCount"
                 if (key == publishedStatusText) return@post
                 publishedStatusText = key
@@ -431,7 +431,8 @@ internal class AgentExecutionService : Service() {
 /** 一个 Agent run 在通知栏里的独立卡片：并行任务各自一张，互不覆盖。 */
 internal data class ExecutionRunNotice(
     val runId: String,
-    val taskLabel: String = "",
+    /** 会话标题；空串表示这个 run 不该在卡片上显示会话（未命名、定时任务、语音等）。 */
+    val conversationTitle: String = "",
     val status: AgentOverlayStatus? = null,
     val completedSteps: Int = 0,
     val paused: Boolean = false,

@@ -36,7 +36,7 @@ internal class AgentTraceFormatter {
             "list_directory" -> AppStrings.get(R.string.trace_arg_list_directory, "列出目录")
             "edit_file" -> AppStrings.get(R.string.trace_arg_edit_file, "精确编辑文件")
             "stat_file" -> AppStrings.get(R.string.trace_arg_stat_file, "查看文件信息")
-            "glob_files" -> AppStrings.get(R.string.trace_arg_glob_files, "按路径查找文件")
+            "glob_files" -> AppStrings.get(R.string.trace_arg_glob_files, "查找路径文件")
             "grep_files" -> AppStrings.get(R.string.trace_arg_grep_files, "搜索文件内容")
             "inspect_app" -> AppStrings.get(R.string.trace_arg_inspect_app, "检查应用")
             "type_text" -> summarizeTypeText(toolCall.argumentsJson)

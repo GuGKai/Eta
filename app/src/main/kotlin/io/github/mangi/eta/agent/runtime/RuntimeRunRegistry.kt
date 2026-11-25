@@ -26,6 +26,13 @@ internal class RuntimeRunRegistry(private val capacity: Int = MAX_ACTIVE_RUNS) {
         val conversationId: String = AgentConversationIdentity.fromHandoff(initialRequest.handoff, initialRequest.runId)
         @Volatile var request: AgentRuntimeWire.RunRequest = initialRequest
             private set
+        /**
+         * 通知卡片上的会话标题；空串表示「不上卡片」。
+         *
+         * 只有普通 Eta 会话、且标题已经由 ConversationTitleGenerator 真正命名完成后才非空，
+         * 由 [AgentRuntimeService] 的标题订阅器写入；定时任务、自动化、语音等外部入口恒为空。
+         */
+        @Volatile var conversationTitle: String = ""
         @Volatile var preparing: Boolean = true
             private set
         @Volatile var guiStatus: GuiControlStatus? = null

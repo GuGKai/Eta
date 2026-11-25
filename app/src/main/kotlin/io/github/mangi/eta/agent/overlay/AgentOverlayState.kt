@@ -68,6 +68,7 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         status = AgentOverlayStatus.Reasoning,
         detailText = "",
         activeTools = emptyList(),
+        completedSteps = 0,
     )
     is AgentEvent.RoundStarted -> copy(round = event.round).thinkingUnlessWorking()
     is AgentEvent.ProviderRequestStarted -> copy(round = event.round).thinkingUnlessWorking()
@@ -99,18 +100,20 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
     // 多个工具并发（如并行 Subagent）时，仅当全部在途工具都结束后才切回思考态。
     // 每完成一次工具调用计一步，执行通知的第二行据此正向累计。
     is AgentEvent.ToolFinished -> {
-        val remaining = if (event.toolCallId.isNotBlank() && activeTools.any { it.callId == event.toolCallId }) {
+        val remaining = if (event.toolCallId.isNotBlank()) {
             activeTools.filterNot { it.callId == event.toolCallId }
         } else {
-            emptyList()
+            // 缺少调用 ID 时只摘掉无 ID 的占位，避免把仍在跑的其他工具误判为已结束。
+            activeTools.filterNot { it.callId.isBlank() }
         }
+        val counted = completedSteps + event.stepCount.coerceAtLeast(1)
         val nextTool = remaining.lastOrNull()
         if (nextTool != null) {
             running(AgentOverlayStatus.RunningTool(nextTool.name), event.round)
-                .copy(thought = nextTool.argsPreview, activeTools = remaining)
+                .copy(thought = nextTool.argsPreview, activeTools = remaining, completedSteps = counted)
         } else {
             running(AgentOverlayStatus.Reasoning, event.round)
-                .copy(thought = "", activeTools = emptyList(), completedSteps = completedSteps + 1)
+                .copy(thought = "", activeTools = emptyList(), completedSteps = counted)
         }
     }
     is AgentEvent.HostedToolFinished -> running(AgentOverlayStatus.Reasoning, event.round)

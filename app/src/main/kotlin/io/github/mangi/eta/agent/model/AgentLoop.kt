@@ -665,7 +665,7 @@ internal class AgentLoop(
                     .toString(),
                 sensitive = true,
                 images = outcomes.flatMap { it.result.images },
-            ))
+            ), stepCount = calls.size)
         }
         if (toolCall.name !in availableToolNames) {
             return rejectedToolOutcome(
@@ -736,11 +736,12 @@ internal class AgentLoop(
         round: Int,
         toolCall: AgentModelClient.ToolCall,
         result: AgentModelClient.ToolResult,
+        stepCount: Int = 1,
     ): ToolOutcome {
         if (result.sensitive || AgentSensitiveToolPolicy.isSensitive(toolCall.name)) {
             sensitiveToolCallIds += toolCall.id
         }
-        emitToolFinished(round, toolCall, result)
+        emitToolFinished(round, toolCall, result, stepCount)
         return ToolOutcome(toolCall, result)
     }
 
@@ -782,6 +783,7 @@ internal class AgentLoop(
         round: Int,
         toolCall: AgentModelClient.ToolCall,
         result: AgentModelClient.ToolResult,
+        stepCount: Int = 1,
     ) {
         onEvent(
             AgentEvent.ToolFinished(
