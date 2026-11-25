@@ -148,6 +148,12 @@ import top.yukonga.miuix.kmp.icon.glass.Delete
 import top.yukonga.miuix.kmp.icon.glass.Edit
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
+import io.github.mangi.eta.ui.components.pane.ConversationDrawerSection
+import io.github.mangi.eta.ui.components.pane.ConversationPaneIcons
+import io.github.mangi.eta.ui.components.pane.ConversationPanelMetrics
+import io.github.mangi.eta.ui.components.pane.WorkspaceChipAllKey
+import io.github.mangi.eta.ui.components.pane.WorkspaceChipBlurRadiusPx
+import io.github.mangi.eta.ui.components.pane.WorkspaceChipPressShiftDp
 
 // fork 本地新增：工作区 chip 行、面板分区头、工作区命名/删除/移动弹窗、空态与搜索占位。
 

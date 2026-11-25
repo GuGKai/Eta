@@ -3,10 +3,10 @@ package io.github.mangi.eta.agent.voice
 import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
-import io.github.mangi.eta.ui.voice.openSpeechSettings
-import io.github.mangi.eta.ui.voice.SpeechPlaybackErrors
-import io.github.mangi.eta.ui.voice.LocalSpeechPlayback
-import io.github.mangi.eta.ui.voice.LocalSpeechPlaybackEnabled
+import io.github.mangi.eta.ui.components.openSpeechSettings
+import io.github.mangi.eta.ui.components.SpeechPlaybackErrors
+import io.github.mangi.eta.ui.components.LocalSpeechPlayback
+import io.github.mangi.eta.ui.components.LocalSpeechPlaybackEnabled
 import android.os.PowerManager
 import android.Manifest
 import android.app.ActivityOptions

@@ -37,9 +37,9 @@ import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.motion.couiPressMotion
 import com.itos.coui.motion.rememberCouiPressMotion
 import top.yukonga.miuix.kmp.basic.Text
-import io.github.mangi.eta.agent.voice.AssistantCapsuleElevation
-import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
-import io.github.mangi.eta.agent.voice.couiAssistantCapsule
+import io.github.mangi.eta.agent.voice.ui.AssistantCapsuleElevation
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.ui.couiAssistantCapsule
 
 internal enum class EtaSpeechPhase { IDLE, STARTING, LISTENING, RECOGNIZING }
 

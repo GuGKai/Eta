@@ -15,13 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.github.mangi.eta.ui.components.AgentChatBody
-import io.github.mangi.eta.ui.components.AgentConversationLoadState
-import io.github.mangi.eta.ui.components.LocalChatInputBalanceCapsule
+import io.github.mangi.eta.ui.components.chat.AgentChatBody
+import io.github.mangi.eta.ui.components.chat.AgentConversationLoadState
+import io.github.mangi.eta.ui.components.chat.LocalChatInputBalanceCapsule
 import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.LocalAgentBrowserSession
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
-import io.github.mangi.eta.ui.components.chatConversationCompositionKey
+import io.github.mangi.eta.ui.components.chat.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.AgentHomeAction

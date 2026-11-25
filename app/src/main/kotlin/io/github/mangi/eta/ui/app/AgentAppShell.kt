@@ -89,14 +89,14 @@ import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import io.github.mangi.eta.ui.components.AdaptiveTopAppBar
 import io.github.mangi.eta.ui.components.CharacterAvatar
-import io.github.mangi.eta.ui.components.ChatActionIcons
+import io.github.mangi.eta.ui.components.chat.ChatActionIcons
 import io.github.mangi.eta.ui.components.AgentTopBarChatHeader
 import io.github.mangi.eta.ui.components.ChatImagePreviewHost
-import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
+import io.github.mangi.eta.ui.components.pane.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
 import io.github.mangi.eta.ui.components.TopBarBackButton
-import io.github.mangi.eta.ui.components.NonFocusablePopupProperties
+import io.github.mangi.eta.ui.components.chat.NonFocusablePopupProperties
 import io.github.mangi.eta.ui.components.RoleplayChatUi
 import io.github.mangi.eta.ui.components.captureGlassBackdrop
 import io.github.mangi.eta.ui.components.coui.CouiBackButton

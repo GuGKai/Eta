@@ -18,12 +18,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -40,6 +38,8 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
 import kotlinx.coroutines.isActive
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private const val POWER_BUTTON_HEIGHT_RATIO = 0.355f
 private const val POWER_HALO_HOLD_SECONDS = 0.06f

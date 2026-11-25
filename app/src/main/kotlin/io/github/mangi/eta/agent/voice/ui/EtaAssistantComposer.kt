@@ -80,12 +80,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
-import io.github.mangi.eta.agent.voice.AssistantActionGlyph
-import io.github.mangi.eta.agent.voice.AssistantCapsuleElevation
-import io.github.mangi.eta.agent.voice.AssistantGlyphKind
-import io.github.mangi.eta.agent.voice.AssistantVoiceOrb
-import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
-import io.github.mangi.eta.agent.voice.couiAssistantCapsule
+import io.github.mangi.eta.agent.voice.ui.AssistantActionGlyph
+import io.github.mangi.eta.agent.voice.ui.AssistantCapsuleElevation
+import io.github.mangi.eta.agent.voice.ui.AssistantGlyphKind
+import io.github.mangi.eta.agent.voice.ui.AssistantVoiceOrb
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.ui.couiAssistantCapsule
 
 private val ComposerModeEasing = CubicBezierEasing(0.20f, 0f, 0f, 1f)
 

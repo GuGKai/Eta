@@ -79,7 +79,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
-import io.github.mangi.eta.ui.components.AgentConversationMessages
+import io.github.mangi.eta.ui.components.chat.AgentConversationMessages
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -90,11 +90,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.basic.Text
-import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
-import io.github.mangi.eta.agent.voice.TopCouiSheetShape
-import io.github.mangi.eta.agent.voice.buildTopCouiRimPath
-import io.github.mangi.eta.agent.voice.buildTopCouiSheetPath
-import io.github.mangi.eta.agent.voice.rememberEtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.ui.TopCouiSheetShape
+import io.github.mangi.eta.agent.voice.ui.buildTopCouiRimPath
+import io.github.mangi.eta.agent.voice.ui.buildTopCouiSheetPath
+import io.github.mangi.eta.agent.voice.ui.rememberEtaVoicePanelColors
 
 internal enum class EtaVoicePhase {
     READY,

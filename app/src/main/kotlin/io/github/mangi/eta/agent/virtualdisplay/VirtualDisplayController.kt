@@ -24,7 +24,7 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceToolContract
 import io.github.mangi.eta.agent.device.RootAccess
-import io.github.mangi.eta.agent.overlay.StageCanvasHeight
+import io.github.mangi.eta.agent.overlay.ui.StageCanvasHeight
 import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType

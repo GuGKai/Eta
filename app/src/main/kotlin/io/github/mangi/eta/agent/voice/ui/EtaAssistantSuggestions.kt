@@ -39,9 +39,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
-import io.github.mangi.eta.agent.voice.AssistantCapsuleElevation
-import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
-import io.github.mangi.eta.agent.voice.couiAssistantCapsule
+import io.github.mangi.eta.agent.voice.ui.AssistantCapsuleElevation
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.ui.couiAssistantCapsule
 
 private val assistantSuggestionResIds = listOf(
     R.string.voice_i18n_suggestion_summarize_screen,

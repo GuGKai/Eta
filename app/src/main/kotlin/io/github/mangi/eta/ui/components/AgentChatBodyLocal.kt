@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import io.github.mangi.eta.ui.components.chat.AgentTimelineEntry
 
 // fork 本地新增：底部跟随/滚动指示器调参与组件、首行文字探测、时间线缓存。
 

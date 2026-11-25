@@ -1,0 +1,1723 @@
+package io.github.mangi.eta.ui.components.chat
+
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.horizontalScroll
+import android.graphics.BitmapFactory
+import android.util.Base64
+import android.util.LruCache
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.CallSplit
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Compress
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.itos.coui.dialog.CouiDialogDefaults
+import com.itos.coui.effect.couiButtonFeedback
+import com.itos.coui.layout.CouiPageDefaults
+import com.itos.coui.menu.CouiMenuItem
+import com.itos.coui.menu.Menu
+import com.itos.coui.menu.couiMenuAnchor
+import com.itos.coui.menu.rememberCouiMenuAnchor
+import com.itos.coui.shape.CouiCapsuleShape
+import com.itos.coui.shape.CouiShape
+import com.itos.coui.theme.CouiTheme
+import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.imagegen.ImageGenToolCatalog
+import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
+import io.github.mangi.eta.agent.model.PromptSuggestions
+import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
+import io.github.mangi.eta.ui.markdown.MarkdownTone
+import io.github.mangi.eta.ui.markdown.StaticMarkdown
+import io.github.mangi.eta.ui.markdown.StreamingMarkdown
+import io.github.mangi.eta.ui.markdown.StreamingMarkdownState
+import io.github.mangi.eta.ui.markdown.THINKING_LINE_HEIGHT_SP
+import io.github.mangi.eta.ui.markdown.scaleChatText
+import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.AgentMessageUi
+import io.github.mangi.eta.ui.model.RunTraceMessageUi
+import io.github.mangi.eta.ui.model.SuggestionChipsMessageUi
+import io.github.mangi.eta.ui.model.SystemNoticeCode
+import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
+import io.github.mangi.eta.ui.model.ThinkingMessageUi
+import io.github.mangi.eta.ui.model.ToolActivityMessageUi
+import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
+import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.ui.components.LocalSpeechPlayback
+import io.github.mangi.eta.ui.components.SpeechReadAloudButton
+import io.github.mangi.eta.ui.screens.voice.rememberSpeechSentences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.io.File
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.RichTooltip
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TooltipAnchorPosition
+import top.yukonga.miuix.kmp.basic.TooltipBox
+import top.yukonga.miuix.kmp.basic.TooltipDefaults
+import top.yukonga.miuix.kmp.basic.rememberTooltipState
+import top.yukonga.miuix.kmp.squircle.squircleBorder
+import top.yukonga.miuix.kmp.squircle.squircleSurface
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import io.github.mangi.eta.ui.components.AskQuestionCardView
+import io.github.mangi.eta.ui.components.CharacterAvatar
+import io.github.mangi.eta.ui.components.ChatImagePreviewer
+import io.github.mangi.eta.ui.components.EtaChoiceChip
+import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
+import io.github.mangi.eta.ui.components.LocalRoleplayChat
+import io.github.mangi.eta.ui.components.RoleplayChatUi
+import io.github.mangi.eta.ui.components.iconForTool
+
+private val chatImageBitmapCache = object : LruCache<String, ImageBitmap>(48 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int =
+        (value.width * value.height * 4).coerceAtLeast(1)
+}
+
+@Composable
+internal fun rememberDataUrlBitmap(dataUrl: String): ImageBitmap? =
+    rememberChatImageBitmap(source = dataUrl, maxDimensionPx = 1600)
+
+/**
+ * 统一聊天图片解码器：
+ * - `data:image/...;base64,...` 同步命中/写入 LRU 缓存，保持现有用户预览图零首帧闪烁；
+ * - 本地原图文件（含 AI 生图 1K~4K 高清图）在 IO 线程按 [maxDimensionPx] 采样解码，避免主线程卡顿与 OOM。
+ */
+@Composable
+internal fun rememberChatImageBitmap(
+    source: String,
+    maxDimensionPx: Int = 1600,
+): ImageBitmap? {
+    val cacheKey = remember(source, maxDimensionPx) { "$maxDimensionPx|$source" }
+    val cached = remember(cacheKey) {
+        chatImageBitmapCache.get(cacheKey)
+            ?: if (source.startsWith("data:", ignoreCase = true)) {
+                decodeDataUrlBitmap(source)?.also { chatImageBitmapCache.put(cacheKey, it) }
+            } else {
+                null
+            }
+    }
+    var asyncBitmap by remember(cacheKey) { mutableStateOf(cached) }
+    LaunchedEffect(cacheKey) {
+        if (asyncBitmap != null || source.isBlank() || source.startsWith("data:", ignoreCase = true)) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            decodeLocalFileBitmap(source, maxDimensionPx)
+        }
+        if (decoded != null) {
+            chatImageBitmapCache.put(cacheKey, decoded)
+            asyncBitmap = decoded
+        }
+    }
+    return asyncBitmap
+}
+
+internal fun decodeDataUrlBitmap(dataUrl: String): ImageBitmap? {
+    val base64 = dataUrl.substringAfter("base64,", "")
+    if (base64.isBlank()) return null
+    return runCatching {
+        val bytes = Base64.decode(base64, Base64.NO_WRAP)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    }.getOrNull()
+}
+
+private fun decodeLocalFileBitmap(source: String, maxDimensionPx: Int): ImageBitmap? {
+    val file = File(source.removePrefix("file://").trim())
+    if (!file.isFile) return null
+    return runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w <= 0 || h <= 0) return null
+        var sample = 1
+        val limit = maxDimensionPx.coerceAtLeast(256)
+        while ((w / sample) > limit || (h / sample) > limit) {
+            sample *= 2
+        }
+        BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sample },
+        )?.asImageBitmap()
+    }.getOrNull()
+}
+
+/**
+ * 等待首个文本片段时的轻量反馈。
+ */
+@Composable
+fun AITypingIndicator(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "dots")
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(3) { index ->
+            val delay = index * 150
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, delayMillis = delay, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "alpha"
+            )
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .graphicsLayer(alpha = alpha)
+                    .background(MiuixTheme.colorScheme.onSurfaceVariantSummary, CircleShape)
+            )
+        }
+    }
+}
+
+/**
+ * 只有正在执行的状态才持有无限动画。历史思考和工具条目保持静态，避免长会话里
+ * 每个已完成节点都持续产生帧时钟与状态更新。
+ */
+@Composable
+internal fun rememberActivePulse(
+    active: Boolean,
+    label: String,
+): Float {
+    if (!active) return 1f
+    val transition = rememberInfiniteTransition(label = label)
+    val alpha by transition.animateFloat(
+        initialValue = 0.58f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(820, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "${label}_alpha",
+    )
+    return alpha
+}
+
+@Composable
+internal fun ChatMessageItem(
+    message: AgentChatMessageUi,
+    onSuggestionClick: (String) -> Unit,
+    /** 提问卡片提交：消息 id + 已格式化的答案文本。 */
+    onAskAnswer: (String, String) -> Unit = { _, _ -> },
+    onRunTraceClick: () -> Unit,
+    onOpenBrowser: () -> Unit,
+    showBrowserShortcut: Boolean,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    assistantOverlay: Boolean = false,
+    retainedStreamingState: StreamingMarkdownState? = null,
+    showCopyAction: Boolean = true,
+    showMessageActions: Boolean = false,
+    showBranchAction: Boolean = false,
+    messageActionsEnabled: Boolean = true,
+    isEditing: Boolean = false,
+    onEditMessage: (String) -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {},
+    onRegenerateMessage: (String) -> Unit = {},
+    onBranchMessage: (String) -> Unit = {},
+    onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
+    /** 正文首行字顶相对本条消息顶边的偏移（px）：只有最后一条消息需要，用于正文停靠。 */
+    onAnswerFirstLineTop: ((Float) -> Unit)? = null,
+    onEditGeneratedImage: ((String) -> Unit)? = null,
+) {
+    when (message) {
+        is UserMessageUi -> UserMessageBubble(
+            message = message,
+            assistantOverlay = assistantOverlay,
+            actionsEnabled = messageActionsEnabled,
+            isEditing = isEditing,
+            onEdit = { onEditMessage(message.id) },
+            onDelete = { onDeleteMessage(message.id) },
+            modifier = modifier,
+        )
+        is AgentMessageUi -> AgentMessageBlock(
+            message = message,
+            allowSpeech = true,
+            assistantOverlay = assistantOverlay,
+            retainedStreamingState = retainedStreamingState,
+            showCopyAction = showCopyAction,
+            showMessageActions = showMessageActions,
+            showBranchAction = showBranchAction,
+            onBranch = { onBranchMessage(message.id) },
+            messageActionsEnabled = messageActionsEnabled,
+            onDelete = { onDeleteMessage(message.id) },
+            onRegenerate = { onRegenerateMessage(message.id) },
+            onEdit = { onEditMessage(message.id) },
+            onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
+            onSuggestionClick = onSuggestionClick,
+            onAskAnswer = { text -> onAskAnswer(message.id, text) },
+            onAnswerFirstLineTop = onAnswerFirstLineTop,
+            modifier = modifier,
+        )
+        is SystemNoticeMessageUi -> if (message.code == SystemNoticeCode.ContextCompaction) {
+            ContextCompactionMarker(message = message, modifier = modifier)
+        } else {
+            AgentMessageBlock(
+                message = AgentMessageUi(
+                    id = message.id,
+                    content = buildString {
+                        append(
+                            stringResource(
+                                when (message.code) {
+                                    SystemNoticeCode.Stopped -> R.string.system_notice_stopped
+                                    SystemNoticeCode.EmptyResult -> R.string.system_notice_empty_result
+                                    SystemNoticeCode.ContextCompaction -> R.string.context_compaction
+                                    SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
+                                    SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
+                                    SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+                                },
+                            ),
+                        )
+                        message.detail?.takeIf(String::isNotBlank)?.let { detail ->
+                            append("\n\n")
+                            append(detail)
+                        }
+                    },
+                    renderMarkdown = false,
+                    roundDurationMs = message.roundDurationMs,
+                ),
+                assistantOverlay = false,
+                retainedStreamingState = null,
+                showCopyAction = showCopyAction,
+                showMessageActions = showMessageActions,
+                messageActionsEnabled = messageActionsEnabled,
+                onDelete = { onDeleteMessage(message.id) },
+                onRegenerate = { onRegenerateMessage(message.id) },
+                modifier = modifier,
+            )
+        }
+        is ThinkingMessageUi -> ThinkingRow(
+            message = message,
+            retainedStreamingState = retainedStreamingState,
+            modifier = modifier,
+            compact = compact,
+        )
+        is RunTraceMessageUi -> RunTraceRow(message = message, onClick = onRunTraceClick, modifier = modifier)
+        is ToolActivityMessageUi -> if (message.toolName == ImageGenToolCatalog.TOOL_NAME) {
+            GeneratedImageMessageCard(
+                message = message,
+                assistantOverlay = assistantOverlay,
+                onEditImage = onEditGeneratedImage,
+                modifier = modifier,
+            )
+        } else {
+            ToolActivityInline(
+                message = message,
+                onOpenBrowser = onOpenBrowser,
+                showBrowserShortcut = showBrowserShortcut,
+                modifier = modifier,
+                compact = compact,
+            )
+        }
+        is ToolSummaryMessageUi -> ToolSummaryInline(message = message, modifier = modifier, compact = compact)
+        is SuggestionChipsMessageUi -> SuggestionChipsRow(message = message, onSuggestionClick = onSuggestionClick, modifier = modifier)
+    }
+}
+
+// ── 用户消息：轻盈美观气泡 ──────────────────────────────────────────────
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun UserMessageBubble(
+    message: UserMessageUi,
+    assistantOverlay: Boolean,
+    actionsEnabled: Boolean,
+    isEditing: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    @Suppress("DEPRECATION")
+    val clipboardManager = LocalClipboardManager.current
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val haptic = LocalHapticFeedback.current
+    var showCouiMenu by remember { mutableStateOf(false) }
+    val couiAnchor = rememberCouiMenuAnchor()
+    LaunchedEffect(actionsEnabled) {
+        if (!actionsEnabled) {
+            tooltipState.dismiss()
+            showCouiMenu = false
+        }
+    }
+    LaunchedEffect(tooltipState) {
+        snapshotFlow { tooltipState.isVisible }.collect { visible ->
+            if (visible) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+    val visiblePrompt = remember(message.content) {
+        AgentFileReferencePromptCodec.parse(message.content)
+    }
+    // 会话正文字号倍率：我发出的消息与助手回答共用「外观和主题」里的同一个设置。
+    val chatTextScale = LocalAppearanceSettings.current.chatTextScale
+    val overlayBubbleColor = if (MiuixTheme.colorScheme.background.luminance() < 0.5f) {
+        Color(0xFF37393D)
+    } else {
+        Color(0xFFE5E7EA)
+    }
+    val uiStyle = LocalUiStyle.current
+    val bubbleContent: @Composable () -> Unit = {
+        if (message.images.isNotEmpty()) {
+            // 与上游一致：单图按原图比例自适应，多图紧凑成组，点击进入原位全屏预览。
+            Box(modifier = Modifier.padding(bottom = 8.dp)) {
+                UserMessageImages(
+                    messageId = message.id,
+                    images = message.images,
+                    assistantOverlay = false,
+                    isCoui = uiStyle == AppearanceUiStyle.COUI,
+                    couiDark = MiuixTheme.colorScheme.background.luminance() < 0.5f,
+                    highlightBorder = false,
+                    highlightColor = MiuixTheme.colorScheme.primary,
+                    previewer = LocalChatImagePreviewer.current,
+                    onLongClick = null,
+                )
+            }
+        }
+        if (visiblePrompt.references.isNotEmpty()) {
+            SentFileReferenceFlow(
+                references = visiblePrompt.references,
+                modifier = Modifier.padding(
+                    bottom = if (visiblePrompt.request.isNotBlank()) 8.dp else 0.dp,
+                ),
+            )
+        }
+        if (visiblePrompt.request.isNotBlank()) {
+            SelectionContainer {
+                Text(
+                    text = visiblePrompt.request,
+                    style = MiuixTheme.textStyles.body1.copy(
+                        fontSize = 16.sp * chatTextScale,
+                        lineHeight = 25.sp * chatTextScale,
+                    ),
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        if (message.isEdited) {
+            Text(
+                text = stringResource(R.string.ui_edited_c36776),
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (assistantOverlay) 16.dp else 20.dp,
+                vertical = if (assistantOverlay) 4.dp else 8.dp,
+            ),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        if (uiStyle == AppearanceUiStyle.COUI && !assistantOverlay) {
+            val couiDark = CouiTheme.isDark
+            val couiColors = CouiPageDefaults.themeColors(couiDark)
+            val destructiveColor = CouiDialogDefaults.themeColors(couiDark).destructive
+            val couiBubbleShape = UserBubbleShape
+            val couiBubbleBg = if (couiDark) Color(0xFF1F2D3E) else Color(0xFFEBF4FF)
+            val copyText = stringResource(R.string.ui_copy_4edd1d)
+            val editText = stringResource(R.string.ui_edit_a7f814)
+            val deleteText = stringResource(R.string.ui_delete_3755f5)
+            val menuItems = remember(copyText, editText, deleteText, destructiveColor) {
+                listOf(
+                    CouiMenuItem(value = 0, text = copyText, icon = Icons.Rounded.ContentCopy),
+                    CouiMenuItem(value = 1, text = editText, icon = Icons.Rounded.Edit),
+                    CouiMenuItem(
+                        value = 2,
+                        text = deleteText,
+                        icon = Icons.Rounded.Delete,
+                        iconTint = destructiveColor,
+                        dividerBefore = true,
+                    ),
+                )
+            }
+            Box {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 320.dp)
+                        .couiMenuAnchor(couiAnchor)
+                        .clip(couiBubbleShape)
+                        .background(couiBubbleBg, couiBubbleShape)
+                        .then(
+                            if (isEditing) {
+                                Modifier.border(1.dp, couiColors.accent, couiBubbleShape)
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                            onLongClick = if (actionsEnabled) {
+                                {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    couiAnchor.open { showCouiMenu = true }
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    bubbleContent()
+                }
+                Menu(
+                    expanded = showCouiMenu && actionsEnabled,
+                    onDismissRequest = { showCouiMenu = false },
+                    items = menuItems,
+                    onItemClick = { item ->
+                        showCouiMenu = false
+                        when (item.value) {
+                            0 -> {
+                                @Suppress("DEPRECATION")
+                                clipboardManager.setText(AnnotatedString(message.content))
+                                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                            }
+                            1 -> onEdit()
+                            2 -> onDelete()
+                        }
+                    },
+                    anchor = couiAnchor,
+                )
+            }
+        } else {
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                    positioning = TooltipAnchorPosition.Below,
+                ),
+                tooltip = {
+                    RichTooltip(insideMargin = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            MessageTooltipAction(
+                                icon = Icons.Rounded.ContentCopy,
+                                label = stringResource(R.string.ui_copy_4edd1d),
+                                onClick = {
+                                    @Suppress("DEPRECATION")
+                                    clipboardManager.setText(AnnotatedString(message.content))
+                                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    tooltipState.dismiss()
+                                },
+                            )
+                            MessageTooltipAction(
+                                icon = Icons.Rounded.Edit,
+                                label = stringResource(R.string.ui_edit_a7f814),
+                                onClick = {
+                                    tooltipState.dismiss()
+                                    onEdit()
+                                },
+                            )
+                            MessageTooltipAction(
+                                icon = Icons.Rounded.Delete,
+                                label = stringResource(R.string.ui_delete_3755f5),
+                                onClick = {
+                                    tooltipState.dismiss()
+                                    onDelete()
+                                },
+                            )
+                        }
+                    }
+                },
+                state = tooltipState,
+                focusable = true,
+                enableUserInput = actionsEnabled,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 320.dp)
+                        .then(
+                            if (assistantOverlay) {
+                                Modifier.background(overlayBubbleColor, RoundedCornerShape(10.dp))
+                            } else {
+                                Modifier.squircleSurface(
+                                    color = MiuixTheme.colorScheme.surfaceContainerHigh,
+                                    topStart = 20.dp,
+                                    topEnd = 20.dp,
+                                    bottomEnd = if (isEditing) 20.dp else 6.dp,
+                                    bottomStart = 20.dp,
+                                )
+                            },
+                        )
+                        .then(
+                            if (isEditing) {
+                                Modifier.squircleBorder(
+                                    width = 1.dp,
+                                    color = MiuixTheme.colorScheme.primary,
+                                    cornerRadius = 20.dp,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .padding(
+                            horizontal = if (assistantOverlay) 12.dp else 16.dp,
+                            vertical = if (assistantOverlay) 8.dp else 12.dp,
+                        ),
+                ) {
+                    bubbleContent()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageTooltipAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            // 下方文字已经命名该操作，图标不再重复朗读。
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MiuixTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.body2,
+            color = MiuixTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+// ── 上下文压缩：时间线中的轻量胶囊标记 ─────────────────────────────────
+
+/**
+ * 压缩不是一轮对话结果，而是上下文维护事件；用居中胶囊标记与助手正文区分，
+ * 进行中通过图标脉冲反馈，结束后保留压缩前后的 token 信息。
+ */
+@Composable
+private fun ContextCompactionMarker(
+    message: SystemNoticeMessageUi,
+    modifier: Modifier = Modifier,
+) {
+    val pulseAlpha = rememberActivePulse(active = message.running, label = "compaction_pulse")
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(percent = 50))
+                .background(MiuixTheme.colorScheme.surface)
+                .border(
+                    0.5.dp,
+                    MiuixTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    RoundedCornerShape(percent = 50),
+                )
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Compress,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(12.dp)
+                    .graphicsLayer(alpha = if (message.running) pulseAlpha else 1f),
+                tint = if (message.running) {
+                    MiuixTheme.colorScheme.primary
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = message.detail?.takeIf(String::isNotBlank)
+                    ?: stringResource(R.string.context_compaction),
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ── Agent 结果 ───────────────────────────────────────────────────────
+
+@Composable
+private fun AgentMessageBlock(
+    message: AgentMessageUi,
+    allowSpeech: Boolean = false,
+    assistantOverlay: Boolean = false,
+    retainedStreamingState: StreamingMarkdownState?,
+    showCopyAction: Boolean,
+    showMessageActions: Boolean,
+    showBranchAction: Boolean = false,
+    onBranch: () -> Unit = {},
+    messageActionsEnabled: Boolean,
+    onDelete: () -> Unit,
+    onRegenerate: () -> Unit,
+    onEdit: () -> Unit = {},
+    onSelectCandidate: (Int) -> Unit = {},
+    onSuggestionClick: (String) -> Unit = {},
+    onAskAnswer: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+    /** 正文首行字顶相对本条消息顶边的偏移（px）：正文停靠要贴的是首行文字，不是条目顶边。 */
+    onAnswerFirstLineTop: ((Float) -> Unit)? = null,
+) {
+    // 渲染层兜底：正文若还带着模型输出的 <suggestions> 块（历史数据、或某条链路把原始
+    // 文本写回 content），在这里统一剥掉，界面永远只显示干净正文 + 底部建议 chips。
+    val settledBody = remember(message.content, message.isStreaming) {
+        val visible = if (message.isStreaming) {
+            PromptSuggestions.visibleDuringStreaming(message.content)
+        } else {
+            message.content
+        }
+        PromptSuggestions.extract(visible)
+    }
+    val bodyContent = settledBody.first
+    val promptSuggestions = message.promptSuggestions.ifEmpty { settledBody.second }
+    val keepStreamingMarkdown = remember(message.id) { message.isStreaming }
+    DisposableEffect(retainedStreamingState) {
+        retainedStreamingState?.attachContent()
+        onDispose { retainedStreamingState?.detachContent() }
+    }
+    var streamingRevealComplete by remember(message.id) {
+        mutableStateOf(!keepStreamingMarkdown)
+    }
+    // 渲染会话由列表层按 message.id 持有，item 滚出视口被销毁后滑回时复用同一
+    // 会话；没有外部持有者时（如嵌套条目）退回组合内 remember，行为与之前一致。
+    val streamingState = if (keepStreamingMarkdown) {
+        retainedStreamingState ?: remember(message.id) { StreamingMarkdownState() }
+    } else {
+        null
+    }
+    val completedDocument = (streamingState ?: retainedStreamingState)
+        ?.snapshot?.completedDocumentFor(bodyContent)
+    val revealComplete = streamingRevealComplete && !message.isStreaming &&
+        (streamingState == null || completedDocument != null)
+    LaunchedEffect(retainedStreamingState, revealComplete, bodyContent) {
+        retainedStreamingState?.revealedContent = bodyContent.takeIf { revealComplete }
+    }
+
+    // 只对正在朗读的这条消息订阅句级进度，其余消息保持不重组。
+    val speechState = LocalSpeechPlayback.current?.state?.collectAsState()?.value
+    val speakingIndex = speechState
+        ?.takeIf { it.messageId == message.id && it.sentenceIndex >= 0 }
+        ?.sentenceIndex
+    val speechSentences = if (speakingIndex != null && message.renderMarkdown) {
+        rememberSpeechSentences(bodyContent)
+    } else {
+        null
+    }
+    // 朗读一旦开始，正文会被强制切成静态渲染（见下方 when 分支），StreamingMarkdown 会离开组合，
+    // 它的 onRevealCompleteChange 再也不会回来。显现标记一直是 false 的话，回答底部那行操作
+    // （朗读/复制/重新生成…）就会一直藏着，非要等朗读停下才出现。这里在朗读接管时直接补完标记。
+    LaunchedEffect(speakingIndex, message.isStreaming) {
+        if (speakingIndex != null && !message.isStreaming) {
+            streamingRevealComplete = true
+        }
+    }
+
+    val character = LocalRoleplayChat.current.takeUnless { assistantOverlay }
+    val isGreeting = character != null && message.id.startsWith(GreetingMessagePrefix)
+    // 停靠基准：直接把正文首行字顶的窗口 y 上报给列表层，列表层用
+    // 「首行窗口 y − 顶栏底边」闭环滚动；不经过条目顶边换算，内边距与行高留白都不参与。
+    val bodyFirstLineReporter: ((Float) -> Unit)? = onAnswerFirstLineTop
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (assistantOverlay) 16.dp else 20.dp,
+                vertical = 8.dp,
+            ),
+    ) {
+        if (character != null) {
+            CharacterReplyHeader(character = character, isGreeting = isGreeting)
+        }
+        when {
+            // 提问卡片自带完整信息，正文不再画：新消息正文为空，
+            // 历史消息里存着的旧引导语（「想先跟你确认几件事：」）也一并隐去。
+            message.askCard != null -> Unit
+            message.content.isBlank() && message.isStreaming -> {
+                AITypingIndicator(
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            // 正在朗读时直接走静态渲染：等显现动画收尾会错过第一句的高亮。
+            streamingState != null && !revealComplete && speakingIndex == null -> {
+                StreamingMarkdown(
+                    state = streamingState,
+                    content = bodyContent,
+                    isStreaming = message.isStreaming,
+                    tone = MarkdownTone.Answer,
+                    onRevealCompleteChange = { streamingRevealComplete = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    onFirstLineTop = bodyFirstLineReporter,
+                )
+            }
+            message.renderMarkdown -> {
+                SelectionContainer {
+                    StaticMarkdown(
+                        content = bodyContent,
+                        tone = MarkdownTone.Answer,
+                        parsed = completedDocument,
+                        modifier = Modifier.fillMaxWidth(),
+                        speechSentences = speechSentences,
+                        speechSentenceIndex = speakingIndex,
+                        onFirstLineTop = bodyFirstLineReporter,
+                    )
+                }
+            }
+            message.content.isNotBlank() -> {
+                // 不走 Markdown 的纯文本回答同样跟随「会话文字大小」，与正文保持同一倍率。
+                val fallbackTextScale = LocalAppearanceSettings.current.chatTextScale
+                SelectionContainer {
+                    Text(
+                        text = bodyContent,
+                        style = MiuixTheme.textStyles.body1.copy(
+                            fontSize = 16.sp * fallbackTextScale,
+                            lineHeight = 25.sp * fallbackTextScale,
+                        ),
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
+
+        message.searchSuggestionsHtml.forEach { html ->
+            SearchSuggestionsView(html = html, modifier = Modifier.padding(top = 8.dp))
+        }
+
+        message.askCard?.let { card ->
+            AskQuestionCardView(
+                card = card,
+                answeredText = message.askAnswer,
+                onSubmit = onAskAnswer,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        if (promptSuggestions.isNotEmpty()) {
+            SuggestionChips(
+                prompts = promptSuggestions,
+                onSuggestionClick = onSuggestionClick,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+
+        // 回答显现完成后才出现操作行；淡入展开避免贴底滚动时整页突然跳动一行高度。
+        AnimatedVisibility(
+            visible = showCopyAction &&
+                !message.isStreaming &&
+                bodyContent.isNotBlank() &&
+                revealComplete,
+            enter = fadeIn(tween(160)) + expandVertically(tween(160), expandFrom = Alignment.Top),
+            exit = fadeOut(tween(120)) + shrinkVertically(tween(120), shrinkTowards = Alignment.Top),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 抵消首个按钮的内部水平留白，使图标与上方正文及工作过程图标共用左侧中心线。
+                    .offset(x = -AnswerActionCenterOffset)
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AnswerActionSpacing),
+            ) {
+                if (allowSpeech) SpeechReadAloudButton(message.id, bodyContent)
+                if (showMessageActions) {
+                    if (message.characterEditable) {
+                        AnswerActionButton(
+                            icon = ChatActionIcons.Edit,
+                            contentDescription = stringResource(R.string.chat_edit_character_reply),
+                            onClick = onEdit,
+                            enabled = messageActionsEnabled,
+                        )
+                    }
+                    TooltipBox(text = stringResource(R.string.ui_delete_3755f5), enabled = messageActionsEnabled) {
+                        AnswerActionButton(
+                            icon = ChatActionIcons.Trash,
+                            contentDescription = stringResource(R.string.ui_delete_this_conversation_3f351b),
+                            onClick = onDelete,
+                            enabled = messageActionsEnabled,
+                        )
+                    }
+                    if (showBranchAction) {
+                        TooltipBox(text = stringResource(R.string.conversation_branch)) {
+                            AnswerActionButton(
+                                icon = ChatActionIcons.Branch,
+                                contentDescription = stringResource(R.string.conversation_branch),
+                                onClick = onBranch,
+                                enabled = messageActionsEnabled,
+                            )
+                        }
+                    }
+                    // 只有真实用时（老消息没有性能统计）时也要显示胶囊。
+                    val statsUsage = message.usage
+                    if (!assistantOverlay && statsUsage != null &&
+                        (statsUsage.hasPerformanceStats || message.roundDurationMs != null)
+                    ) {
+                        TurnStatsPill(
+                            usage = statsUsage,
+                            modifier = Modifier.padding(start = 4.dp),
+                            roundDurationMs = message.roundDurationMs,
+                        )
+                    }
+                    // 本轮消耗：整轮完整结束后写入；作为动作组的固定尾项，始终排在统计胶囊之后。
+                    // 颜色与动作按钮图标统一（同一 onSurfaceVariantSummary，同样的 0.75 透明度）。
+                    message.roundCost?.let { cost ->
+                        Text(
+                            text = stringResource(R.string.local_chat_round_cost, plainCost(cost)),
+                            modifier = Modifier.padding(start = AnswerTextGap),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
+                            style = MiuixTheme.textStyles.footnote1,
+                            maxLines = 1,
+                        )
+                    }
+                    if (message.characterEditable && message.candidateCount > 1) {
+                        Spacer(Modifier.weight(1f))
+                        CandidateSwitcher(
+                            selected = message.selectedCandidate,
+                            count = message.candidateCount,
+                            enabled = messageActionsEnabled,
+                            onSelect = onSelectCandidate,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 开场白消息由开始对话时写入，标识前缀与写入方保持一致。 */
+private const val GreetingMessagePrefix = "greeting-"
+
+/** 消耗金额按分显示，去掉多余的 0（0.10 → 0.1）。 */
+private fun plainCost(value: Double): String = java.math.BigDecimal(value)
+    .setScale(2, java.math.RoundingMode.HALF_UP)
+    .stripTrailingZeros()
+    .toPlainString()
+
+/**
+ * 角色回复的署名行：小头像加角色名，开场白额外标注“故事开始”。
+ * 正文保持与普通回答同宽，避免为头像缩进后长段落在窄屏上过于拥挤。
+ */
+@Composable
+private fun CharacterReplyHeader(character: RoleplayChatUi, isGreeting: Boolean) {
+    Row(
+        modifier = Modifier.padding(bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CharacterAvatar(
+            name = character.characterName,
+            avatarPath = character.avatarPath,
+            size = 28.dp,
+            shape = CircleShape,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = character.characterName,
+            style = MiuixTheme.textStyles.body2,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (isGreeting) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.chat_character_story_start),
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.1f))
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
+
+/** 思考卡片与运行记录等全宽描边卡片共用的圆角与描边强度，相邻时轮廓一致。 */
+private val ChatCardCorner = 12.dp
+private const val ChatCardOutlineAlpha = 0.5f
+
+/**
+ * 回答操作按钮的触控尺寸；行整体左移半个尺寸减去图标半宽，使图标落在工作过程图标的中心线上。
+ * 36dp 盒 + 2dp 间隔时图标间视觉间距为 22dp，按要求缩减 30%：盒改 30dp（内边距 7dp/侧）+ 1.4dp 间隔 = 15.4dp。
+ */
+internal val AnswerActionSize = 30.dp
+
+/** 操作行各项之间的视觉间距：图标按钮 30dp 里含 16dp 图标，相邻图标之间正好留下这一空隙。 */
+private val AnswerActionGap = AnswerActionSize - 16.dp
+
+/** 文字项自身没有按钮留白，只需补上图标右侧那半个空隙。 */
+private val AnswerTextGap = AnswerActionGap - (AnswerActionSize - 16.dp) / 2
+private val AnswerActionCenterOffset = 8.dp
+
+/** 动作按钮之间的布局间距；与 30dp 盒内 7dp/侧留白相加，图标间视觉间距 15.4dp（原 22dp 的 70%）。 */
+private val AnswerActionSpacing = 1.4.dp
+
+/**
+ * 回答下方的轻量操作：图标显式着色，因此禁用态需要自己换成更淡的同色，否则看起来仍可点。
+ *
+ * 禁用态**不能**用 disabledOnSurface：它是不透明的实色，亮色下近黑、暗色下近白，
+ * 比旁边的朗读、金额、用时重得多（旋转重建等时机按钮会短暂进入禁用态，一眼就看得出来）。
+ */
+@Composable
+internal fun AnswerActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    tint: Color? = null,
+) {
+    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    val couiDark = CouiTheme.isDark
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .size(AnswerActionSize)
+            .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (isCoui) {
+                    Modifier.couiButtonFeedback(couiDark, interactionSource, enabled = enabled)
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(16.dp),
+            tint = when {
+                tint != null -> tint
+                !enabled -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.38f)
+                else -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f)
+            },
+        )
+    }
+}
+
+@Composable
+private fun CandidateSwitcher(
+    selected: Int,
+    count: Int,
+    enabled: Boolean,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 2.dp),
+    ) {
+        AnswerActionButton(
+            icon = Icons.Rounded.ChevronLeft,
+            contentDescription = stringResource(R.string.chat_previous_candidate),
+            onClick = { onSelect(selected - 1) },
+            enabled = enabled && selected > 0,
+            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Text(
+            text = "${selected + 1}/$count",
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 28.dp),
+        )
+        AnswerActionButton(
+            icon = Icons.Rounded.ChevronRight,
+            contentDescription = stringResource(R.string.chat_next_candidate),
+            onClick = { onSelect(selected + 1) },
+            enabled = enabled && selected < count - 1,
+            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+    }
+}
+
+// ── 思考过程 ─────────────────────────────────────────────────────────
+
+@Composable
+internal fun ThinkingRow(
+    message: ThinkingMessageUi,
+    retainedStreamingState: StreamingMarkdownState?,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    DisposableEffect(retainedStreamingState) {
+        retainedStreamingState?.attachContent()
+        onDispose { retainedStreamingState?.detachContent() }
+    }
+    // null 表示跟随思考生命周期；用户点过之后只认手动选择。
+    var manualExpanded by rememberSaveable(message.id) { mutableStateOf<Boolean?>(null) }
+    val onExpandItem = LocalOnChatItemExpand.current
+    val streamingState = retainedStreamingState ?: if (message.isStreaming) {
+        remember(message.id) { StreamingMarkdownState() }
+    } else {
+        null
+    }
+    val completedDocument = streamingState?.snapshot?.completedDocumentFor(message.content)
+    // 展开态必须在组合期同步推导：若经 LaunchedEffect 晚一帧收起，思考结束的那一帧尾部窗口
+    // 已解除而正文仍展开，会以全文高度闪现一帧，再从该高度执行收起动画。
+    val expanded = manualExpanded ?: message.isStreaming
+    // 自动模式下高度上限覆盖到收起动画结束，退出过程不会先撑开再收拢。
+    val tailWindow = manualExpanded == null
+
+    val pulseAlpha = rememberActivePulse(
+        active = message.isStreaming,
+        label = "thinking_pulse",
+    )
+
+    // compact 模式渲染在工作过程时间线内，节点徽章已承担图标，这里只保留文字与展开控制。
+    val containerModifier = if (compact) {
+        modifier.fillMaxWidth()
+    } else {
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .squircleSurface(
+                color = MiuixTheme.colorScheme.surface,
+                cornerRadius = ChatCardCorner,
+            )
+            .squircleBorder(
+                width = 0.5.dp,
+                color = MiuixTheme.colorScheme.outline.copy(alpha = ChatCardOutlineAlpha),
+                cornerRadius = ChatCardCorner,
+            )
+    }
+
+    Column(modifier = containerModifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .clickable {
+                    // 尾部窗口下点击视为要看全文，保持展开并放开高度限制。
+                    val expanding = (tailWindow && expanded) || !expanded
+                    if (expanding) onExpandItem()
+                    manualExpanded = expanding
+                }
+                .then(
+                    if (compact) {
+                        Modifier.heightIn(min = WorkRowHeight)
+                    } else {
+                        Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
+                    },
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!compact) {
+                Icon(
+                    imageVector = Icons.Rounded.Lightbulb,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(15.dp)
+                        .graphicsLayer(alpha = if (message.isStreaming) pulseAlpha else 1f),
+                    tint = if (message.isStreaming) {
+                        MiuixTheme.colorScheme.primary
+                    } else {
+                        MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    },
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            ShimmerText(
+                active = message.isStreaming,
+                text = if (message.isStreaming) {
+                    stringResource(R.string.reasoning_in_progress)
+                } else {
+                    message.elapsedSeconds?.takeIf { it > 0 }?.let { seconds ->
+                        pluralStringResource(
+                            R.plurals.reasoning_completed_seconds,
+                            seconds,
+                            seconds,
+                        )
+                    } ?: stringResource(R.string.reasoning_completed)
+                },
+                style = MiuixTheme.textStyles.body2,
+                color = if (message.isStreaming) {
+                    MiuixTheme.colorScheme.onSurface
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
+                modifier = Modifier.weight(1f, fill = !compact),
+            )
+            ExpandChevron(
+                expanded = expanded,
+                contentDescription = stringResource(
+                    if (expanded) R.string.reasoning_collapse else R.string.reasoning_expand,
+                ),
+                modifier = Modifier.padding(start = 4.dp, end = if (compact) 8.dp else 0.dp),
+            )
+        }
+
+        AnimatedVisibility(
+            visible = expanded && message.content.isNotBlank(),
+            enter = ExpandDownEnter,
+            exit = CollapseUpExit,
+        ) {
+            Column {
+                if (!compact) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .height(0.5.dp)
+                            .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.45f)),
+                    )
+                }
+                val contentModifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = if (compact) 0.dp else 12.dp,
+                        end = if (compact) 8.dp else 12.dp,
+                        top = if (compact) 0.dp else 8.dp,
+                        bottom = if (compact) 8.dp else 12.dp,
+                    )
+                if (streamingState != null && (message.isStreaming || completedDocument == null)) {
+                    ThinkingTailWindow(
+                        enabled = tailWindow,
+                        modifier = contentModifier,
+                    ) {
+                        StreamingMarkdown(
+                            state = streamingState,
+                            content = message.content,
+                            isStreaming = message.isStreaming,
+                            tone = MarkdownTone.Thinking,
+                        )
+                    }
+                } else {
+                    StaticMarkdown(
+                        content = message.content,
+                        tone = MarkdownTone.Thinking,
+                        parsed = completedDocument,
+                        modifier = contentModifier,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 进行中的思考只露出最近几行：内容按底部对齐超出部分向上裁掉，顶部渐隐提示还有更早内容。
+ * 高度封顶后增量不再推高工作过程卡片，列表也不必随每次思考快照重新跟底。
+ */
+@Composable
+private fun ThinkingTailWindow(
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    if (!enabled) {
+        Box(modifier) { content() }
+        return
+    }
+    val maxHeight = with(LocalDensity.current) {
+        (THINKING_TAIL_WINDOW_LINES * THINKING_LINE_HEIGHT_SP).sp.toDp()
+    }
+    Box(
+        modifier = modifier
+            .heightIn(max = maxHeight)
+            .clipToBounds()
+            // 离屏合成只覆盖这块有界区域，用于让渐隐遮罩作用在文字 alpha 上。
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                if (size.height >= maxHeight.toPx() - 1f) {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.35f to Color.Black,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                }
+            },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight(align = Alignment.Bottom, unbounded = true),
+        ) {
+            content()
+        }
+    }
+}
+
+private const val THINKING_TAIL_WINDOW_LINES = 4
+
+// ── Run trace：轻量入口行 ─────────────────────────────────────────────
+
+@Composable
+private fun RunTraceRow(
+    message: RunTraceMessageUi,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .squircleSurface(color = MiuixTheme.colorScheme.surface, cornerRadius = ChatCardCorner)
+            .squircleBorder(
+                width = 0.5.dp,
+                color = MiuixTheme.colorScheme.outline.copy(alpha = ChatCardOutlineAlpha),
+                cornerRadius = ChatCardCorner,
+            )
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = null,
+            modifier = Modifier.size(15.dp),
+            tint = MiuixTheme.colorScheme.primary,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.ui_available_capacity_743337),
+            style = MiuixTheme.textStyles.body2,
+            color = MiuixTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.7f),
+        )
+    }
+}
+
+// ── 工具摘要 ──────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ToolSummaryInline(
+    message: ToolSummaryMessageUi,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    FlowRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = if (compact) 10.dp else 20.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        message.tools.forEach { tool ->
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MiuixTheme.colorScheme.surface)
+                    .border(
+                        0.5.dp,
+                        MiuixTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        RoundedCornerShape(10.dp),
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = iconForTool(tool),
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = MiuixTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = toolDisplayName(tool),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+            }
+        }
+    }
+}
+
+// ── 建议语 ────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SuggestionChipsRow(
+    message: SuggestionChipsMessageUi,
+    onSuggestionClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SuggestionChips(
+        prompts = message.prompts,
+        onSuggestionClick = onSuggestionClick,
+        modifier = modifier,
+    )
+}
+
+/** 回答末尾的下一步建议：点一下就等于把这条文本作为下一条用户消息发出。 */
+@Composable
+private fun SuggestionChips(
+    prompts: List<String>,
+    onSuggestionClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 字号：13sp 起点 × 会话文字倍率，跟着正文一起缩放，把字调大后不会脱节。
+    val chipFontSize = (13f * LocalAppearanceSettings.current.chatTextScale).sp
+    // 每条建议独占一行：并排会在窄屏上挤成几个小方块，扫读反而更慢。
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            // 不再额外缩进：左边缘与正文首字对齐，视觉上作为正文的延伸。
+            .padding(vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        prompts.forEach { prompt ->
+            // 单选项语义：建议并不保存选中态，点击即发送，因此固定 selected = false；
+            // 外观沿用 COUI 胶囊规范（Miuix 分支保留项目自身的描边样式）。
+            EtaChoiceChip(
+                text = prompt,
+                selected = false,
+                onClick = { onSuggestionClick(prompt) },
+                maxLines = 1,
+                fontSize = chipFontSize,
+            )
+        }
+    }
+}
+
+/** 单行时呈完整半胶囊弧度，右下角保留利落的 4dp 对话收角。 */
+private val UserBubbleShape = RoundedCornerShape(
+    topStart = 22.dp,
+    topEnd = 22.dp,
+    bottomEnd = 4.dp,
+    bottomStart = 22.dp,
+)
+
+private val OverlayUserBubbleShape = RoundedCornerShape(
+    topStart = 14.dp,
+    topEnd = 14.dp,
+    bottomEnd = 4.dp,
+    bottomStart = 14.dp,
+)
+
+private val OverlayCouiUserBubbleShape = RoundedCornerShape(
+    topStart = 20.dp,
+    topEnd = 20.dp,
+    bottomEnd = 5.dp,
+    bottomStart = 20.dp,
+)
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun UserMessageImages(
+    messageId: String,
+    images: List<String>,
+    assistantOverlay: Boolean,
+    isCoui: Boolean,
+    couiDark: Boolean,
+    highlightBorder: Boolean,
+    highlightColor: Color,
+    previewer: ChatImagePreviewer?,
+    onLongClick: (() -> Unit)?,
+) {
+    val outlineColor = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f)
+    val borderWidth = if (highlightBorder) 1.dp else 0.5.dp
+    val borderColor = if (highlightBorder) highlightColor else outlineColor
+    val single = images.size == 1
+    val cornerRadius = when {
+        assistantOverlay -> 10.dp
+        single -> 16.dp
+        else -> 14.dp
+    }
+    // 普通 HashMap 只在点击瞬间或飞行绘制时读取，列表滚动更新坐标不触发任何组合状态写入。
+    val itemBounds = remember(messageId) { HashMap<Int, Rect>() }
+
+    if (single) {
+        val bitmap = rememberDataUrlBitmap(images[0]) ?: return
+        val rawRatio = bitmap.width.toFloat() / bitmap.height.toFloat().coerceAtLeast(1f)
+        val ratio = rawRatio.coerceIn(0.54f, 1.85f)
+        val maxW = when {
+            assistantOverlay -> 152.dp
+            ratio > 1.15f -> 204.dp
+            else -> 176.dp
+        }
+        val maxH = if (assistantOverlay) 176.dp else 216.dp
+        val (cardW, cardH) = if (maxW / ratio <= maxH) {
+            maxW to (maxW / ratio)
+        } else {
+            (maxH * ratio) to maxH
+        }
+        UserMessageImageCard(
+            bitmap = bitmap,
+            width = cardW,
+            height = cardH,
+            cornerRadius = cornerRadius,
+            assistantOverlay = assistantOverlay,
+            isCoui = isCoui,
+            couiDark = couiDark,
+            borderWidth = borderWidth,
+            borderColor = borderColor,
+            isHiddenInViewer = { previewer?.isPresenting(messageId, 0) == true },
+            onBoundsChanged = { itemBounds[0] = it },
+            onClick = previewer?.let { viewer ->
+                {
+                    viewer.open(
+                        images = images,
+                        initialIndex = 0,
+                        groupKey = messageId,
+                        sourceBoundsProvider = { itemBounds[it] },
+                        sourceCornerRadius = cornerRadius,
+                    )
+                }
+            },
+            onLongClick = onLongClick,
+        )
+        return
+    }
+
+    val twoUp = images.size == 2
+    val cardW = when {
+        assistantOverlay && twoUp -> 94.dp
+        assistantOverlay -> 80.dp
+        twoUp -> 118.dp
+        else -> 98.dp
+    }
+    val cardH = when {
+        assistantOverlay && twoUp -> 118.dp
+        assistantOverlay -> 100.dp
+        twoUp -> 148.dp
+        else -> 124.dp
+    }
+    val rowModifier = if (images.size > 2) {
+        Modifier
+            .widthIn(max = if (assistantOverlay) 248.dp else 316.dp)
+            .horizontalScroll(rememberScrollState())
+    } else {
+        Modifier
+    }
+    Row(
+        modifier = rowModifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        images.forEachIndexed { index, dataUrl ->
+            val bitmap = rememberDataUrlBitmap(dataUrl) ?: return@forEachIndexed
+            UserMessageImageCard(
+                bitmap = bitmap,
+                width = cardW,
+                height = cardH,
+                cornerRadius = cornerRadius,
+                assistantOverlay = assistantOverlay,
+                isCoui = isCoui,
+                couiDark = couiDark,
+                borderWidth = borderWidth,
+                borderColor = borderColor,
+                isHiddenInViewer = { previewer?.isPresenting(messageId, index) == true },
+                onBoundsChanged = { itemBounds[index] = it },
+                onClick = previewer?.let { viewer ->
+                    {
+                        viewer.open(
+                            images = images,
+                            initialIndex = index,
+                            groupKey = messageId,
+                            sourceBoundsProvider = { itemBounds[it] },
+                            sourceCornerRadius = cornerRadius,
+                        )
+                    }
+                },
+                onLongClick = onLongClick,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun UserMessageImageCard(
+    bitmap: ImageBitmap,
+    width: Dp,
+    height: Dp,
+    cornerRadius: Dp,
+    assistantOverlay: Boolean,
+    isCoui: Boolean,
+    couiDark: Boolean,
+    borderWidth: Dp,
+    borderColor: Color,
+    isHiddenInViewer: () -> Boolean,
+    onBoundsChanged: (Rect) -> Unit,
+    onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)?,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val clickModifier = when {
+        onLongClick != null || (isCoui && onClick != null) -> Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = { onClick?.invoke() },
+            onLongClick = onLongClick,
+        )
+        onClick != null -> Modifier.clickable(onClick = onClick)
+        else -> Modifier
+    }
+    Box(
+        modifier = Modifier
+            .size(width = width, height = height)
+            .onGloballyPositioned { coords ->
+                if (coords.isAttached) onBoundsChanged(coords.boundsInWindow())
+            }
+            .graphicsLayer {
+                alpha = if (isHiddenInViewer()) 0f else 1f
+            }
+            .then(
+                when {
+                    assistantOverlay -> {
+                        val shape = RoundedCornerShape(cornerRadius)
+                        Modifier
+                            .clip(shape)
+                            .background(MiuixTheme.colorScheme.surfaceContainer, shape)
+                            .border(borderWidth, borderColor, shape)
+                    }
+                    isCoui -> {
+                        val shape = CouiShape(cornerRadius, 2.2f)
+                        Modifier
+                            .then(
+                                if (onClick != null) {
+                                    Modifier.couiButtonFeedback(couiDark, interactionSource, enabled = true)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .clip(shape)
+                            .background(MiuixTheme.colorScheme.surfaceContainer, shape)
+                            .border(borderWidth, borderColor, shape)
+                    }
+                    else -> Modifier.squircleSurface(
+                        color = MiuixTheme.colorScheme.surfaceContainer,
+                        cornerRadius = cornerRadius,
+                    )
+                },
+            )
+            .then(clickModifier),
+    ) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = stringResource(
+                if (onClick != null) R.string.chat_view_image else R.string.chat_image_attachment,
+            ),
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+        )
+        if (!assistantOverlay && !isCoui) {
+            // squircleBorder 在 onDrawBehind 中绘制，置于前景层才能叠在位图之上收边。
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .squircleBorder(width = borderWidth, color = borderColor, cornerRadius = cornerRadius),
+            )
+        }
+    }
+}

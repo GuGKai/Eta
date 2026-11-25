@@ -34,7 +34,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.AppearanceSettingsScreen
+import io.github.mangi.eta.ui.screens.settings.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.app.AgentAppTheme
 import io.github.mangi.eta.ui.components.coui.CouiTextField
 import io.github.mangi.eta.ui.model.AgentToolsUiState

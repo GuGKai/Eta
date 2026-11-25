@@ -7,6 +7,7 @@ import androidx.compose.ui.res.stringResource
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.voice.AssistantRoleStatus
 import io.github.mangi.eta.agent.voice.DefaultAssistantOwner
+import io.github.mangi.eta.ui.screens.settings.SettingsSystemStatus
 
 // fork 本地新增：设置页系统状态的内存缓存与助手角色状态文案。
 
