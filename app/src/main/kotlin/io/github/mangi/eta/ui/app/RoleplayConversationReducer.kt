@@ -1,17 +1,18 @@
 package io.github.mangi.eta.ui.app
 
 import io.github.mangi.eta.R
-import io.github.mangi.eta.agent.model.AgentModelClient.ConversationMessage
+import io.github.mangi.eta.agent.model.provider.AgentModelClient.ConversationMessage
 import io.github.mangi.eta.agent.roleplay.RoleplayHistoryProjection
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageLink
 import io.github.mangi.eta.agent.roleplay.RoleplayReplyRevision
-import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
 import io.github.mangi.eta.core.AppStrings
 import io.github.mangi.eta.ui.model.AgentChatUiState
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 
 internal object RoleplayConversationReducer {
     fun restorePendingRewrite(state: AgentChatUiState, runId: String, messageId: String?): AgentChatUiState =

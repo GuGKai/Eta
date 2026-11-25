@@ -17,8 +17,8 @@ import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
 import io.github.mangi.eta.agent.voice.audio.SpeechFailure
 import io.github.mangi.eta.agent.voice.audio.SpeechRecorder
 import io.github.mangi.eta.agent.voice.audio.SpeechSocket
-import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 import io.github.mangi.eta.agent.voice.audio.doubaoHeaders
+import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 
 internal suspend fun recognizeSpeechStream(
     settings: SpeechSettings,

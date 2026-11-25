@@ -1,8 +1,8 @@
 package io.github.mangi.eta.agent.tool
 
 import android.content.Context
-import io.github.mangi.eta.agent.model.AgentAskQuestionToolCatalog
-import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.catalog.AgentAskQuestionToolCatalog
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 import io.github.mangi.eta.agent.model.AskCardMessageId
 import io.github.mangi.eta.agent.model.AskQuestionAnswer
 import io.github.mangi.eta.agent.model.AskQuestionCard

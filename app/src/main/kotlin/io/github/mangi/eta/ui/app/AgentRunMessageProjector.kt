@@ -2,7 +2,7 @@ package io.github.mangi.eta.ui.app
 
 import android.os.SystemClock
 import io.github.mangi.eta.agent.model.PromptSuggestions
-import io.github.mangi.eta.agent.runtime.AgentEvent
+import io.github.mangi.eta.agent.runtime.ipc.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.runtime.SearchSuggestionsBudget
 import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog

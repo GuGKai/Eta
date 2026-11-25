@@ -16,8 +16,8 @@ import io.github.mangi.eta.agent.voice.audio.SpeechFailure
 import io.github.mangi.eta.agent.voice.audio.SpeechHttp
 import io.github.mangi.eta.agent.voice.audio.SpeechSegmentAudio
 import io.github.mangi.eta.agent.voice.audio.SpeechSseDecoder
-import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 import io.github.mangi.eta.agent.voice.audio.doubaoHeaders
+import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 
 internal suspend fun synthesizeSpeech(settings: SpeechSettings, credentials: SpeechCredentials,
     text: String, onAudio: (ByteArray) -> Unit) = withTimeout(90_000) {

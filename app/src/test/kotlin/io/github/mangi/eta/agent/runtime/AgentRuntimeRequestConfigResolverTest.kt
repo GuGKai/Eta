@@ -1,6 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
-import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
@@ -11,6 +11,8 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import io.github.mangi.eta.agent.runtime.archive.AgentExternalArchivePayload
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
 
 class AgentRuntimeRequestConfigResolverTest {
     // 本地已在 6a3af947 回滚 Gemini 相关的「搜索建议呈现约束」，

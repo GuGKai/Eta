@@ -2,14 +2,14 @@ package io.github.mangi.eta.agent.voice.asr
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentConversationCodec
-import io.github.mangi.eta.agent.model.AgentModelClient
-import io.github.mangi.eta.agent.model.AgentProviderClient
-import io.github.mangi.eta.agent.model.AssistantBlockKind
-import io.github.mangi.eta.agent.model.AssistantStopReason
-import io.github.mangi.eta.agent.model.ProviderClientFactory
-import io.github.mangi.eta.agent.model.ProviderEvent
-import io.github.mangi.eta.agent.model.ProviderRequest
-import io.github.mangi.eta.agent.model.ProviderRequestPurpose
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
+import io.github.mangi.eta.agent.model.provider.AgentProviderClient
+import io.github.mangi.eta.agent.model.provider.AssistantBlockKind
+import io.github.mangi.eta.agent.model.provider.AssistantStopReason
+import io.github.mangi.eta.agent.model.provider.ProviderClientFactory
+import io.github.mangi.eta.agent.model.provider.ProviderEvent
+import io.github.mangi.eta.agent.model.provider.ProviderRequest
+import io.github.mangi.eta.agent.model.provider.ProviderRequestPurpose
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.core.AppStrings
 import io.github.mangi.eta.data.model.ReasoningEffort

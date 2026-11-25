@@ -21,13 +21,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import io.github.mangi.eta.agent.voice.audio.SpeechAudioLease
 import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
 import io.github.mangi.eta.agent.voice.audio.SpeechFailure
 import io.github.mangi.eta.agent.voice.audio.SpeechPcmOutput
 import io.github.mangi.eta.agent.voice.audio.SpeechSegmentFade
 import io.github.mangi.eta.agent.voice.audio.speechFailure
 import io.github.mangi.eta.agent.voice.audio.validateSpeechSettings
-import io.github.mangi.eta.agent.voice.audio.SpeechAudioLease
 import io.github.mangi.eta.agent.voice.SystemTtsSpeaker
 import io.github.mangi.eta.agent.voice.SystemTtsSynthesizer
 

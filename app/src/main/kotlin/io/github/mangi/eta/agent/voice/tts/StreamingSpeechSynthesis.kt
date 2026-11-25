@@ -16,8 +16,8 @@ import org.json.JSONObject
 import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
 import io.github.mangi.eta.agent.voice.audio.SpeechFailure
 import io.github.mangi.eta.agent.voice.audio.SpeechSocket
-import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 import io.github.mangi.eta.agent.voice.audio.doubaoHeaders
+import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 
 internal fun supportsSpeechSession(provider: TtsProvider): Boolean = when (provider) {
     TtsProvider.QWEN, TtsProvider.DOUBAO, TtsProvider.DEEPSEEK -> true

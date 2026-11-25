@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.subagent.AgentSubagentToolCatalog
 import org.json.JSONObject
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 
 /** Independent reads may overlap; all other calls form an execution barrier. */
 internal object AgentToolBatchPlanner {

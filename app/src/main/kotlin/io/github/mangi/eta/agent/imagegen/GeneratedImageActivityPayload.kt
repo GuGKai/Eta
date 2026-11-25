@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+import io.github.mangi.eta.agent.runtime.ipc.AgentEvent
 
 /**
  * 通过既有的 `ToolActivityMessageUi.command` / `AgentEvent.ToolFinished.command` 通道传输的

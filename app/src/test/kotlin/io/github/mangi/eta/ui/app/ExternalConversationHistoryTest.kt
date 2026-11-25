@@ -6,6 +6,7 @@ import io.github.mangi.eta.ui.model.UserMessageUi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 
 class ExternalConversationHistoryTest {
     private fun state() = AgentChatHomeUiState(messages = emptyList(), input = "", isStreaming = false, thinkingEnabled = false)
