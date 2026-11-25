@@ -55,7 +55,7 @@ import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.MiuixPopupHost
 @Composable
 fun AgentAppTheme(
     appearance: AppearanceSettings,
-    applyInterfaceScale: Boolean,
+    applyInterfaceScale: Boolean = true,
     provideGlassHost: Boolean = false,
     /**
      * 是否让主题外壳填满整块窗口。
