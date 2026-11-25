@@ -166,15 +166,12 @@ private fun SettingsIcon(
     )
 }
 
-private data class SettingsSystemStatus(
+internal data class SettingsSystemStatus(
     val overlayGranted: Boolean = false,
     val accessibilityGranted: Boolean = false,
     val accessibilityProtectionEnabled: Boolean = false,
     val assistantRoleStatus: AssistantRoleStatus = AssistantRoleStatus(isDefaultAssistant = false),
 )
-
-@Volatile
-private var cachedSettingsSystemStatus: SettingsSystemStatus? = null
 
 /**
  * 模块配置界面。
@@ -1437,14 +1434,6 @@ private fun SettingsPageContent(
             )
         }
     }
-}
-
-@Composable
-private fun AssistantRoleStatus.displayValue(): String = when (owner) {
-    DefaultAssistantOwner.ETA -> "Eta"
-    DefaultAssistantOwner.GEMINI -> "Gemini"
-    DefaultAssistantOwner.OTHER -> ownerLabel ?: stringResource(R.string.assistant_role_status_other)
-    DefaultAssistantOwner.NONE -> stringResource(R.string.assistant_role_status_unset)
 }
 
 @Composable

@@ -772,35 +772,6 @@ private fun TopBarOverflowMenu(
     }
 }
 
-/** 顶栏会话标题的宽度上限：按当前字号实测出的 11 个中文字符宽度。 */
-private const val TOP_BAR_TITLE_CJK_WIDTH = 11
-
-/** 会话标题透明度渐显时长：够看出「淡出来」，又不至于让人等标题。 */
-private const val TOP_BAR_TITLE_FADE_MS = 320
-
-/**
- * 会话标题的透明度渐显。
- *
- * 标题由无到有、或换成新名字时从 0 淡到 1；空标题直接把透明度压到 0，
- * 这样「发完消息、命名还没落地」的那一瞬间不会闪出旧的占位文案。
- */
-@Composable
-private fun rememberConversationTitleFade(title: String?): Float {
-    val alpha = remember { Animatable(0f) }
-    LaunchedEffect(title) {
-        if (title.isNullOrBlank()) {
-            alpha.snapTo(0f)
-        } else {
-            alpha.snapTo(0f)
-            alpha.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = TOP_BAR_TITLE_FADE_MS, easing = LinearOutSlowInEasing),
-            )
-        }
-    }
-    return alpha.value
-}
-
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Home, is AppRoute.Browser -> ""
@@ -849,30 +820,3 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     null -> stringResource(R.string.app_name)
 }
 
-@Composable
-private fun CharacterTopBarIdentity(character: RoleplayChatUi, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
-            .padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CharacterAvatar(
-            name = character.characterName,
-            avatarPath = character.avatarPath,
-            size = 32.dp,
-            shape = CircleShape,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = character.characterName,
-            style = MiuixTheme.textStyles.body1,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 180.dp),
-        )
-    }
-}

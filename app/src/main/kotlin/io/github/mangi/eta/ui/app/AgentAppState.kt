@@ -111,9 +111,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/** 新建对话的聚焦请求通道：输入栏直接订阅，绕开逐层传参在重建时丢信号。 */
-internal val composerFocusRequests = MutableStateFlow(0)
-
 internal class AgentAppState(
     context: Context,
     private val scope: CoroutineScope,
@@ -3073,7 +3070,6 @@ internal class AgentAppState(
             if (currentRunId == runId) stopRequestedRunIds.remove(runId)
         }
     }
-
 
     /**
      * 界面侧脱钩（不取消任务）。
