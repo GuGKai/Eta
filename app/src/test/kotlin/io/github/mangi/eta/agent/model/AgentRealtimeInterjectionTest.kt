@@ -1,7 +1,7 @@
 package io.github.mangi.eta.agent.model
 
 import com.sun.net.httpserver.HttpServer
-import io.github.mangi.eta.agent.model.AgentModelClient.ModelResponse
+import io.github.mangi.eta.agent.model.provider.AgentModelClient.ModelResponse
 import io.github.mangi.eta.agent.runtime.ipc.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.data.model.OpenAiEndpointMode

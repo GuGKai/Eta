@@ -36,6 +36,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.archive.AgentExternalArchivePayload
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "en-rUS")
@@ -554,7 +555,7 @@ class AgentConversationStoreTest {
 
     @Test
     fun externalArchiveContinuesInTheSameConversationWithRecoveredUserHistoryAndSavedSpeed() = runBlocking {
-        val id = io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload.conversationId("breeno", "session")
+        val id = io.github.mangi.eta.agent.runtime.archive.AgentExternalArchivePayload.conversationId("breeno", "session")
         val usage = TokenUsageUi(contextTokens = 1200, outputTokens = 80, requestDurationMs = 2000)
         val answer = AgentModelClient.ConversationMessage(role = "assistant", content = "记住了", messageId = "assistant-old-run-1")
         val old = AgentChatHomeUiState(
@@ -592,7 +593,7 @@ class AgentConversationStoreTest {
         try {
             val state = AgentAppState(context, scope)
             assertTrue(state.openAssistantConversation("target",
-                io.github.mangi.eta.agent.runtime.AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE))
+                io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE))
             assertEquals("target", state.conversationPaneState.selectedConversationId)
             assertEquals(2, state.conversationPaneState.conversations.size)
         } finally {

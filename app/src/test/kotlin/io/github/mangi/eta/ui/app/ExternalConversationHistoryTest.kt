@@ -1,6 +1,6 @@
 package io.github.mangi.eta.ui.app
 
-import io.github.mangi.eta.agent.model.AgentModelClient.ConversationMessage
+import io.github.mangi.eta.agent.model.provider.AgentModelClient.ConversationMessage
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
 import io.github.mangi.eta.ui.model.UserMessageUi
 import org.junit.Assert.assertEquals
