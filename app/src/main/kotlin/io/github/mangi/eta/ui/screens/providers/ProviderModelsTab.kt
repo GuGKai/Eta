@@ -47,8 +47,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -216,7 +216,7 @@ internal fun ProviderModelsTab(
 ) {
     val context = LocalContext.current
     val fetchScope = rememberCoroutineScope()
-    val selectedModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
+    val selectedModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsStateWithLifecycle(initialValue = null)
     var isFetching by remember { mutableStateOf(false) }
     var isMutatingModel by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }

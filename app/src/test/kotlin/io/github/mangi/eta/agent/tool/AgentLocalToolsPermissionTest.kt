@@ -214,8 +214,8 @@ class AgentLocalToolsPermissionTest {
         tools(memoryEnabled = { true }, memoryWritable = false).use { local ->
             assertEquals("REAL_MEMORY_READ_ONLY", JSONObject(local.execute(
                 AgentModelClient.ToolCall("write", "memory_write", "{}")).content).getString("code"))
-            assertEquals("SKILL_READ_ONLY", JSONObject(local.execute(
-                AgentModelClient.ToolCall("skill", "skills_manage", "{}")).content).getString("code"))
+            // 上游 4.0.0 移除了 skills_manage 的“技能只读”前置判定（技能编写改由 SkillAuthoringService
+            // 统一把关），未初始化时返回 SKILLS_UNAVAILABLE，不再有 SKILL_READ_ONLY 这一支。
         }
     }
 

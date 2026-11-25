@@ -4,10 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.database.ContentObserver
 import android.net.Uri
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
@@ -23,6 +20,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
@@ -32,9 +30,10 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.JoinLeft
 import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Schedule
@@ -47,11 +46,10 @@ import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,17 +75,13 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.voice.AssistantRoleHelper
-import io.github.mangi.eta.agent.voice.AssistantRoleStatus
-import io.github.mangi.eta.agent.voice.DefaultAssistantOwner
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
-import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.ImageGenSettings
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.provider.BuiltinProviders
-import io.github.mangi.eta.data.repository.ImageGenSettingsRepository
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
@@ -108,16 +102,11 @@ import io.github.mangi.eta.ui.components.coui.CouiScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiSettingsIcon
 import io.github.mangi.eta.ui.components.coui.CouiSwitchPreference
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
-import io.github.mangi.eta.ui.displayValue
 import io.github.mangi.eta.ui.model.AgentModelPickerProjector
 import io.github.mangi.eta.ui.navigation.AppRoute
 import io.github.mangi.eta.ui.screens.imagegen.shortName
 import io.github.mangi.eta.ui.state.EnhancementSettingsHistory
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -127,9 +116,15 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.glass.SecurityStatus
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.runtime.collectAsState
+import io.github.mangi.eta.data.repository.ImageGenSettingsRepository
 
 private object SettingsIconColors {
     val Blue = Color(0xFF4285F4)
@@ -172,7 +167,6 @@ internal data class SettingsSystemStatus(
     val overlayGranted: Boolean = false,
     val accessibilityGranted: Boolean = false,
     val accessibilityProtectionEnabled: Boolean = false,
-    val assistantRoleStatus: AssistantRoleStatus = AssistantRoleStatus(isDefaultAssistant = false),
 )
 
 /**
@@ -200,14 +194,13 @@ private fun SettingsPageContent(
     val enhancementHistory = remember(context.applicationContext) { EnhancementSettingsHistory(context) }
     var hasConnectedFramework by remember { mutableStateOf(enhancementHistory.hasConnected) }
 
-    // 悬浮窗与无障碍状态走异步查询，避免首帧进入设置页时在主线程触发同步 Binder IPC。
+    // 无障碍状态走异步查询，避免首帧进入设置页时在主线程触发同步 Binder IPC。
     var systemStatus by remember {
         mutableStateOf(cachedSettingsSystemStatus ?: SettingsSystemStatus())
     }
     val overlayGranted = systemStatus.overlayGranted
     val accessibilityGranted = systemStatus.accessibilityGranted
     val accessibilityProtectionEnabled = systemStatus.accessibilityProtectionEnabled
-    val assistantRoleStatus = systemStatus.assistantRoleStatus
     var accessibilityProtectionPending by remember { mutableStateOf(false) }
 
     // 关于组：版本信息与更新检查。结果对话框在列表外渲染，状态需要页面级 owner。
@@ -249,11 +242,11 @@ private fun SettingsPageContent(
     val initialProviders = remember { ProviderRepository.cachedProviders() }
     val initialProviderId = remember { RuntimeConfigRepository.cachedSelectedProviderId() }
     val initialModelId = remember { RuntimeConfigRepository.cachedSelectedModelId() }
-    val providers by ProviderRepository.providersFlow().collectAsState(initial = initialProviders)
+    val providers by ProviderRepository.providersFlow().collectAsStateWithLifecycle(initialValue = initialProviders)
     val selectedProviderId by RuntimeConfigRepository.selectedProviderIdFlow()
-        .collectAsState(initial = initialProviderId)
+        .collectAsStateWithLifecycle(initialValue = initialProviderId)
     val selectedModelId by RuntimeConfigRepository.selectedModelIdFlow()
-        .collectAsState(initial = initialModelId)
+        .collectAsStateWithLifecycle(initialValue = initialModelId)
     val selectedProvider = remember(providers, selectedProviderId) {
         providers.find { it.id == selectedProviderId }
     }
@@ -353,121 +346,31 @@ private fun SettingsPageContent(
     var powerAssistantTarget by remember(prefs) {
         mutableStateOf(prefs?.let(Prefs::powerAssistantTarget) ?: enhancementHistory.powerTarget())
     }
-    var assistantRefreshJob by remember { mutableStateOf<Job?>(null) }
-    val scheduleAssistantRoleRefresh: () -> Unit = {
-        assistantRefreshJob?.cancel()
-        assistantRefreshJob = coroutineScope.launch {
-            val status = withContext(Dispatchers.IO) { AssistantRoleHelper.queryStatus(context) }
-            val next = systemStatus.copy(assistantRoleStatus = status)
-            cachedSettingsSystemStatus = next
-            systemStatus = next
-            delay(450L)
-            val delayedStatus = withContext(Dispatchers.IO) { AssistantRoleHelper.queryStatus(context) }
-            val settled = systemStatus.copy(assistantRoleStatus = delayedStatus)
-            cachedSettingsSystemStatus = settled
-            systemStatus = settled
-        }
-    }
-    LaunchedEffect(context) {
-        val resolver = context.contentResolver
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                scheduleAssistantRoleRefresh()
-            }
-        }
-        val registered = withContext(Dispatchers.IO) {
-            runCatching {
-                resolver.registerContentObserver(
-                    Settings.Secure.getUriFor(ModuleConfig.SECURE_ASSISTANT),
-                    false,
-                    observer,
-                )
-                resolver.registerContentObserver(
-                    Settings.Secure.getUriFor(ModuleConfig.SECURE_VOICE_INTERACTION_SERVICE),
-                    false,
-                    observer,
-                )
-                true
-            }.getOrDefault(false)
-        }
-        try {
-            awaitCancellation()
-        } finally {
-            assistantRefreshJob?.cancel()
-            if (registered) {
-                withContext(NonCancellable + Dispatchers.IO) {
-                    runCatching { resolver.unregisterContentObserver(observer) }
-                }
-            }
-        }
-    }
-    val syncPowerTargetAfterManualAssistantChange: (AssistantRoleStatus) -> Unit = { updated ->
-        val targetPrefs = prefs
-        val autoConfigDefault = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.ASSISTANT_AUTO_CONFIG)
-        if (targetPrefs != null &&
-            targetPrefs.getBoolean(Prefs.Keys.ASSISTANT_AUTO_CONFIG, autoConfigDefault)
-        ) {
-            val mappedTarget = when (updated.owner) {
-                DefaultAssistantOwner.ETA -> PowerAssistantTarget.ETA
-                DefaultAssistantOwner.GEMINI -> PowerAssistantTarget.GEMINI
-                DefaultAssistantOwner.OTHER,
-                DefaultAssistantOwner.NONE -> PowerAssistantTarget.OEM
-            }
-            if (powerAssistantTarget != mappedTarget &&
-                putStringSync(
-                    prefs = targetPrefs,
-                    key = Prefs.Keys.POWER_KEY_ASSISTANT_TARGET,
-                    value = mappedTarget.persistedValue,
-                )
-            ) {
-                powerAssistantTarget = mappedTarget
-                enhancementHistory.recordCommittedTarget(mappedTarget)
-            }
-        }
-    }
-    var ownerBeforeAssistantSettings by remember { mutableStateOf<DefaultAssistantOwner?>(null) }
     val openAssistantSettings: () -> Unit = {
-        val currentStatus = AssistantRoleHelper.queryStatus(context)
-        val next = systemStatus.copy(assistantRoleStatus = currentStatus)
-        cachedSettingsSystemStatus = next
-        systemStatus = next
-        if (AssistantRoleHelper.openSystemSettings(context)) {
-            ownerBeforeAssistantSettings = currentStatus.owner
-        } else {
+        if (!AssistantRoleHelper.openSystemSettings(context)) {
             Toast.makeText(context, context.getString(R.string.settings_open_assistant_failed), Toast.LENGTH_SHORT).show()
         }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
-    val refreshSystemStatuses: (Boolean) -> Unit = { checkAssistantTransition ->
+    val refreshSystemStatuses: () -> Unit = {
         coroutineScope.launch {
             val snapshot = withContext(Dispatchers.IO) {
                 SettingsSystemStatus(
-                    overlayGranted = android.provider.Settings.canDrawOverlays(context),
                     accessibilityGranted = isAgentAccessibilityEnabled(context),
                     accessibilityProtectionEnabled = AccessibilityProtectionClient.isEnabled(context),
-                    assistantRoleStatus = AssistantRoleHelper.queryStatus(context),
                 )
             }
             cachedSettingsSystemStatus = snapshot
             systemStatus = snapshot
-            if (checkAssistantTransition) {
-                val previousOwner = ownerBeforeAssistantSettings
-                if (previousOwner != null) {
-                    ownerBeforeAssistantSettings = null
-                    if (snapshot.assistantRoleStatus.owner != previousOwner) {
-                        syncPowerTargetAfterManualAssistantChange(snapshot.assistantRoleStatus)
-                    }
-                }
-            }
         }
     }
     LaunchedEffect(Unit) {
-        refreshSystemStatuses(false)
+        refreshSystemStatuses()
     }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                refreshSystemStatuses(true)
+                refreshSystemStatuses()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -476,15 +379,8 @@ private fun SettingsPageContent(
     DisposableEffect(prefs) {
         val targetPrefs = prefs ?: return@DisposableEffect onDispose {}
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { changedPrefs, key ->
-            when (key) {
-                Prefs.Keys.POWER_KEY_ASSISTANT_TARGET,
-                Prefs.Keys.POWER_KEY_TAKEOVER -> {
-                    powerAssistantTarget = Prefs.powerAssistantTarget(changedPrefs)
-                    scheduleAssistantRoleRefresh()
-                }
-                Prefs.Keys.ASSISTANT_AUTO_CONFIG -> {
-                    scheduleAssistantRoleRefresh()
-                }
+            if (key == Prefs.Keys.POWER_KEY_ASSISTANT_TARGET || key == Prefs.Keys.POWER_KEY_TAKEOVER) {
+                powerAssistantTarget = Prefs.powerAssistantTarget(changedPrefs)
             }
         }
         targetPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -535,7 +431,6 @@ private fun SettingsPageContent(
             ) {
                 powerAssistantTarget = target
                 enhancementHistory.recordCommittedTarget(target)
-                scheduleAssistantRoleRefresh()
             } else {
                 Toast.makeText(
                     context.applicationContext,
@@ -785,12 +680,6 @@ private fun SettingsPageContent(
                 Group(title = stringResource(R.string.ui_system_assistant_takes_over_f46043)) {
                     CouiPreference(
                         title = stringResource(R.string.ui_eta_system_assistant_003e9b),
-                        value = assistantRoleStatus.displayValue(),
-                        valueColor = if (assistantRoleStatus.isDefaultAssistant) {
-                            StatusSuccess
-                        } else {
-                            pageColors.summary
-                        },
                         icon = {
                             CouiSettingsIcon(
                                 Icons.Rounded.SupportAgent,
@@ -1199,17 +1088,6 @@ private fun SettingsPageContent(
                         ArrowPreference(
                             title = stringResource(R.string.ui_eta_system_assistant_003e9b),
                             startAction = { SettingsIcon(Icons.Rounded.SupportAgent) },
-                            endActions = {
-                                Text(
-                                    text = assistantRoleStatus.displayValue(),
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = if (assistantRoleStatus.isDefaultAssistant) {
-                                        StatusSuccess
-                                    } else {
-                                        MiuixTheme.colorScheme.onSurfaceVariantActions
-                                    },
-                                )
-                            },
                             onClick = openAssistantSettings,
                         )
                         ArrowPreference(

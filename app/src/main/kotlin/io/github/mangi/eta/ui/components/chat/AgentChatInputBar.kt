@@ -160,6 +160,7 @@ import io.github.mangi.eta.ui.components.ModelBrandMark
 import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.components.rememberScreenCornerRadius
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /** 发送圆钮直径：与 COUI 样式对齐（上游 Miuix 是 24dp，此处不再跟随）。 */
 private val SendButtonVisualSize = 32.dp
@@ -282,7 +283,7 @@ internal fun AgentChatInputBar(
     var showModelSheet by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val textFieldState = rememberTextFieldState(initialText = input)
-    val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
+    val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsStateWithLifecycle(initialValue = null)
     val recognitionEnabled = speechSettings?.recognitionEnabled == true
     val dictation = rememberSpeechInput { recognized ->
         textFieldState.edit {

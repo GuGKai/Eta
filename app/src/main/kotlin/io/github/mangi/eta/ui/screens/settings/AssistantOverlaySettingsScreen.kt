@@ -3,7 +3,7 @@ package io.github.mangi.eta.ui.screens.settings
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,11 +55,11 @@ internal fun AssistantOverlaySettingsScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
-    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsState(initial = null)
-    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
+    val providers by ProviderRepository.providersFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsStateWithLifecycle(initialValue = null)
     val overlaySettings by RuntimeConfigRepository.assistantOverlaySettingsFlow()
-        .collectAsState(initial = AssistantOverlaySettings())
+        .collectAsStateWithLifecycle(initialValue = AssistantOverlaySettings())
 
     LaunchedEffect(Unit) {
         RuntimeConfigRepository.ensureDefaults(EtaApp.serviceInstance)
@@ -213,10 +213,11 @@ internal fun AssistantOverlaySettingsScreen(
                     GlassBottomSheet(
                         show = showModelSheet,
                         backdrop = currentGlassOverlayBackdrop(),
+                        progressiveBlur = false,
                         title = modelTitle,
                         onDismissRequest = { showModelSheet = false },
                         insideMargin = DpSize(0.dp, 0.dp),
-                    ) {
+                    ) { _ ->
                         OptionalModelPickerContent(
                             pickerState = pickerState,
                             selectedSecondaryModelId = resolvedCustom?.model?.id,

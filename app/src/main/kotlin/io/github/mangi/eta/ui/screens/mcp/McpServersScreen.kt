@@ -32,7 +32,7 @@ import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -134,7 +134,7 @@ internal fun McpServersScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val servers by McpServerRepository.serversFlow().collectAsState(initial = emptyList())
+    val servers by McpServerRepository.serversFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     var showAdd by remember { mutableStateOf(false) }
     val nameState = remember { TextFieldState() }
     val urlState = remember { TextFieldState() }
@@ -463,7 +463,7 @@ internal fun McpServerDetailScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val servers by McpServerRepository.serversFlow().collectAsState(initial = emptyList())
+    val servers by McpServerRepository.serversFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val server = servers.firstOrNull { it.id == serverId }
     var working by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }

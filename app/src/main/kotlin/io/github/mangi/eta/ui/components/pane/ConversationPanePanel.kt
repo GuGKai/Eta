@@ -191,6 +191,10 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.glass.BookOutline
+import top.yukonga.miuix.kmp.icon.glass.ChevronForward
+import top.yukonga.miuix.kmp.icon.glass.ClockOutline
+import top.yukonga.miuix.kmp.icon.glass.Contacts
 import top.yukonga.miuix.kmp.icon.glass.Delete
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Edit
@@ -950,7 +954,7 @@ private fun ConversationHistoryRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                // 标题与角色名相同（如未改名的角色会话）时不再重复第二行。
+                // 标题与角色名相同（如尚未发起首轮对话的角色会话）时不再重复第二行。
                 conversation.characterName?.takeIf { it != title }?.let { name ->
                     Text(
                         text = name,
@@ -1173,9 +1177,9 @@ private fun EmptyConversations(isSearching: Boolean) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = if (isSearching) ConversationPaneIcons.Search else ConversationPaneIcons.BrandEta,
+                imageVector = if (isSearching) MiuixIcons.Glass.Search else ConversationPaneIcons.BrandEta,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(if (isSearching) 24.dp else 20.dp),
                 tint = primaryTextColor.copy(alpha = 0.72f),
             )
         }

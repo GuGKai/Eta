@@ -115,8 +115,10 @@ import top.yukonga.miuix.kmp.material.GlassShape
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 /**
- * 模型品牌图标：按模型 / 提供商显示对应品牌 logo，
- * 识别不到时回退为主色调圆形 + 通用图标。
+ * 聊天首页顶栏的复合标题与模型切换入口：
+ * - 新对话：居中呈现轻盈的模型胶囊 `[ ✦ 模型名 ▾ ]`
+ * - 对话进行中：上行会话标题，下行紧凑模型副标题，整块可点切换模型
+ * - 角色对话：左侧头像直达角色详情，右侧双行展示会话标题（无标题时回落角色名）与当前模型
  */
 @Composable
 internal fun AgentTopBarChatHeader(
@@ -236,8 +238,9 @@ internal fun AgentTopBarChatHeader(
                             .semantics { if (isCoui) contentDescription = switchModelDescription }
                             .padding(horizontal = if (isCoui) 6.dp else 16.dp, vertical = 3.dp),
                     ) {
+                        val headerTitle = conversationTitle?.takeIf(String::isNotBlank) ?: character.characterName
                         Text(
-                            text = character.characterName,
+                            text = headerTitle,
                             style = MiuixTheme.textStyles.body1.copy(
                                 fontSize = if (isCoui) 15.5.sp else 17.sp,
                                 lineHeight = if (isCoui) 19.sp else 22.sp,
@@ -492,9 +495,10 @@ internal fun AgentTopBarChatHeader(
                         anchorContent = {
                             when {
                                 character != null -> {
+                                    val headerTitle = conversationTitle?.takeIf(String::isNotBlank) ?: character.characterName
                                     Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)) {
                                         Text(
-                                            text = character.characterName,
+                                            text = headerTitle,
                                             style = MiuixTheme.textStyles.body1.copy(
                                                 fontSize = 15.5.sp,
                                                 lineHeight = 19.sp,
@@ -602,10 +606,11 @@ internal fun AgentTopBarChatHeader(
                 GlassBottomSheet(
                     show = showSheet,
                     backdrop = overlayBackdrop,
+                    progressiveBlur = false,
                     title = stringResource(R.string.model_picker_title),
                     onDismissRequest = { showSheet = false },
                     insideMargin = DpSize(0.dp, 0.dp),
-                ) {
+                ) { _ ->
                     key(sheetSession) {
                         ModelSheetContent(
                             state = state,

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +49,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.subagent.SubagentActivitySnapshot
 import io.github.mangi.eta.agent.subagent.SubagentStepSnapshot
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.rememberCouiDialogMaterial
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
@@ -194,6 +196,7 @@ internal fun SubagentActivityRow(
                     running = running,
                     cancelled = cancelled,
                     failed = failed,
+                    contentPadding = PaddingValues(0.dp),
                 )
             }
         }
@@ -201,15 +204,17 @@ internal fun SubagentActivityRow(
             GlassBottomSheet(
                 show = showInspector,
                 backdrop = currentGlassOverlayBackdrop(),
+                progressiveBlur = LocalAppearanceSettings.current.progressiveBlurEnabled,
                 title = taskTitle,
                 onDismissRequest = { showInspector = false },
-            ) {
+            ) { innerPadding ->
                 SubagentInspectorContent(
                     messageId = message.id,
                     snapshot = snapshot,
                     running = running,
                     cancelled = cancelled,
                     failed = failed,
+                    contentPadding = innerPadding,
                 )
             }
         }
@@ -257,6 +262,7 @@ private fun SubagentInspectorContent(
     running: Boolean,
     cancelled: Boolean,
     failed: Boolean,
+    contentPadding: PaddingValues,
 ) {
     val density = LocalDensity.current
     val maxSheetHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() } * 0.76f
@@ -275,6 +281,7 @@ private fun SubagentInspectorContent(
                     Modifier
                         .heightIn(max = maxSheetHeight)
                         .verticalScroll(rememberScrollState())
+                        .padding(contentPadding)
                         .navigationBarsPadding()
                         .padding(bottom = 24.dp)
                 },
