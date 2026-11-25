@@ -70,8 +70,6 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.terminal.isLinux
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.app.TerminalBlockUi
-import io.github.mangi.eta.ui.app.UserTerminalStore
 import io.github.mangi.eta.ui.components.EtaMonospace
 import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.ansiPlainText
@@ -79,6 +77,8 @@ import io.github.mangi.eta.ui.components.ansiToAnnotatedString
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
+import io.github.mangi.eta.ui.state.TerminalBlockUi
+import io.github.mangi.eta.ui.state.UserTerminalStore
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon

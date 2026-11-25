@@ -1,0 +1,3968 @@
+package io.github.mangi.eta.ui.state
+
+import io.github.mangi.eta.agent.model.AgentContextSnapshot
+
+import android.content.ContentResolver
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.net.Uri
+import android.os.SystemClock
+import android.text.format.DateFormat
+import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
+import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.device.AgentFileReferenceGateway
+import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.media.AgentImageCodec
+import io.github.mangi.eta.agent.model.AgentFileReference
+import io.github.mangi.eta.agent.model.AgentFileReferenceKind
+import io.github.mangi.eta.agent.model.AgentFileReferencePolicy
+import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
+import io.github.mangi.eta.agent.model.TitleWidth
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
+import io.github.mangi.eta.agent.model.ConversationTitleGenerator
+import io.github.mangi.eta.agent.roleplay.RoleplayBinding
+import io.github.mangi.eta.agent.roleplay.CharacterMacros
+import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
+import io.github.mangi.eta.agent.roleplay.RoleplayMessageLink
+import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
+import io.github.mangi.eta.data.repository.ConversationBranchUnavailable
+import io.github.mangi.eta.data.repository.CharacterRepository
+import io.github.mangi.eta.agent.runtime.ipc.AgentEvent
+import io.github.mangi.eta.agent.runtime.GuiControlStatus
+import io.github.mangi.eta.agent.runtime.AgentConversationIdentity
+import io.github.mangi.eta.agent.runtime.AgentConversationIdentity.archiveConversationId
+import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
+import io.github.mangi.eta.agent.runtime.AgentExecutionService
+import io.github.mangi.eta.agent.runtime.archive.AgentExternalArchivePayload
+import io.github.mangi.eta.agent.runtime.archive.AgentRunArchiveStore
+import io.github.mangi.eta.agent.runtime.archive.AgentRunCheckpointStore
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeClient
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.ipc.AgentUiHandoffPayload
+import io.github.mangi.eta.agent.scheduler.ScheduledTaskRunContext
+import io.github.mangi.eta.data.model.ScheduledTaskSessionMode
+import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.data.datastore.ConversationWorkspaceRecord
+import io.github.mangi.eta.data.datastore.ConversationWorkspaceState
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.data.model.ModelReasoningCapabilities
+import io.github.mangi.eta.data.model.ProviderSetting
+import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.enabledModel
+import io.github.mangi.eta.data.repository.backup.EtaBackupRepository
+import io.github.mangi.eta.data.repository.backup.EtaBackupSummary
+import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.IncomingShareRequest
+import io.github.mangi.eta.ui.model.AgentChatHomeUiState
+import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.AgentMessageUi
+import io.github.mangi.eta.ui.model.AgentModelPickerProjector
+import io.github.mangi.eta.ui.model.AgentModelPickerUiState
+import io.github.mangi.eta.ui.model.ConversationModeUi
+import io.github.mangi.eta.ui.model.ConversationPaneUiState
+import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
+import io.github.mangi.eta.ui.model.ConversationWorkspaceUi
+import io.github.mangi.eta.ui.model.MessageEditUiState
+import io.github.mangi.eta.ui.model.PendingFileReferenceUi
+import io.github.mangi.eta.ui.model.PendingImageUi
+import io.github.mangi.eta.ui.model.QueuedMessageUi
+import io.github.mangi.eta.ui.model.SystemNoticeCode
+import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
+import io.github.mangi.eta.ui.model.ThinkingMessageUi
+import io.github.mangi.eta.ui.model.TokenUsageUi
+import io.github.mangi.eta.ui.model.ToolActivityMessageUi
+import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.ui.model.contentMatches
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.text.Normalizer
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+internal class AgentAppState(
+    context: Context,
+    private val scope: CoroutineScope,
+    initialConversations: AgentConversationStore.Snapshot = AgentConversationStore.load(context),
+    private val titleGenerator: ConversationTitleGenerator = ConversationTitleGenerator(),
+    /** 余额数据源：用来结算「本轮消耗」（首尾余额差）。为空时不做结算。 */
+    private val balanceStore: DeepSeekBalanceStore? = null,
+) {
+    private val appContext = context.applicationContext
+    private val runMessageProjector = AgentRunMessageProjector()
+    private val runStore = AgentRunStore(scope) { runId, event -> applyRunEvent(runId, event) }
+    private val pendingConversationDeletes = mutableSetOf<String>()
+    private val persistenceLock = Any()
+    private var persistenceJob: Job? = null
+    // 导入期间暂停保存：旧状态的增量保存会删除刚导入的会话；导入成功后整体重载，失败时数据库已回滚。
+    private var persistencePaused = false
+    private val runtimeRecoveryInProgress = AtomicBoolean(false)
+    @Volatile
+    private var conversationPersistence = AgentConversationPersistence(initialConversations)
+    private var currentReasoningCapabilities: ModelReasoningCapabilities? = null
+    private var currentDraftReasoningCustomized = false
+    private var localPrefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var providers: List<ProviderSetting> = emptyList()
+    private var defaultModelId: String? = null
+    private var defaultProviderId: String? = null
+    private var fileAttachmentOwnerVersion = 0L
+    private val conversationLoadMutex = Mutex()
+    /** 延后补全的后台存档任务：按会话去重，等待发送前可 join。 */
+    private val checkpointLoadJobs = mutableMapOf<String, Job>()
+    private val conversationContentPins = mutableMapOf<String, Int>()
+    private var conversationSelectionJob: Job? = null
+    private var conversationSelectionVersion = 0L
+    private var historyPageJob: Job? = null
+    private var historyPageVersion = 0L
+    private var historyPageReleasesEarlier = false
+    private var conversationSearchJob: Job? = null
+    /** 取消/清空搜索后延迟复位「正在搜索」的定时器：只留一个，新搜索会先把它取消。 */
+    private var searchStatusResetJob: Job? = null
+    private var persistedSearchMatches: Set<String> = emptySet()
+    private val pendingAutoTitleFallbacks = mutableMapOf<String, String>()
+    private val autoGeneratedTitleIds = mutableSetOf<String>()
+    private val manuallyRenamedConversationIds = mutableSetOf<String>()
+    private val titleGenerationJobs = mutableMapOf<String, Job>()
+
+    private var branchingConversationId by mutableStateOf<String?>(null)
+    val isBranchingCurrentConversation: Boolean
+        get() = branchingConversationId != null && branchingConversationId == selectedConversationId
+
+    var isLoadingConversation by mutableStateOf(false)
+        private set
+    var conversationLoadFailed by mutableStateOf(false)
+        private set
+    var historyLoadState by mutableStateOf(ConversationHistoryLoadState.Idle)
+        private set
+    val isLoadingEarlierMessages: Boolean get() = historyLoadState == ConversationHistoryLoadState.Loading
+
+    /** 第一轮还没命名完的会话：这期间顶栏不显示标题，等按提问起的名字落地再淡入。 */
+    private var autoNamingPending by mutableStateOf(emptySet<String>())
+    /** 首轮已经按提问起过名的会话：回答结束后不再用完整问答重复命名。 */
+    private val promptTitleRequested = mutableSetOf<String>()
+    /** 正在补命名的外部入口会话（语音浮窗／小布／小爱／定时任务）：同一会话不重复请求。 */
+    private val externalNamingInFlight = mutableSetOf<String>()
+    /** 正在补命名的恢复/导入会话：重复恢复时避免同一会话并发请求。 */
+    private val recoveredNamingInFlight = mutableSetOf<String>()
+
+    private var selectedConversationId: String? = initialConversations.selectedConversationId
+    private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
+    // 顶栏标题直接读这张表：必须挂在 Compose 状态上，否则写完标题不会触发重组，
+    // 要等别的状态变化（开合侧栏、切会话、流式 tick）才连带刷新出来。
+    private var conversationTitles by mutableStateOf(initialConversations.titles)
+    private var conversationUpdatedAt: Map<String, Long> = initialConversations.updatedAt
+    private var conversationPinnedIds: Set<String> = initialConversations.pinnedIds
+    /** 侧栏工作区（会话文件夹）：列表即展示顺序，折叠状态随之持久化。 */
+    private var workspaceRecords: List<ConversationWorkspaceRecord> = emptyList()
+
+    /** 会话 → 工作区归属；没有键的会话不在任何工作区里。 */
+    private var workspaceAssignments: Map<String, String> = emptyMap()
+
+    /** 侧栏选中某个工作区时点「新建会话」，等首条消息生成会话 id 时再归档过去。 */
+    private var pendingNewConversationWorkspaceId: String? = null
+
+    var homeState by mutableStateOf(
+        selectedConversationId?.let(conversationsById::get) ?: emptyChatState(defaultReasoningEffort(null))
+    )
+        private set
+
+    var modelPickerState by mutableStateOf(AgentModelPickerUiState())
+        private set
+
+    /**
+     * 新建对话后的一次性输入焦点信号：置位后由聊天输入框消费（聚焦 + 拉起键盘）。
+     */
+    var composerFocusRequestId by mutableIntStateOf(0)
+        private set
+
+    var conversationPaneState by mutableStateOf(
+        ConversationPaneUiState(
+            conversations = emptyList(),
+            selectedConversationId = selectedConversationId,
+            searchQuery = "",
+        )
+    )
+        private set
+
+    val currentConversationTitle: String?
+        get() {
+            val state = homeState
+            if (state.messages.isEmpty() && !state.hasEarlierMessages) return null
+            val id = conversationPaneState.selectedConversationId ?: return null
+            return conversationTitles[id]?.takeIf(String::isNotBlank)
+        }
+
+    init {
+        refreshConversationSummaries()
+        observeRuntimeSelection()
+        scope.launch {
+            // 工作区与设置同库（DataStore），与会话库解耦：读不到就按空处理，不影响会话加载。
+            val workspaceState = runCatching { SettingsDataStore.conversationWorkspaces() }.getOrNull()
+            if (workspaceState != null) applyWorkspaceState(workspaceState)
+        }
+        observeDefaultReasoningPreferences()
+        runtimeRecoveryInProgress.set(true)
+        scope.launch(Dispatchers.IO) {
+            try {
+                recoverRuntimeRuns()
+                importArchivedExternalRuns()
+            } finally {
+                runtimeRecoveryInProgress.set(false)
+            }
+        }
+    }
+
+    private fun observeRuntimeSelection() {
+        scope.launch(Dispatchers.IO) {
+            combine(
+                RuntimeConfigRepository.selectedProviderIdFlow(),
+                RuntimeConfigRepository.selectedModelIdFlow(),
+                ProviderRepository.providersFlow(),
+            ) { providerId, modelId, providers ->
+                Triple(providerId, modelId, providers)
+            }
+                .distinctUntilChanged()
+                .collectLatest { (providerId, modelId, providers) ->
+                    withContext(Dispatchers.Main) {
+                        this@AgentAppState.providers = providers
+                        defaultProviderId = providerId
+                        defaultModelId = modelId
+                        refreshConversationModel()
+                    }
+                }
+        }
+    }
+
+    /**
+     * 选择器、思考强度与上下文窗口统一投影自当前会话的有效模型：
+     * 会话绑定的模型仍可用时用它，否则用默认模型。回落只影响显示与发送，不改写会话绑定，
+     * 模型重新启用后会话自动回到原模型；真正发送后才把实际模型写入绑定。
+     */
+    private fun refreshConversationModel() {
+        val bound = providers.enabledModel(homeState.modelId)
+        val pickerState = if (bound != null) {
+            AgentModelPickerProjector.project(providers, bound.provider.id, bound.model.id)
+        } else {
+            AgentModelPickerProjector.project(providers, defaultProviderId, defaultModelId)
+        }
+        modelPickerState = pickerState.copy(isChanging = modelPickerState.isChanging)
+        val effective = bound ?: providers.enabledModel(pickerState.selectedModel?.id)
+        currentReasoningCapabilities = effective?.let { (provider, model) ->
+            RuntimeConfigRepository.reasoningCapabilities(provider, model)
+        }
+        if (!homeState.isConversationLoaded) return
+        val resolved = if (isUnboundBlankDraft() && !currentDraftReasoningCustomized) {
+            val effort = defaultReasoningEffort(currentReasoningCapabilities)
+            homeState.copy(
+                thinkingEnabled = effort.enablesReasoning,
+                reasoningEffort = effort,
+                availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
+            )
+        } else {
+            homeState.withCurrentReasoningCapabilities()
+        }
+        val conversationId = selectedConversationId
+        if (conversationId == null) homeState = resolved
+        else updateConversation(conversationId, resolved, updateTimestamp = false)
+    }
+
+    private fun isUnboundBlankDraft(): Boolean =
+        selectedConversationId == null &&
+            homeState.messages.isEmpty() &&
+            !homeState.hasEarlierMessages
+
+    private fun defaultReasoningEffort(
+        capabilities: ModelReasoningCapabilities? = currentReasoningCapabilities,
+    ): ReasoningEffort {
+        if (!agentBooleanForUi(Prefs.Keys.AGENT_THINKING_ENABLED)) {
+            return capabilities?.normalize(ReasoningEffort.OFF) ?: ReasoningEffort.OFF
+        }
+        val requested = Prefs.defaultReasoningEffort(Prefs.localAgentPreferences())
+        return capabilities?.normalize(requested) ?: requested
+    }
+
+    private fun observeDefaultReasoningPreferences() {
+        val prefs = Prefs.localAgentPreferences() ?: return
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key != Prefs.Keys.AGENT_THINKING_ENABLED &&
+                key != Prefs.Keys.AGENT_DEFAULT_REASONING_EFFORT
+            ) {
+                return@OnSharedPreferenceChangeListener
+            }
+            scope.launch(Dispatchers.Main.immediate) {
+                syncUnboundDraftDefaultReasoning()
+            }
+        }
+        localPrefsListener = listener
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        scope.coroutineContext[Job]?.invokeOnCompletion {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
+    private fun syncUnboundDraftDefaultReasoning() {
+        if (!homeState.isConversationLoaded || !isUnboundBlankDraft() || currentDraftReasoningCustomized) return
+        val effort = defaultReasoningEffort(currentReasoningCapabilities)
+        homeState = homeState.copy(
+            thinkingEnabled = effort.enablesReasoning,
+            reasoningEffort = effort,
+            availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
+        )
+    }
+
+    private fun AgentChatHomeUiState.withCurrentReasoningCapabilities(): AgentChatHomeUiState {
+        val normalized = currentReasoningCapabilities?.normalize(reasoningEffort) ?: ReasoningEffort.OFF
+        return copy(
+            thinkingEnabled = normalized.enablesReasoning,
+            reasoningEffort = normalized,
+            availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
+        )
+    }
+
+    private val AgentChatHomeUiState.effectiveModelId: String?
+        get() = providers.enabledModel(modelId)?.model?.id
+            ?: AgentModelPickerProjector.project(providers, defaultProviderId, defaultModelId).selectedModel?.id
+
+    fun refreshRuntimeResults() {
+        if (!runtimeRecoveryInProgress.compareAndSet(false, true)) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                recoverRuntimeRuns()
+                importArchivedExternalRuns()
+            } finally {
+                runtimeRecoveryInProgress.set(false)
+            }
+        }
+    }
+
+    suspend fun exportBackup(output: OutputStream): EtaBackupSummary =
+        EtaBackupRepository.export(appContext, output)
+
+    suspend fun importBackup(input: InputStream): EtaBackupSummary {
+        val locallyBusy = withContext(Dispatchers.Main.immediate) {
+            branchingConversationId != null || runStore.hasActiveRuns || conversationsById.values.any { it.isStreaming }
+        }
+        if (locallyBusy) {
+            throw IllegalStateException(appContext.getString(R.string.ui_misc_backup_stop_active_runs))
+        }
+
+        val activeRunQuery = withContext(Dispatchers.IO) {
+            AgentRuntimeClient(appContext, AndroidAgentLogger).queryActiveRuns()
+        }
+        when (val active = activeRunQuery) {
+            is AgentRuntimeClient.ActiveRunsQuery.Known -> {
+                if (active.runIds.isNotEmpty()) {
+                    throw IllegalStateException(appContext.getString(R.string.ui_misc_backup_stop_active_runs))
+                }
+            }
+            AgentRuntimeClient.ActiveRunsQuery.Unavailable -> {
+                throw IllegalStateException(appContext.getString(R.string.ui_misc_backup_runtime_unavailable))
+            }
+        }
+
+        val pendingPersistence = synchronized(persistenceLock) {
+            check(!persistencePaused && branchingConversationId == null) {
+                appContext.getString(R.string.ui_misc_backup_wait_persistence)
+            }
+            persistencePaused = true
+            persistenceJob
+        }
+        var imported = false
+        var reloaded = false
+        try {
+            pendingPersistence?.join()
+            return conversationLoadMutex.withLock {
+                try {
+                    val summary = EtaBackupRepository.import(appContext, input, onCommitted = { imported = true })
+                    reloadConversationsAfterBackup()
+                    reloaded = true
+                    summary
+                } catch (failure: Throwable) {
+                    if (imported && !reloaded) {
+                        try {
+                            withContext(NonCancellable) { reloadConversationsAfterBackup() }
+                            reloaded = true
+                        } catch (reloadFailure: Throwable) {
+                            failure.addSuppressed(reloadFailure)
+                        }
+                    }
+                    throw failure
+                }
+            }
+        } finally {
+            // 导入已提交但重载失败时内存仍是旧状态，继续暂停，避免覆盖导入结果；重启后按库内数据加载。
+            if (!imported || reloaded) {
+                synchronized(persistenceLock) { persistencePaused = false }
+            }
+            // 仅提交前失败才回写旧内存；提交后的清理失败或取消仍以导入数据为准。
+            if (!imported) withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+        }
+    }
+
+    private suspend fun reloadConversationsAfterBackup() {
+        val snapshot = withContext(Dispatchers.IO) {
+            AgentConversationStore.load(appContext)
+        }
+        withContext(Dispatchers.Main.immediate) {
+            conversationSelectionVersion += 1
+            cancelHistoryPageLoad()
+            conversationSelectionJob?.cancel()
+            isLoadingConversation = false
+            conversationLoadFailed = false
+            conversationSearchJob?.cancel()
+            persistedSearchMatches = emptySet()
+            titleGenerationJobs.values.forEach(Job::cancel)
+            titleGenerationJobs.clear()
+            pendingAutoTitleFallbacks.clear()
+            autoGeneratedTitleIds.clear()
+            manuallyRenamedConversationIds.clear()
+            selectedConversationId = snapshot.selectedConversationId
+            conversationsById = snapshot.conversationsById
+            conversationTitles = snapshot.titles
+            conversationUpdatedAt = snapshot.updatedAt
+            conversationPinnedIds = snapshot.pinnedIds
+            conversationPersistence = AgentConversationPersistence(snapshot)
+            fileAttachmentOwnerVersion += 1
+            currentDraftReasoningCustomized = false
+            homeState = selectedConversationId
+                ?.let(conversationsById::get)
+                ?: emptyChatState(defaultReasoningEffort(null))
+            refreshConversationModel()
+            conversationPaneState = conversationPaneState.copy(
+                selectedConversationId = selectedConversationId,
+                searchQuery = "",
+            )
+            refreshConversationSummaries()
+        }
+    }
+
+    /** 用 checkpoint、终态 outbox 与 active session 一次性对账，避免用进程存活推断 run 状态。 */
+    private suspend fun recoverRuntimeRuns() {
+        val client = AgentRuntimeClient(appContext, AndroidAgentLogger)
+        val checkpoints = withContext(Dispatchers.IO) {
+            AgentRunCheckpointStore.list(appContext)
+        }
+        val initialCompletedQuery = client.queryCompletedRuns()
+        if (initialCompletedQuery is AgentRuntimeClient.CompletedRunsQuery.Unavailable) {
+            AndroidAgentLogger.warnThrottled("agent_ui_drain_results_failed") {
+                "Agent UI pending result recovery failed"
+            }
+        }
+        val initialCompletedRuns =
+            (initialCompletedQuery as? AgentRuntimeClient.CompletedRunsQuery.Known)
+                ?.runs
+                .orEmpty()
+        val activeRunQuery = client.queryActiveRuns()
+        val terminalRaceQuery = if (
+            activeRunQuery is AgentRuntimeClient.ActiveRunsQuery.Known
+        ) {
+            client.queryCompletedRuns()
+        } else {
+            initialCompletedQuery
+        }
+        val terminalRaceCompletedRuns =
+            (terminalRaceQuery as? AgentRuntimeClient.CompletedRunsQuery.Known)
+                ?.runs
+                .orEmpty()
+        val completedRuns = (initialCompletedRuns + terminalRaceCompletedRuns)
+            .associateBy { completed ->
+                completed.result.runId.ifBlank { completed.handoff.id }
+            }
+            .values
+            .toList()
+        val activeStateKnown = activeRunQuery is AgentRuntimeClient.ActiveRunsQuery.Known
+        val terminalStateKnown = terminalRaceQuery is AgentRuntimeClient.CompletedRunsQuery.Known
+        val activeRunIds = (activeRunQuery as? AgentRuntimeClient.ActiveRunsQuery.Known)?.runIds.orEmpty()
+        val locallyObservedRunIds = withContext(Dispatchers.Main) { runStore.observedRunIds }
+        val plan = AgentRunRecoveryCoordinator.plan(
+            checkpoints = checkpoints,
+            completedRuns = completedRuns,
+            activeStateKnown = activeStateKnown,
+            terminalStateKnown = terminalStateKnown,
+            activeRunIds = activeRunIds,
+            locallyObservedRunIds = locallyObservedRunIds,
+        )
+        val knownRunIds = checkpoints.mapTo(mutableSetOf()) { it.runId }.apply {
+            addAll(completedRuns.map { it.result.runId.ifBlank { it.handoff.id } })
+            addAll(locallyObservedRunIds)
+        }
+        val preparingRuns = (activeRunQuery as? AgentRuntimeClient.ActiveRunsQuery.Known)?.runs.orEmpty()
+            .filter { it.handoffSource == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE && it.runId !in knownRunIds }
+        val recoveringConversationIds = buildSet {
+            plan.completed.forEach { add(AgentUiHandoffPayload.from(it.result.handoff.payload).conversationId) }
+            plan.interrupted.forEach { add(AgentUiHandoffPayload.from(it.handoff.payload).conversationId) }
+            plan.reattach.forEach { add(AgentUiHandoffPayload.from(it.handoff.payload).conversationId) }
+            preparingRuns.forEach { add(it.conversationId) }
+        }
+        withLoadedConversations(recoveringConversationIds) {
+            val orphanRewrites = if (activeStateKnown && terminalStateKnown) withContext(Dispatchers.Main) {
+                val observed = checkpoints.mapTo(mutableSetOf()) { it.runId }.apply {
+                    addAll(completedRuns.map { it.result.runId })
+                    addAll(activeRunIds)
+                    addAll(runStore.observedRunIds)
+                }
+                conversationsById.flatMap { (id, state) ->
+                    state.roleplayMessages.pendingRewrites.keys.filterNot { it in observed }.map { id to it }
+                }
+            } else emptyList()
+            if (
+                plan.completed.isEmpty() &&
+                plan.interrupted.isEmpty() &&
+                plan.reattach.isEmpty() && preparingRuns.isEmpty() && orphanRewrites.isEmpty()
+            ) {
+                return@withLoadedConversations
+            }
+
+            val acknowledgeAfterSave = mutableListOf<String>()
+            val removeAfterSave = mutableListOf<String>()
+            val changed = withContext(Dispatchers.Main) {
+                var stateChanged = false
+                plan.completed.forEach { recoveryPlan ->
+                    val completedRun = recoveryPlan.result
+                    val runId = completedRun.result.runId.ifBlank { completedRun.handoff.id }
+                    val payload = AgentUiHandoffPayload.from(completedRun.handoff.payload)
+                    val conversationId = payload.conversationId
+                    val state = conversationsById[conversationId]
+                    if (state == null) {
+                        // App 请求先保存会话才启动；缺失会话的结果已被用户删除或备份替换，不能重新建会话。
+                        acknowledgeAfterSave += runId
+                        return@forEach
+                    }
+                    recoveryPlan.checkpoint?.let { checkpoint ->
+                        stateChanged = restoreCheckpointTrace(
+                            checkpoint = checkpoint,
+                            interrupted = false,
+                        ) || stateChanged
+                    }
+                    val result = completedRun.result
+                    val recovery = AgentPendingResultRecovery.apply(
+                        state = conversationsById[conversationId] ?: state,
+                        runId = runId,
+                        result = result,
+                        promptSupplement = payload.promptSupplement,
+                        supplements = payload.supplements,
+                    )
+                    if (recovery.alreadyApplied) {
+                        acknowledgeAfterSave += runId
+                        return@forEach
+                    }
+                    updateConversation(conversationId, recovery.state)
+                    acknowledgeAfterSave += runId
+                    stateChanged = true
+                }
+
+                plan.interrupted.forEach { checkpoint ->
+                    removeAfterSave += checkpoint.runId
+                    stateChanged = restoreCheckpointTrace(
+                        checkpoint = checkpoint,
+                        interrupted = true,
+                    ) || stateChanged
+                }
+                orphanRewrites.forEach { (conversationId, runId) ->
+                    conversationsById[conversationId]?.let { state ->
+                        updateConversation(conversationId, RoleplayConversationReducer.applyRewrite(state, runId,
+                            AgentRuntimeWire.RunResult(runId, false, "", appContext.getString(R.string.ui_misc_rewrite_interrupted),
+                                operation = AgentRuntimeWire.OP_REWRITE_REPLY)))
+                        stateChanged = true
+                    }
+                }
+                if (stateChanged) refreshConversationSummaries()
+                stateChanged || acknowledgeAfterSave.isNotEmpty() || removeAfterSave.isNotEmpty()
+            }
+
+            if (changed) {
+                val saved = withContext(Dispatchers.Main) { persistConversations() }.await()
+                if (saved) {
+                    val acknowledged = acknowledgeAfterSave.filterTo(mutableSetOf(), client::ackResult)
+                    removeAfterSave.forEach { runId ->
+                        AgentRunCheckpointStore.remove(appContext, runId)
+                    }
+                    withContext(Dispatchers.Main) {
+                        plan.completed.forEach { completed ->
+                            val runId = completed.result.result.runId.ifBlank { completed.result.handoff.id }
+                            val id = AgentUiHandoffPayload.from(completed.result.handoff.payload).conversationId
+                            if (id in pendingConversationDeletes && runStore.activeRunId(id) == null) {
+                                if (runId in acknowledged) deleteSettledConversation(id)
+                                else abortPendingConversationDelete(id)
+                            }
+                        }
+                        plan.interrupted.forEach { checkpoint ->
+                            val id = AgentUiHandoffPayload.from(checkpoint.handoff.payload).conversationId
+                            if (id in pendingConversationDeletes && runStore.activeRunId(id) == null) {
+                                deleteSettledConversation(id)
+                            }
+                        }
+                    }
+                }
+            }
+
+            plan.reattach.forEach { checkpoint ->
+                withContext(Dispatchers.Main) {
+                    startReattachedRun(checkpoint.runId,
+                        AgentUiHandoffPayload.from(checkpoint.handoff.payload).conversationId,
+                        checkpoint.operation, checkpoint.rewriteTargetMessageId)
+                }
+            }
+            preparingRuns.forEach { run ->
+                withContext(Dispatchers.Main) { startReattachedRun(run.runId, run.conversationId, run.operation) }
+            }
+        }
+    }
+
+    /** 把安全事件恢复为 UI 轨迹；半截回复不进入模型 history，设备工具也不会重放。 */
+    private fun restoreCheckpointTrace(
+        checkpoint: AgentRunCheckpointStore.Checkpoint,
+        interrupted: Boolean,
+    ): Boolean {
+        val runId = checkpoint.runId
+        if (runId.isBlank()) return false
+        val conversationId = AgentUiHandoffPayload
+            .from(checkpoint.handoff.payload)
+            .conversationId
+        val existing = conversationsById[conversationId] ?: return false
+        if (AgentRuntimeHistoryReducer.wasApplied(existing, runId)) return false
+        if (checkpoint.operation == AgentRuntimeWire.OP_REWRITE_REPLY) {
+            val restored = RoleplayConversationReducer.restorePendingRewrite(existing, runId, checkpoint.rewriteTargetMessageId)
+            if (interrupted) updateConversation(conversationId, RoleplayConversationReducer.applyRewrite(
+                restored, runId, AgentRuntimeWire.RunResult(runId, false, "", appContext.getString(R.string.ui_misc_rewrite_interrupted),
+                    operation = AgentRuntimeWire.OP_REWRITE_REPLY, rewriteTargetMessageId = checkpoint.rewriteTargetMessageId),
+            )) else updateConversation(conversationId, restored)
+            return interrupted || restored != existing
+        }
+
+        if (!runStore.register(runId, conversationId, observed = false)) return false
+        updateConversation(conversationId, existing.copy(isStreaming = true, isCompacting = checkpoint.operation == AgentRuntimeWire.OP_COMPACT))
+        restoreRunEvents(runId, checkpoint.events, replayEpochMs = checkpoint.updatedAt)
+        flushPendingRunDelta(runId)
+        updateRunTrace(runId) { messages ->
+            val finalizedThinking = runMessageProjector.finalizeThinking(runId, messages)
+            val finalizedText = runMessageProjector.finalizeText(runId, finalizedThinking)
+            if (interrupted) {
+                val interruptedTools = runMessageProjector.interruptRunningTools(
+                    reason = appContext.getString(R.string.system_notice_interrupted),
+                    messages = runMessageProjector.finishContextCompaction(
+                        runId,
+                        finalizedText,
+                        appContext.getString(R.string.ui_misc_compaction_interrupted),
+                    ),
+                )
+                val noticeId = "interrupted-$runId"
+                if (interruptedTools.any { it.id == noticeId }) {
+                    interruptedTools
+                } else {
+                    interruptedTools + SystemNoticeMessageUi(
+                        id = noticeId,
+                        code = SystemNoticeCode.Interrupted,
+                    )
+                }
+            } else {
+                runMessageProjector.finalizeRun(runId, finalizedText)
+            }
+        }
+        if (interrupted && (checkpoint.contextSnapshot != null || checkpoint.transcript.isNotEmpty())) {
+            applyConversationHistoryResult(runId, checkpoint.transcript, checkpoint.contextSnapshot, true)
+        }
+        conversationsById[conversationId]?.let { state ->
+            updateConversation(conversationId, RoleplayConversationReducer.linkRun(state, runId))
+        }
+        setConversationStreaming(runId, false)
+        runMessageProjector.clearRun(runId)
+        runStore.remove(runId)
+        conversationUpdatedAt = conversationUpdatedAt +
+            (conversationId to checkpoint.updatedAt)
+        return true
+    }
+
+    private fun startReattachedRun(
+        runId: String,
+        conversationId: String,
+        operation: String,
+        rewriteTargetMessageId: String? = null,
+    ) {
+        val existing = conversationsById[conversationId] ?: return
+        if (AgentRuntimeHistoryReducer.wasApplied(existing, runId) ||
+            !runStore.register(runId, conversationId)) return
+        val restored = if (operation == AgentRuntimeWire.OP_REWRITE_REPLY) {
+            RoleplayConversationReducer.restorePendingRewrite(existing, runId, rewriteTargetMessageId)
+        } else existing
+        updateConversation(conversationId, restored.copy(isStreaming = true, isCompacting = operation == AgentRuntimeWire.OP_COMPACT))
+        refreshConversationSummaries()
+        val observationJob = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            val client = AgentRuntimeClient(appContext, AndroidAgentLogger)
+            val outcome = client.attachRun(
+                runId = runId,
+                onReplay = { events -> restoreRunEvents(runId, events, replayEpochMs = System.currentTimeMillis()) },
+                onEvent = { event -> enqueueRunEvent(runId, event) },
+            )
+            when (outcome) {
+                is AgentRuntimeClient.AttachOutcome.Completed -> {
+                    withContext(Dispatchers.Main) {
+                        applyRunResult(
+                            runId = runId,
+                            result = outcome.result,
+                            acknowledgeRuntimeResult = true,
+                        )
+                        // 重新接管后才拿到终态的一轮同样不经过 finishRound。
+                        if (outcome.result.ok) {
+                            autoNameRecoveredRuns(listOf(conversationId to outcome.result.content))
+                        }
+                    }
+                    AgentRunArchiveStore.remove(appContext, runId)
+                }
+                AgentRuntimeClient.AttachOutcome.NotActive -> {
+                    withContext(Dispatchers.Main) {
+                        setConversationStreaming(runId, false)
+                        runStore.remove(runId)
+                    }
+                    recoverRuntimeRuns()
+                    withContext(Dispatchers.Main) {
+                        if (runStore.activeRunId(conversationId) == null) abortPendingConversationDelete(conversationId)
+                    }
+                }
+                AgentRuntimeClient.AttachOutcome.Unavailable -> withContext(Dispatchers.Main) {
+                    setConversationStreaming(runId, false)
+                    runStore.remove(runId)
+                    abortPendingConversationDelete(conversationId)
+                    refreshConversationSummaries()
+                }
+            }
+        }
+        runStore.observe(runId, observationJob)
+        observationJob.start()
+    }
+
+    private suspend fun importArchivedExternalRuns(
+        includeIsolatedScheduledKey: String? = null,
+    ) {
+        val archivedRuns = withContext(Dispatchers.IO) {
+            AgentRunArchiveStore.list(appContext)
+                .filter { run ->
+                    val payload = AgentExternalArchivePayload.from(run.handoff.payload) ?: return@filter false
+                    if (run.handoff.source != AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE) return@filter true
+                    val scheduled = ScheduledTaskRunContext.fromAdapterPayload(payload.adapterPayload)
+                    scheduled?.sessionMode == ScheduledTaskSessionMode.DEDICATED ||
+                        (includeIsolatedScheduledKey != null && payload.conversationKey == includeIsolatedScheduledKey)
+                }
+        }
+        if (archivedRuns.isEmpty()) return
+
+        for (archivedRun in archivedRuns) {
+            val payload = AgentExternalArchivePayload.from(archivedRun.handoff.payload) ?: continue
+            val conversationId = archiveConversationId(archivedRun.handoff.source, payload.conversationKey)
+            val saved = withLoadedConversations(setOf(conversationId)) {
+                val importedRunId = withContext(Dispatchers.Main) {
+                    importExternalRun(archivedRun).also { refreshConversationSummaries() }
+                } ?: return@withLoadedConversations true
+                if (!withContext(Dispatchers.Main) { persistConversations() }.await()) return@withLoadedConversations false
+                AgentRunArchiveStore.remove(appContext, importedRunId)
+                true
+            }
+            if (!saved) break
+            autoNameImportedExternalRuns(archivedRuns)
+        }
+    }
+
+    /**
+     * 外部入口（语音浮窗、小布、小爱、定时任务）发起的会话也要自动命名。
+     *
+     * 这些 run 由 Runtime 直接归档，不经过 [finishRound]，导入后标题一直是提问原文。
+     * 只在导入时补一次：标题已经不是导入时的占位原文就不再改它。
+     * */
+    private fun autoNameImportedExternalRuns(runs: List<AgentRunArchiveStore.ArchivedRun>) {
+        val targets = runs.asSequence()
+            .sortedByDescending { it.createdAt }
+            .mapNotNull { run ->
+                val payload = AgentExternalArchivePayload.from(run.handoff.payload) ?: return@mapNotNull null
+                if (run.result.operation != AgentRuntimeWire.OP_CHAT) return@mapNotNull null
+                val answer = run.result.content.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val id = archiveConversationId(run.handoff.source, payload.conversationKey)
+                if (conversationTitles[id] != payload.title) return@mapNotNull null
+                if (id in externalNamingInFlight) return@mapNotNull null
+                id to (payload.userText to answer)
+            }
+            .distinctBy { it.first }
+            // 一次导入最多补这么多，避免积压很多语音会话时开机就发一串命名请求。
+            .take(8)
+            .toList()
+        if (targets.isEmpty()) return
+        targets.forEach { (id, _) -> externalNamingInFlight += id }
+        scope.launch(Dispatchers.IO) {
+            targets.forEach { (conversationId, promptAnswer) ->
+                try {
+                    val title = ConversationTitleGenerator()
+                        .generate(promptAnswer.first, promptAnswer.second)
+                    if (!title.isNullOrBlank()) {
+                        withContext(Dispatchers.Main.immediate) {
+                            conversationTitles = conversationTitles + (conversationId to title)
+                            refreshConversationSummaries()
+                        }
+                        withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                        AndroidAgentLogger.info("External conversation auto named: chars=${title.length}")
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    AndroidAgentLogger.warn("External conversation naming failed: type=${throwable.safeLogType()}")
+                } finally {
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        externalNamingInFlight -= conversationId
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 恢复/导入回填的那一轮不经过 [finishRound]，标题会停在第一轮提问原文。
+     *
+     * 这里只在标题仍是占位时补一次语义命名；已经命名的会话不动，重复恢复也不会重复请求。
+     */
+    private fun autoNameRecoveredRuns(candidates: List<Pair<String, String>>) {
+        val targets = candidates
+            .filter { (_, answer) -> answer.isNotBlank() }
+            .distinctBy { it.first }
+            .filterNot { (id, _) -> id in recoveredNamingInFlight }
+        if (targets.isEmpty()) return
+        targets.forEach { (id, _) -> recoveredNamingInFlight += id }
+        scope.launch(Dispatchers.IO) {
+            targets.forEach { (conversationId, answer) ->
+                try {
+                    val prompt = withContext(Dispatchers.Main.immediate) {
+                        conversationsById[conversationId]
+                            ?.messages
+                            ?.firstOrNull { it is UserMessageUi }
+                            ?.let { (it as UserMessageUi).content }
+                    }
+                    if (prompt.isNullOrBlank()) return@forEach
+                    val placeholder = prompt.defaultConversationTitleFromMessage()
+                    val currentTitle = withContext(Dispatchers.Main.immediate) {
+                        conversationTitles[conversationId]
+                    }
+                    if (!currentTitle.isNullOrBlank() && currentTitle != placeholder) return@forEach
+                    val title = ConversationTitleGenerator().generate(prompt, answer)
+                    if (title.isNullOrBlank()) return@forEach
+                    withContext(Dispatchers.Main.immediate) {
+                        conversationTitles = conversationTitles + (conversationId to title)
+                        refreshConversationSummaries()
+                    }
+                    withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                    AndroidAgentLogger.info("Recovered conversation auto named: chars=${title.length}")
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    AndroidAgentLogger.warn(
+                        "Recovered conversation naming failed: type=${throwable.javaClass.simpleName}"
+                    )
+                } finally {
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        recoveredNamingInFlight -= conversationId
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun openAssistantConversation(
+        conversationKey: String,
+        source: String = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+    ): Boolean = openArchivedConversation(source, conversationKey)
+
+    /** 打开外部入口按 [source] 与 [conversationKey] 归档的会话；先导入尚未入库的归档结果。 */
+    suspend fun openArchivedConversation(source: String, conversationKey: String): Boolean {
+        if (source.isBlank() || conversationKey.isBlank()) return false
+        val targetScheduledKey = if (source == AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE) {
+            conversationKey
+        } else {
+            null
+        }
+        importArchivedExternalRuns(includeIsolatedScheduledKey = targetScheduledKey)
+        val conversationId = archiveConversationId(
+            source = source,
+            conversationKey = conversationKey,
+        )
+        val exists = withContext(Dispatchers.Main.immediate) { conversationsById[conversationId] != null }
+        if (!exists) return false
+        ensureConversationLoaded(conversationId)
+        withContext(Dispatchers.Main.immediate) {
+            selectConversation(conversationId)
+        }
+        return true
+    }
+
+    /**
+     * 打开定时任务的某次运行：
+     * - 若该次 run 正在后台运行，立即在主聊天中挂载实时事件流（回放已有轨迹 + 实时流式更新）；
+     * - 若该次 run 已完成，按需导入归档并切到对应会话以供阅读和继续追问。
+     */
+    suspend fun openScheduledTaskRun(
+        runId: String,
+        archiveConversationKey: String,
+        taskTitle: String,
+        taskPrompt: String,
+        isRunning: Boolean,
+    ): Boolean {
+        if (archiveConversationKey.isBlank()) return false
+        importArchivedExternalRuns(includeIsolatedScheduledKey = archiveConversationKey)
+        val conversationId = archiveConversationId(
+            source = AgentRuntimeWire.SCHEDULED_TASK_HANDOFF_SOURCE,
+            conversationKey = archiveConversationKey,
+        )
+        val shouldAttachLive = isRunning && runId.isNotBlank() && run {
+            val active = withContext(Dispatchers.IO) {
+                AgentRuntimeClient(appContext, AndroidAgentLogger).queryActiveRuns()
+            }
+            active is AgentRuntimeClient.ActiveRunsQuery.Known && runId in active.runIds
+        }
+
+        if (shouldAttachLive) {
+            if (withContext(Dispatchers.Main.immediate) { conversationsById[conversationId] != null }) {
+                ensureConversationLoaded(conversationId)
+            }
+            withContext(Dispatchers.Main.immediate) {
+                val now = System.currentTimeMillis()
+                val effort = defaultReasoningEffort(null)
+                val existing = conversationsById[conversationId] ?: emptyChatState(effort)
+                if (conversationTitles[conversationId].isNullOrBlank()) {
+                    conversationTitles = conversationTitles + (conversationId to taskTitle.ifBlank {
+                        appContext.getString(R.string.ui_misc_scheduled_task_default_title)
+                    })
+                }
+                val alreadyHasRun = AgentRuntimeHistoryReducer.wasApplied(existing, runId) ||
+                    runStore.activeRunId(conversationId) == runId ||
+                    existing.messages.any { it.id == "assistant-$runId" || it.id.startsWith("assistant-$runId-") }
+                if (!alreadyHasRun) {
+                    updateConversation(
+                        conversationId,
+                        existing.copy(
+                            input = "",
+                            isStreaming = true,
+                            messages = existing.messages +
+                                UserMessageUi(
+                                    id = "user-$runId",
+                                    content = taskPrompt,
+                                ) +
+                                AgentMessageUi(
+                                    id = "assistant-$runId",
+                                    content = "",
+                                    isStreaming = true,
+                                    renderMarkdown = false,
+                                ),
+                        ),
+                    )
+                    conversationUpdatedAt = conversationUpdatedAt + (conversationId to now)
+                    startReattachedRun(
+                        runId = runId,
+                        conversationId = conversationId,
+                        operation = AgentRuntimeWire.OP_CHAT,
+                    )
+                } else {
+                    if (conversationsById[conversationId] == null) {
+                        updateConversation(conversationId, existing)
+                    }
+                    if (runStore.activeRunId(conversationId) != runId &&
+                        !AgentRuntimeHistoryReducer.wasApplied(existing, runId)
+                    ) {
+                        startReattachedRun(
+                            runId = runId,
+                            conversationId = conversationId,
+                            operation = AgentRuntimeWire.OP_CHAT,
+                        )
+                    }
+                }
+                refreshConversationSummaries()
+                selectConversation(conversationId)
+            }
+            return true
+        }
+
+        // 若刚刚在查询活跃态瞬间结束，再补扫一次归档避免漏掉最后几十毫秒落盘的结果。
+        importArchivedExternalRuns(includeIsolatedScheduledKey = archiveConversationKey)
+        val exists = withContext(Dispatchers.Main.immediate) { conversationsById[conversationId] != null }
+        if (!exists) return false
+        ensureConversationLoaded(conversationId)
+        withContext(Dispatchers.Main.immediate) {
+            selectConversation(conversationId)
+        }
+        return true
+    }
+
+    private fun importExternalRun(archivedRun: AgentRunArchiveStore.ArchivedRun): String? {
+        val runId = archivedRun.result.runId.ifBlank { archivedRun.handoff.id }
+        if (runId.isBlank()) return null
+        val payload = AgentExternalArchivePayload.from(archivedRun.handoff.payload) ?: return null
+        val conversationId = archiveConversationId(
+            source = archivedRun.handoff.source,
+            conversationKey = payload.conversationKey,
+        )
+        val archivedEffort = payload.reasoningEffort
+            ?: payload.thinkingEnabled?.let(ReasoningEffort::fromLegacy)
+            ?: defaultReasoningEffort(null)
+        val existingState = conversationsById[conversationId] ?: emptyChatState(
+            archivedEffort.enablesReasoning
+        ).copy(reasoningEffort = archivedEffort)
+        val alreadyImported = AgentRuntimeHistoryReducer.wasApplied(existingState, runId) ||
+            existingState.messages.any {
+                it is AgentMessageUi &&
+                    (it.id == "assistant-$runId" || it.id.startsWith("assistant-$runId-")) &&
+                    !it.isStreaming
+            }
+        if (alreadyImported) return runId
+
+        if (conversationTitles[conversationId].isNullOrBlank()) {
+            conversationTitles = conversationTitles + (conversationId to payload.title)
+        }
+        if (runStore.activeRunId(conversationId) != null ||
+            !runStore.register(runId, conversationId, observed = false)) return null
+        updateConversation(
+            conversationId,
+            ExternalConversationHistory.appendUser(existingState, runId, payload.userText).copy(
+                input = "",
+                isStreaming = true,
+                thinkingEnabled = archivedEffort.enablesReasoning,
+                reasoningEffort = archivedEffort,
+                pendingImages = emptyList(),
+                messages = existingState.messages +
+                    UserMessageUi(
+                        id = "user-$runId",
+                        content = payload.userText,
+                        images = archivedRun.userImagePreviews,
+                    ) +
+                    AgentMessageUi(
+                        id = "assistant-$runId",
+                        content = "",
+                        isStreaming = true,
+                        renderMarkdown = false,
+                    ),
+            )
+        )
+        archivedRun.events.forEach { event -> applyRunEvent(runId, event) }
+        applyRunResult(runId, archivedRun.result)
+        conversationUpdatedAt = conversationUpdatedAt + (conversationId to archivedRun.createdAt)
+        return runId
+    }
+
+    fun updateThinkingEnabled(enabled: Boolean) {
+        updateReasoningEffort(ReasoningEffort.fromLegacy(enabled))
+    }
+
+    fun updateReasoningEffort(effort: ReasoningEffort) {
+        if (!homeState.isConversationLoaded) return
+        val normalized = currentReasoningCapabilities?.normalize(effort) ?: ReasoningEffort.OFF
+        if (isUnboundBlankDraft()) {
+            currentDraftReasoningCustomized = true
+        }
+        updateCurrentConversation(
+            homeState.copy(
+                thinkingEnabled = normalized.enablesReasoning,
+                reasoningEffort = normalized,
+            )
+        )
+        if (selectedConversationId != null) persistConversations()
+    }
+
+    /** 聊天内切换同时改当前会话绑定与默认模型；默认模型供新会话和系统助手入口使用。 */
+    fun selectModel(modelId: String) {
+        if (
+            !homeState.isConversationLoaded ||
+            homeState.isStreaming ||
+            modelPickerState.isChanging ||
+            modelPickerState.selectedModel?.id == modelId
+        ) {
+            return
+        }
+        updateCurrentConversation(homeState.copy(modelId = modelId))
+        refreshConversationModel()
+        if (selectedConversationId != null) persistConversations()
+        modelPickerState = modelPickerState.copy(isChanging = true)
+        scope.launch(Dispatchers.IO) {
+            try {
+                RuntimeConfigRepository.setSelectedModelId(modelId)
+                RuntimeConfigRepository.syncToRemotePreferences(EtaApp.serviceInstance)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, appContext.getString(R.string.state_ui_model_switching_failed_please_try_again_later_4af439), Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    modelPickerState = modelPickerState.copy(isChanging = false)
+                }
+            }
+        }
+    }
+
+    /** 输入框里的草稿不进列表：打字阶段完全不搜索。 */
+    fun updateSearchQuery(query: String) {
+        // 打字只留在输入框里：不动列表，也不碰数据库。
+        if (query.isNotBlank()) return
+        // 只记事实：这条日志出现就说明有人往上层发了空串，正在跑的搜索会被它取消。
+        AndroidAgentLogger.info(
+            "conversation-search clear active=${conversationSearchJob?.isActive == true} " +
+                "matches=${persistedSearchMatches.size} stateQuery=${conversationPaneState.searchQuery.length}",
+        )
+        conversationSearchJob?.cancel()
+        // 清空等于放弃这次搜索：标题先留在「正在搜索」，500ms 内没有新搜索才退回「Eta」。
+        scheduleSearchStatusReset()
+        if (persistedSearchMatches.isEmpty() && conversationPaneState.searchQuery.isEmpty()) return
+        persistedSearchMatches = emptySet()
+        conversationPaneState = conversationPaneState.copy(searchQuery = "")
+        refreshConversationSummaries()
+    }
+
+    /**
+     * 键盘上的搜索键：到这里才真的开始搜。标题与预览先给即时结果，全库正文随后回填。
+     *
+     * 之前每敲一个字都触发：拼音还没上屏时字母也算查询词，扫到一半又被下一个字母取消，
+     * 几千万字符反复白读，还占着 Room 唯一的事务线程。
+     */
+    fun submitConversationSearch(rawQuery: String) {
+        val query = rawQuery.trim()
+        // 入口就记：能分辨「IME 根本没触发搜索」与「传进来的词被截短 / 被清空」。
+        AndroidAgentLogger.info(
+            "conversation-search submit raw=${rawQuery.length} trimmed=${query.length}",
+        )
+        conversationSearchJob?.cancel()
+        // 新搜索接管状态：上一次「清空后延迟复位」的定时器立刻作废，标题保持「正在搜索」不断档。
+        searchStatusResetJob?.cancel()
+        persistedSearchMatches = emptySet()
+        conversationPaneState = conversationPaneState.copy(searchQuery = query)
+        refreshConversationSummaries()
+        // 第一阶段（标题与预览过滤）到这里结束，这一瞬间不切标题：它通常几十毫秒就有结果。
+        if (query.isEmpty()) {
+            scheduleSearchStatusReset()
+            return
+        }
+        conversationSearchJob = scope.launch {
+            val startedAt = SystemClock.elapsedRealtime()
+            AndroidAgentLogger.info("conversation-search begin len=${query.length}")
+            // 跑完或报错：标题立刻退回；被取消（清空、新建会话、点开会话）：延迟退回。
+            var resetImmediately = false
+            try {
+                // 第二阶段（全库正文扫描）从这一行开始，侧栏标题到这里才切成「正在搜索」。
+                setSearchRunning(true)
+                persistedSearchMatches = AgentConversationStore.searchConversationIds(
+                    appContext, query,
+                    SystemNoticeCode.entries.filter { noticeText(it).contains(query, ignoreCase = true) },
+                )
+                // 只记长度与命中数，不落查询原文。total 是参与匹配的会话总数，
+                // 它若明显小于库里的会话数，说明索引没装全，标题才会「一字不差也搜不到」。
+                AndroidAgentLogger.info(
+                    "conversation-search len=${query.length} hits=${persistedSearchMatches.size} " +
+                        "total=${conversationsById.size} ms=${SystemClock.elapsedRealtime() - startedAt}",
+                )
+                refreshConversationSummaries()
+                resetImmediately = true
+            } catch (cancelled: CancellationException) {
+                AndroidAgentLogger.info(
+                    "conversation-search cancelled ms=${SystemClock.elapsedRealtime() - startedAt}",
+                )
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.warn("Agent conversation search failed: type=${failure.safeLogType()}")
+                Toast.makeText(
+                    appContext,
+                    appContext.getString(R.string.local_conversation_search_failed),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                resetImmediately = true
+            } finally {
+                if (resetImmediately) {
+                    setSearchRunning(false)
+                } else {
+                    scheduleSearchStatusReset()
+                }
+            }
+        }
+    }
+
+    /**
+     * 侧栏「正在搜索」开关的唯一入口。
+     *
+     * 它描述的是「第二阶段（全库正文扫描）是否在跑」，不是「输入框里有没有字」：
+     * 第一阶段几十毫秒就出结果，切了也看不见，反而会闪。空列表转圈与顶栏标题都读它。
+     * 时间线核对用的埋点日志已在 2026112328 移除，这里只留状态本身。
+     */
+    private fun setSearchRunning(running: Boolean) {
+        if (conversationPaneState.isSearchRunning == running) return
+        conversationPaneState = conversationPaneState.copy(isSearchRunning = running)
+    }
+
+    /**
+     * 放弃搜索（清空输入框、新建会话、提交空串）时延迟复位，而不是立刻退回「Eta」。
+     *
+     * 延迟窗口内如果又发起新搜索，[submitConversationSearch] 会先取消本定时器，
+     * 标题就一路停在「正在搜索」，不会退回再切回、闪一下。
+     */
+    private fun scheduleSearchStatusReset() {
+        searchStatusResetJob?.cancel()
+        if (!conversationPaneState.isSearchRunning) return
+        searchStatusResetJob = scope.launch {
+            delay(SEARCH_STATUS_RESET_DELAY_MS)
+            if (conversationSearchJob?.isActive == true) return@launch
+            setSearchRunning(false)
+        }
+    }
+
+    fun selectConversation(conversationId: String) {
+        if (homeState.messageEdit != null) cancelMessageEdit()
+        val state = conversationsById[conversationId] ?: return
+        // 点开会话就说明这次搜索的使命已经完成：正在跑的全库扫描立刻让路，
+        // 不再继续读剩下的十几万行，也不再和打开会话抢数据库连接。
+        if (conversationSearchJob?.isActive == true) {
+            AndroidAgentLogger.info("conversation-search drop by=selectConversation")
+        }
+        conversationSearchJob?.cancel()
+        val selectionVersion = ++conversationSelectionVersion
+        cancelHistoryPageLoad()
+        conversationSelectionJob?.cancel()
+        fileAttachmentOwnerVersion += 1
+        currentDraftReasoningCustomized = false
+        selectedConversationId = conversationId
+        homeState = state
+        conversationLoadFailed = false
+        isLoadingConversation = !state.isConversationLoaded
+        conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
+        conversationSelectionJob = scope.launch {
+            try {
+                if (!ensureConversationLoaded(conversationId)) {
+                    if (conversationSelectionVersion == selectionVersion) conversationLoadFailed = true
+                    return@launch
+                }
+                if (conversationSelectionVersion != selectionVersion) return@launch
+                refreshConversationModel()
+                if (homeState.roleplayMessages.pendingRewrites.isNotEmpty()) refreshRuntimeResults()
+                if (homeState.modelId != null && providers.enabledModel(homeState.modelId) == null) {
+                    modelPickerState.selectedModel?.let { fallback ->
+                        Toast.makeText(appContext, appContext.getString(
+                            R.string.conversation_model_unavailable, fallback.displayName,
+                        ), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                persistConversations()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.error("Agent conversation load failed: type=${failure.safeLogType()}")
+                if (conversationSelectionVersion == selectionVersion) conversationLoadFailed = true
+            } finally {
+                if (conversationSelectionVersion == selectionVersion) isLoadingConversation = false
+            }
+        }
+    }
+
+    fun retryConversationLoad() {
+        selectedConversationId?.let(::selectConversation)
+    }
+
+    private suspend fun ensureConversationLoaded(conversationId: String): Boolean =
+        withContext(Dispatchers.Main.immediate) {
+            conversationLoadMutex.withLock {
+                val state = conversationsById[conversationId] ?: return@withLock false
+                if (state.isConversationLoaded) return@withLock true
+                synchronized(persistenceLock) { persistenceJob }?.join()
+                val loaded = AgentConversationStore.loadConversationMessages(appContext, conversationId)
+                    ?: return@withLock false
+                val current = conversationsById[conversationId] ?: return@withLock false
+                val restored = loaded.copy(
+                    input = current.input,
+                    pendingImages = current.pendingImages,
+                    pendingFileReferences = current.pendingFileReferences,
+                )
+                conversationPersistence.adoptConversation(
+                    conversationId, restored, conversationTitles[conversationId].orEmpty(),
+                    conversationUpdatedAt[conversationId] ?: 0L,
+                    conversationId in conversationPinnedIds,
+                )
+                val latest = conversationsById[conversationId] ?: return@withLock false
+                updateConversation(conversationId, restored.copy(
+                    input = latest.input,
+                    pendingImages = latest.pendingImages,
+                    pendingFileReferences = latest.pendingFileReferences,
+                ), updateTimestamp = false)
+                refreshConversationSummaries()
+                startCheckpointLoad(conversationId)
+                true
+            }
+        }
+
+    /** 展示窗口就位即返回；后台存档交给独立任务补全，不阻塞打开。 */
+    private fun startCheckpointLoad(conversationId: String) {
+        if (conversationsById[conversationId]?.checkpointLoaded != false) return
+        if (checkpointLoadJobs[conversationId]?.isActive == true) return
+        checkpointLoadJobs[conversationId] = scope.launch(Dispatchers.IO) {
+            try {
+                val checkpoint = AgentConversationStore.loadConversationCheckpoint(appContext, conversationId)
+                    ?: return@launch
+                mergeCheckpoint(conversationId, checkpoint)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.error(
+                    "Agent conversation checkpoint load failed: type=${failure.safeLogType()}",
+                )
+            }
+        }
+    }
+
+    private suspend fun mergeCheckpoint(
+        conversationId: String,
+        checkpoint: AgentConversationStore.CheckpointLoad,
+    ) = withContext(Dispatchers.Main.immediate) {
+        conversationLoadMutex.withLock {
+            val current = conversationsById[conversationId] ?: return@withLock
+            // 已卸载或已补全的会话不再写回，避免旧存档盖到新窗口上。
+            if (!current.isConversationLoaded || current.checkpointLoaded) return@withLock
+            val merged = current.copy(
+                journal = checkpoint.journal,
+                history = checkpoint.history,
+                checkpointLoaded = true,
+            )
+            // 补全结果直接成为保存基线，避免同一份存档被重新编码写回。
+            conversationPersistence.adoptConversation(
+                conversationId, merged, conversationTitles[conversationId].orEmpty(),
+                conversationUpdatedAt[conversationId] ?: 0L,
+                conversationId in conversationPinnedIds,
+            )
+            updateConversation(conversationId, merged, updateTimestamp = false)
+        }
+    }
+
+    /** 发送前确认后台存档就位；正常情况 join 的是已经在跑的任务。 */
+    private suspend fun awaitCheckpointLoaded(conversationId: String) {
+        checkpointLoadJobs[conversationId]?.join()
+        val state = withContext(Dispatchers.Main.immediate) { conversationsById[conversationId] } ?: return
+        if (!state.isConversationLoaded || state.checkpointLoaded) return
+        val checkpoint = AgentConversationStore.loadConversationCheckpoint(appContext, conversationId) ?: return
+        mergeCheckpoint(conversationId, checkpoint)
+    }
+
+    private suspend fun <T> withLoadedConversations(ids: Set<String>, block: suspend () -> T): T {
+        withContext(Dispatchers.Main.immediate) {
+            ids.forEach { conversationContentPins[it] = (conversationContentPins[it] ?: 0) + 1 }
+        }
+        try {
+            ids.forEach { id ->
+                val loaded = ensureConversationLoaded(id)
+                check(loaded || withContext(Dispatchers.Main.immediate) { id !in conversationsById }) {
+                    "Conversation content unavailable"
+                }
+            }
+            return block()
+        } finally {
+            withContext(Dispatchers.Main.immediate + NonCancellable) {
+                ids.forEach { id ->
+                    val count = (conversationContentPins[id] ?: 1) - 1
+                    if (count == 0) conversationContentPins.remove(id) else conversationContentPins[id] = count
+                }
+                if (ids.isNotEmpty()) persistConversations()
+            }
+        }
+    }
+
+    fun loadEarlierMessages() = changeMessageWindow(loadEarlier = true)
+
+    fun updateHistoryViewport(atLatest: Boolean) {
+        if (!atLatest) {
+            if (historyPageReleasesEarlier) cancelHistoryPageLoad()
+        } else if (AgentConversationStore.shouldReleaseEarlierMessages(homeState.messages.size)) {
+            changeMessageWindow(loadEarlier = false)
+        }
+    }
+
+    private fun changeMessageWindow(loadEarlier: Boolean) {
+        val conversationId = selectedConversationId ?: return
+        if (historyPageJob?.isActive == true || !homeState.isConversationLoaded ||
+            (loadEarlier && !homeState.hasEarlierMessages) ||
+            homeState.isStreaming || homeState.messageEdit != null) return
+        val pageVersion = ++historyPageVersion
+        historyPageReleasesEarlier = !loadEarlier
+        historyLoadState = ConversationHistoryLoadState.Loading
+        historyPageJob = scope.launch {
+            try {
+                conversationLoadMutex.withLock {
+                    if (historyPageVersion != pageVersion) return@withLock
+                    // 翻页或释放旧页都先提交当前窗口，避免覆盖编辑结果或丢弃未保存的记录。
+                    val state = conversationsById[conversationId] ?: return@withLock
+                    val title = conversationTitles[conversationId].orEmpty()
+                    val updatedAt = conversationUpdatedAt[conversationId] ?: 0L
+                    check(persistConversations().await()) { "Conversation persistence failed" }
+                    if (historyPageVersion != pageVersion) return@withLock
+                    val page = if (loadEarlier) {
+                        AgentConversationStore.loadEarlierMessages(appContext, conversationId, state.messageStartIndex)
+                    } else {
+                        AgentConversationStore.loadRecentMessages(appContext, conversationId)
+                    }
+                    if (historyPageVersion != pageVersion) return@withLock
+                    val current = conversationsById[conversationId] ?: return@withLock
+                    if (!current.canReplaceMessageWindowOf(state)) return@withLock
+                    var window = RoleplayConversationReducer.decorate(state.copy(
+                        messages = if (loadEarlier) page.messages + state.messages else page.messages,
+                        messageStartIndex = page.startIndex,
+                        hasEarlierMessages = page.hasEarlierMessages,
+                    ))
+                    window = window.copy(roleplayOriginalContents = AgentConversationStore.loadRoleplayMessageContents(
+                        appContext, conversationId, RoleplayConversationReducer.requiredOriginalContentIds(window),
+                    ))
+                    // 取消发生在最后一个挂起点之后时，不再提交已作废的旧窗口，避免回滚刚发起的下一次翻页。
+                    if (historyPageVersion != pageVersion) return@withLock
+                    conversationPersistence.adoptConversation(
+                        conversationId, window, title, updatedAt,
+                        conversationId in conversationPinnedIds,
+                    )
+                    val latest = conversationsById[conversationId] ?: return@withLock
+                    if (historyPageVersion != pageVersion || !latest.canReplaceMessageWindowOf(state)) return@withLock
+                    updateConversation(conversationId, latest.copy(
+                        messages = window.messages,
+                        messageStartIndex = window.messageStartIndex,
+                        hasEarlierMessages = window.hasEarlierMessages,
+                        roleplayOriginalContents = window.roleplayOriginalContents,
+                    ), updateTimestamp = false)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.error("Agent message page load failed: type=${failure.safeLogType()}")
+                if (historyPageVersion == pageVersion && loadEarlier) {
+                    historyLoadState = ConversationHistoryLoadState.Failed
+                }
+            } finally {
+                if (historyPageVersion == pageVersion) {
+                    historyPageReleasesEarlier = false
+                    if (historyLoadState == ConversationHistoryLoadState.Loading) {
+                        historyLoadState = ConversationHistoryLoadState.Idle
+                    }
+                }
+            }
+        }
+    }
+
+    private fun cancelHistoryPageLoad() {
+        historyPageVersion += 1
+        historyPageReleasesEarlier = false
+        historyPageJob?.cancel()
+        historyPageJob = null
+        historyLoadState = ConversationHistoryLoadState.Idle
+    }
+
+    private suspend fun releaseInactiveConversations(saved: Map<String, AgentChatHomeUiState>) {
+        conversationLoadMutex.withLock {
+            for ((id, state) in saved) {
+                // 较旧的排队保存可能在卸载后重新持有该会话基线，必须再次释放。
+                if (conversationsById[id]?.isConversationLoaded != true) {
+                    conversationPersistence.forgetConversation(id)
+                    continue
+                }
+                if (!state.isConversationLoaded || id == selectedConversationId || id in conversationContentPins ||
+                    state.isStreaming || runStore.activeRunId(id) != null ||
+                    state.messageEdit != null || conversationsById[id] !== state) continue
+                conversationPersistence.forgetConversation(id)
+                if (id == selectedConversationId || id in conversationContentPins ||
+                    runStore.activeRunId(id) != null || conversationsById[id] !== state) continue
+                conversationsById = conversationsById + (id to AgentConversationStore.unloadConversation(state))
+            }
+        }
+    }
+
+    fun createConversation() {
+        // 建新会话说明不再找旧记录：正在跑的全库扫描让路，标题按「放弃搜索」的节奏退回。
+        conversationSearchJob?.cancel()
+        conversationSelectionVersion += 1
+        cancelHistoryPageLoad()
+        conversationSelectionJob?.cancel()
+        isLoadingConversation = false
+        conversationLoadFailed = false
+        if (homeState.messageEdit != null) cancelMessageEdit()
+        fileAttachmentOwnerVersion += 1
+        currentDraftReasoningCustomized = false
+        selectedConversationId = null
+        homeState = emptyChatState(defaultReasoningEffort())
+        refreshConversationModel()
+        conversationPaneState = conversationPaneState.copy(
+            selectedConversationId = null,
+            searchQuery = "",
+        )
+        refreshConversationSummaries()
+        composerFocusRequestId += 1
+        composerFocusRequests.value = composerFocusRequestId
+        persistConversations()
+    }
+
+    fun branchConversation(conversationId: String, messageId: String, draftText: String = homeState.input) {
+        if (selectedConversationId != conversationId || branchingConversationId != null || persistencePaused ||
+            !homeState.isConversationLoaded || homeState.isStreaming || homeState.isCompacting ||
+            homeState.messageEdit != null || homeState.roleplayMessages.pendingRewrites.isNotEmpty() ||
+            runStore.activeRunId(conversationId) != null || conversationId in pendingConversationDeletes) return
+        val selectionVersion = conversationSelectionVersion
+        val branchId = newConversationId()
+        val baseTitle = appContext.getString(R.string.conversation_branch_title,
+            conversationTitles[conversationId].orEmpty().ifBlank { appContext.getString(R.string.conversation_unnamed) })
+        val taken = conversationTitles.values.toSet()
+        var title = baseTitle
+        var number = 2
+        while (title in taken) title = "$baseTitle ${number++}"
+        branchingConversationId = conversationId
+        updateCurrentConversation(homeState.copy(input = draftText), updateTimestamp = false)
+        val sourceSaved = persistConversations()
+        scope.launch {
+            try {
+                check(sourceSaved.await()) { "conversation_branch_source_save_failed" }
+                // 事务提交后必须完成保存基线和 Main 状态的登记；页面销毁不能留下会被旧快照删除的分支。
+                withContext(NonCancellable) {
+                    val now = System.currentTimeMillis()
+                    val created = synchronized(persistenceLock) {
+                        check(!persistencePaused) { "conversation_branch_persistence_paused" }
+                        val previous = persistenceJob
+                        val persistence = conversationPersistence
+                        async(Dispatchers.IO) {
+                            previous?.join()
+                            persistence.branch(appContext, conversationId, messageId, branchId, title, now)
+                        }.also { persistenceJob = it }
+                    }.await()
+                    withContext(Dispatchers.Main.immediate) {
+                        conversationTitles = conversationTitles + (branchId to title)
+                        conversationUpdatedAt = conversationUpdatedAt + (branchId to now)
+                        updateConversation(branchId, created, updateTimestamp = false)
+                        refreshConversationSummaries()
+                        if (selectedConversationId == conversationId && conversationSelectionVersion == selectionVersion && !homeState.isStreaming) {
+                            selectConversation(branchId)
+                        }
+                        persistConversations()
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: ConversationBranchUnavailable) {
+                Toast.makeText(appContext, R.string.conversation_branch_unavailable, Toast.LENGTH_LONG).show()
+            } catch (failure: Exception) {
+                AndroidAgentLogger.error("Conversation branch failed: type=${failure.safeLogType()}")
+                Toast.makeText(appContext, R.string.conversation_branch_failed, Toast.LENGTH_LONG).show()
+            } finally {
+                branchingConversationId = null
+            }
+        }
+    }
+
+    /** 焦点请求改为序号制后无需清除；保留空实现，兼容既有调用点。 */
+    fun consumeComposerFocusRequest() = Unit
+
+    /** 执行通知的「补充」按钮：回到主界面后把输入框聚焦并拉起键盘。 */
+    fun requestComposerFocus() {
+        composerFocusRequestId += 1
+        composerFocusRequests.value = composerFocusRequestId
+    }
+
+    fun startCharacterConversation(binding: RoleplayBinding, greeting: String) {
+        createConversation()
+        val id = newConversationId()
+        val greetingId = "greeting-$id"
+        val text = CharacterMacros.expand(
+            text = greeting, card = CharacterCardCodec.decodeJson(binding.cardSnapshotJson),
+            userName = binding.userName, userDescription = binding.userDescription,
+        )
+        val transcript = if (text.isBlank()) emptyList() else listOf(
+            AgentModelClient.ConversationMessage(role = "assistant", content = text, messageId = greetingId),
+        )
+        currentDraftReasoningCustomized = false
+        selectedConversationId = id
+        homeState = emptyChatState(defaultReasoningEffort()).withCurrentReasoningCapabilities().copy(
+            roleplay = binding,
+            history = transcript,
+            journal = transcript,
+            messages = if (text.isBlank()) emptyList() else listOf(AgentMessageUi(greetingId, text, characterEditable = true)),
+            roleplayMessages = RoleplayMessageState(links = if (text.isBlank()) emptyMap() else mapOf(
+                greetingId to RoleplayMessageLink(greetingId),
+            )),
+        )
+        conversationTitles = conversationTitles + (id to binding.characterName)
+        updateConversation(id, homeState)
+        conversationPaneState = conversationPaneState.copy(selectedConversationId = id, searchQuery = "")
+        refreshConversationSummaries()
+        persistConversations()
+    }
+
+    /**
+     * 提问卡片提交：先在消息上记下答案（重进会话还能看到选了什么），
+     * 再把答案原文作为下一条用户消息发出，模型据此接着做。
+     */
+    /**
+     * 提问卡片提交：先在消息上记下答案（重进会话还能看到选了什么）。
+     *
+     * 这一轮还挂着（提问把工具调用阻塞住了）时，答案直接投递给等待中的工具调用，
+     * 同一轮对话带着答案继续，不再另发一条用户消息；只有运行已经结束的旧卡片，
+     * 才退回「把答案原文当新消息发出」的老路径。
+     */
+    fun answerAskQuestion(messageId: String, answerText: String) {
+        if (answerText.isBlank()) return
+        val display = io.github.mangi.eta.agent.model.AskQuestionAnswer.withoutPreamble(answerText)
+        fun markAnswered() {
+            val updated = homeState.messages.map { item ->
+                if (item is AgentMessageUi && item.id == messageId && item.askCard != null) {
+                    item.copy(askAnswer = display)
+                } else {
+                    item
+                }
+            }
+            updateCurrentConversation(homeState.copy(messages = updated))
+            persistConversations()
+        }
+        if (io.github.mangi.eta.agent.runtime.PendingAskRegistry.submit(messageId, answerText)) {
+            markAnswered()
+            return
+        }
+        if (homeState.isStreaming) return
+        markAnswered()
+        sendCurrentMessage(answerText)
+    }
+
+    fun selectReplyCandidate(messageId: String, index: Int) {
+        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation) return
+        val updated = RoleplayConversationReducer.select(homeState, messageId, index) ?: return
+        updateCurrentConversation(updated)
+        refreshConversationSummaries()
+        persistConversations()
+    }
+
+    fun deleteConversation(conversationId: String) {
+        val runId = runStore.activeRunId(conversationId)
+        if (runId != null) {
+            pendingConversationDeletes.add(conversationId)
+            stopRun(runId)
+            return
+        }
+        deleteSettledConversation(conversationId)
+    }
+
+    private fun deleteSettledConversation(conversationId: String) {
+        pendingConversationDeletes.remove(conversationId)
+        titleGenerationJobs.remove(conversationId)?.cancel()
+        pendingAutoTitleFallbacks.remove(conversationId)
+        autoGeneratedTitleIds.remove(conversationId)
+        manuallyRenamedConversationIds.remove(conversationId)
+        BrowserSessionRegistry.requestRemove(conversationId)
+        io.github.mangi.eta.agent.subagent.SubagentSessionStore.clearConversation(conversationId)
+        val wasSelected = selectedConversationId == conversationId
+        conversationsById = conversationsById - conversationId
+        conversationTitles = conversationTitles - conversationId
+        conversationUpdatedAt = conversationUpdatedAt - conversationId
+        conversationPinnedIds = conversationPinnedIds - conversationId
+        if (workspaceAssignments.containsKey(conversationId)) {
+            workspaceAssignments = workspaceAssignments - conversationId
+            persistWorkspaces()
+        }
+        if (wasSelected) {
+            conversationSelectionVersion += 1
+            cancelHistoryPageLoad()
+            conversationSelectionJob?.cancel()
+            isLoadingConversation = false
+            conversationLoadFailed = false
+            fileAttachmentOwnerVersion += 1
+            val nextId = conversationsById.keys.firstOrNull()
+            if (nextId != null) {
+                selectedConversationId = nextId
+                homeState = conversationsById.getValue(nextId)
+            } else {
+                currentDraftReasoningCustomized = false
+                selectedConversationId = null
+                homeState = emptyChatState(defaultReasoningEffort())
+            }
+            if (nextId != null) selectConversation(nextId) else refreshConversationModel()
+        }
+        conversationPaneState = conversationPaneState.copy(selectedConversationId = selectedConversationId)
+        refreshConversationSummaries()
+        persistConversations()
+    }
+
+    private fun abortPendingConversationDelete(conversationId: String) {
+        if (pendingConversationDeletes.remove(conversationId)) {
+            Toast.makeText(appContext, R.string.conversation_delete_save_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun renameConversation(conversationId: String, title: String) {
+        val trimmed = title.trim()
+        if (trimmed.isBlank()) return
+        titleGenerationJobs.remove(conversationId)?.cancel()
+        pendingAutoTitleFallbacks.remove(conversationId)
+        autoGeneratedTitleIds.remove(conversationId)
+        manuallyRenamedConversationIds.add(conversationId)
+        conversationTitles = conversationTitles + (conversationId to trimmed)
+        conversationUpdatedAt = conversationUpdatedAt + (conversationId to System.currentTimeMillis())
+        refreshConversationSummaries()
+        persistConversations()
+    }
+
+    fun toggleConversationPin(conversationId: String) {
+        if (conversationId !in conversationsById) return
+        conversationPinnedIds = if (conversationId in conversationPinnedIds) {
+            conversationPinnedIds - conversationId
+        } else {
+            conversationPinnedIds + conversationId
+        }
+        refreshConversationSummaries()
+        persistConversations()
+    }
+
+    /** 侧栏菜单显式设置置顶状态；与 toggle 共用同一条落库路径。 */
+    fun setConversationPinned(conversationId: String, pinned: Boolean) {
+        if ((conversationId in conversationPinnedIds) != pinned) toggleConversationPin(conversationId)
+    }
+
+    suspend fun exportConversationMarkdown(conversationId: String): String? {
+        if (conversationId !in conversationsById) return null
+        if (!persistConversations().await()) error(appContext.getString(R.string.conversation_persistence_failed))
+
+        val title = conversationTitles[conversationId]?.takeIf { it.isNotBlank() }
+            ?: appContext.getString(R.string.conversation_unnamed)
+        return withContext(Dispatchers.IO) { ConversationMarkdownExporter.export(
+            title = title,
+            messages = AgentConversationStore.loadAllMessages(appContext, conversationId),
+            labels = ConversationMarkdownExporter.Labels(
+                user = appContext.getString(R.string.conversation_export_user),
+                assistant = appContext.getString(R.string.conversation_export_assistant),
+                thinking = appContext.getString(R.string.conversation_export_thinking),
+                toolLineFormat = appContext.getString(R.string.conversation_export_tool_line),
+                toolsLineFormat = appContext.getString(R.string.conversation_export_tools_line),
+                argumentsFormat = appContext.getString(R.string.conversation_export_tool_arguments),
+                resultFormat = appContext.getString(R.string.conversation_export_tool_result),
+                imagesFormat = appContext.getString(R.string.conversation_export_images),
+                toolStatusRunning = appContext.getString(R.string.tool_status_running),
+                toolStatusSuccess = appContext.getString(R.string.tool_status_success),
+                toolStatusFailed = appContext.getString(R.string.tool_status_failed),
+                toolStatusUnknown = appContext.getString(R.string.tool_status_unknown),
+                noticeStopped = noticeText(SystemNoticeCode.Stopped),
+                noticeEmptyResult = noticeText(SystemNoticeCode.EmptyResult),
+                noticeModelRetry = noticeText(SystemNoticeCode.ModelRetry),
+                noticeContextCompaction = noticeText(SystemNoticeCode.ContextCompaction),
+                noticeRuntimeFailed = noticeText(SystemNoticeCode.RuntimeFailed),
+                noticeInterrupted = noticeText(SystemNoticeCode.Interrupted),
+            ),
+        ) }
+    }
+
+    /** 新建工作区（会话文件夹）。name 为空时用「工作区 N」兜底，返回新 id。 */
+    fun createWorkspace(name: String? = null): String {
+        val id = UUID.randomUUID().toString()
+        val resolved = name?.trim().orEmpty().ifBlank {
+            appContext.getString(R.string.local_workspace_default_name, workspaceRecords.size + 1)
+        }
+        workspaceRecords = workspaceRecords + ConversationWorkspaceRecord(id = id, name = resolved)
+        persistWorkspaces()
+        refreshConversationSummaries()
+        return id
+    }
+
+    fun renameWorkspace(workspaceId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val index = workspaceRecords.indexOfFirst { it.id == workspaceId }
+        if (index < 0 || workspaceRecords[index].name == trimmed) return
+        workspaceRecords = workspaceRecords.toMutableList().also { it[index] = it[index].copy(name = trimmed) }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 删除工作区只删文件夹本身，里面的会话回到普通列表，不会被一并删除。 */
+    fun deleteWorkspace(workspaceId: String) {
+        if (workspaceRecords.none { it.id == workspaceId }) return
+        workspaceRecords = workspaceRecords.filterNot { it.id == workspaceId }
+        workspaceAssignments = workspaceAssignments.filterValues { it != workspaceId }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    fun setWorkspaceCollapsed(workspaceId: String, collapsed: Boolean) {
+        val index = workspaceRecords.indexOfFirst { it.id == workspaceId }
+        if (index < 0 || workspaceRecords[index].collapsed == collapsed) return
+        workspaceRecords = workspaceRecords.toMutableList().also { it[index] = it[index].copy(collapsed = collapsed) }
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 把会话放进工作区；workspaceId 为空表示移出工作区。 */
+    fun moveConversationToWorkspace(conversationId: String, workspaceId: String?) {
+        if (!conversationsById.containsKey(conversationId)) return
+        val target = workspaceId?.takeIf { candidate -> workspaceRecords.any { it.id == candidate } }
+        val updated = if (target == null) {
+            workspaceAssignments - conversationId
+        } else {
+            workspaceAssignments + (conversationId to target)
+        }
+        if (updated == workspaceAssignments) return
+        workspaceAssignments = updated
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /**
+     * 重排工作区顺序。
+     *
+     * 侧栏顶部 chip 行和「移动到工作区」弹窗共用 workspaceRecords 的列表顺序，
+     * 所以这里改一次顺序，两处的展示顺序就同步跟着变。
+     * 传入的顺序必须是现存工作区的完整 id 集合，缺项或重复都直接忽略，避免误删工作区。
+     */
+    fun reorderWorkspaces(orderedIds: List<String>) {
+        if (workspaceRecords.size < 2 || orderedIds.size != workspaceRecords.size) return
+        val byId = workspaceRecords.associateBy { it.id }
+        if (orderedIds.toSet() != byId.keys) return
+        val reordered = orderedIds.map { byId.getValue(it) }
+        if (reordered == workspaceRecords) return
+        workspaceRecords = reordered
+        persistWorkspaces()
+        refreshConversationSummaries()
+    }
+
+    /** 侧栏「新建会话」按钮带上当前选中的工作区；null 表示「全部」，即不归档。 */
+    fun setPendingNewConversationWorkspace(workspaceId: String?) {
+        pendingNewConversationWorkspaceId = workspaceId?.takeIf { candidate ->
+            workspaceRecords.any { it.id == candidate }
+        }
+    }
+
+    private fun applyWorkspaceState(state: ConversationWorkspaceState) {
+        workspaceRecords = state.workspaces
+        workspaceAssignments = state.assignments
+        refreshConversationSummaries()
+    }
+
+    private fun persistWorkspaces() {
+        val state = ConversationWorkspaceState(workspaces = workspaceRecords, assignments = workspaceAssignments)
+        scope.launch(Dispatchers.IO) {
+            runCatching { SettingsDataStore.setConversationWorkspaces(state) }
+        }
+    }
+
+    private fun noticeText(code: SystemNoticeCode): String = appContext.getString(
+        when (code) {
+            SystemNoticeCode.Stopped -> R.string.system_notice_stopped
+            SystemNoticeCode.EmptyResult -> R.string.system_notice_empty_result
+            SystemNoticeCode.ContextCompaction -> R.string.context_compaction
+            SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
+            SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
+            SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+        },
+    )
+
+    fun sendCurrentMessage(submittedText: String? = null) {
+        submitOrQueueCurrentMessage(submittedText = submittedText, immediateInterrupt = false)
+    }
+
+    fun interruptAndSendCurrentMessage(submittedText: String? = null) {
+        submitOrQueueCurrentMessage(submittedText = submittedText, immediateInterrupt = true)
+    }
+
+    /**
+     * 流式期间「长按发送」：把这句话直接注入正在运行的回合（steerRun），
+     * 不排队也不打断当前运行；注入失败时把草稿放回输入框，避免消息丢失。
+     */
+    fun steerCurrentMessage(submittedText: String? = null) {
+        if (!homeState.isConversationLoaded || homeState.isCompacting) return
+        val prompt = (submittedText ?: homeState.input).trim()
+        if (prompt.isBlank()) return
+        val conversationId = selectedConversationId ?: return
+        val runId = currentRunId?.takeIf { runConversationIds[it] == conversationId }
+        if (runId == null) {
+            restoreInterjectionDraft(conversationId, prompt)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val outcome = AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(runId, prompt)
+            if (outcome !is AgentRuntimeClient.SteerOutcome.Accepted) withContext(Dispatchers.Main) {
+                // 注入失败不能只把文字塞回输入框——那正是"发了却没人收到"的观感。
+                // 降级成正常发送：本轮还在跑就入队、本轮已结束就直接发出，保证消息不丢。
+                if (prompt.isNotBlank()) {
+                    submitOrQueueCurrentMessage(submittedText = prompt, immediateInterrupt = false)
+                } else {
+                    restoreInterjectionDraft(conversationId, prompt)
+                }
+            }
+        }
+    }
+
+    fun steerQueuedMessage(id: String) {
+        if (!homeState.isConversationLoaded) return
+        val target = homeState.queuedMessages.firstOrNull { it.id == id } ?: return
+        if (homeState.isStreaming && !homeState.isCompacting) {
+            if (target.pendingImages.isNotEmpty()) {
+                val headState = AgentMessageQueueReducer.promoteToQueueHead(homeState, id)
+                if (headState !== homeState) {
+                    updateCurrentConversation(headState, updateTimestamp = false)
+                }
+                Toast.makeText(
+                    appContext,
+                    appContext.getString(R.string.chat_queue_steer_images_deferred),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return
+            }
+            val fileReferences = target.pendingFileReferences.map { it.reference }
+            if (
+                !AgentFileReferencePolicy.canSend(
+                    references = fileReferences,
+                    terminalToolsEnabled = agentBooleanForUi(Prefs.Keys.AGENT_TERMINAL_TOOLS) &&
+                        (Prefs.isToolEnabled("read_file") || Prefs.isToolEnabled("terminal")),
+                )
+            ) {
+                Toast.makeText(
+                    appContext,
+                    appContext.getString(R.string.state_ui_file_path_reference_requires_opening_the_termina_deca4c),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return
+            }
+            val (nextState, promoted) = AgentMessageQueueReducer.promoteToInterrupt(homeState, id)
+            if (promoted == null) return
+            updateCurrentConversation(nextState, updateTimestamp = false)
+            steerToActiveRun(selectedConversationId, promoted)
+        } else if (!homeState.isStreaming) {
+            val (nextState, promoted) = AgentMessageQueueReducer.promoteToInterrupt(homeState, id)
+            if (promoted == null) return
+            updateCurrentConversation(nextState, updateTimestamp = false)
+            dispatchQueuedMessage(selectedConversationId, promoted)
+        }
+    }
+
+    fun recallQueuedMessage(id: String, currentDraftText: String) {
+        if (!homeState.isConversationLoaded) return
+        val nextState = AgentMessageQueueReducer.recallToDraft(
+            state = homeState,
+            currentInputText = currentDraftText,
+            id = id,
+        ) ?: return
+        updateCurrentConversation(nextState, updateTimestamp = false)
+    }
+
+    fun removeQueuedMessage(id: String) {
+        if (!homeState.isConversationLoaded) return
+        val nextState = AgentMessageQueueReducer.remove(homeState, id)
+        if (nextState !== homeState) {
+            updateCurrentConversation(nextState, updateTimestamp = false)
+        }
+    }
+
+    private fun submitOrQueueCurrentMessage(
+        submittedText: String?,
+        immediateInterrupt: Boolean,
+    ) {
+        if (!homeState.isConversationLoaded || homeState.isCompacting ||
+            selectedConversationId in pendingConversationDeletes) return
+        // 后台存档尚未补全就发送：先等它到位再按原路走一遍，避免拿空历史发请求。
+        val checkpointConversationId = selectedConversationId
+        if (checkpointConversationId != null && !homeState.checkpointLoaded) {
+            scope.launch {
+                awaitCheckpointLoaded(checkpointConversationId)
+                withContext(Dispatchers.Main.immediate) {
+                    if (selectedConversationId == checkpointConversationId) {
+                        submitOrQueueCurrentMessage(submittedText, immediateInterrupt)
+                    }
+                }
+            }
+            return
+        }
+        val prompt = (submittedText ?: homeState.input).trim()
+        val pendingImages = homeState.pendingImages
+        val pendingFileReferences = homeState.pendingFileReferences
+        if (
+            prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()
+        ) {
+            return
+        }
+        if (!homeState.isStreaming) {
+            homeState.messageEdit?.takeIf { it.preserveFollowingMessages }?.let { edit ->
+                val updated = RoleplayConversationReducer.edit(homeState, edit.targetMessageId, prompt) ?: return
+                updateCurrentConversation(updated.copy(
+                    input = edit.previousInput,
+                    pendingImages = edit.previousImages,
+                    pendingFileReferences = edit.previousFileReferences,
+                    messageEdit = null,
+                ))
+                refreshConversationSummaries()
+                persistConversations()
+                return
+            }
+        }
+        val fileReferences = pendingFileReferences.map { it.reference }
+        if (
+            !AgentFileReferencePolicy.canSend(
+                references = fileReferences,
+                terminalToolsEnabled = agentBooleanForUi(Prefs.Keys.AGENT_TERMINAL_TOOLS) &&
+                    (Prefs.isToolEnabled("read_file") || Prefs.isToolEnabled("terminal")),
+            )
+        ) {
+            Toast.makeText(
+                appContext,
+                appContext.getString(R.string.state_ui_file_path_reference_requires_opening_the_termina_deca4c),
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+
+        if (homeState.isStreaming) {
+            val queued = QueuedMessageUi(
+                id = "queue-${UUID.randomUUID()}",
+                content = prompt,
+                pendingImages = pendingImages,
+                pendingFileReferences = pendingFileReferences,
+                immediateInterrupt = immediateInterrupt && pendingImages.isEmpty(),
+            )
+            if (immediateInterrupt && pendingImages.isNotEmpty()) {
+                updateCurrentConversation(
+                    state = AgentMessageQueueReducer.enqueueAtHead(homeState, queued),
+                    updateTimestamp = false,
+                )
+                Toast.makeText(
+                    appContext,
+                    appContext.getString(R.string.chat_queue_steer_images_deferred),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return
+            }
+            updateCurrentConversation(
+                state = AgentMessageQueueReducer.enqueue(homeState, queued),
+                updateTimestamp = false,
+            )
+            if (immediateInterrupt) {
+                steerToActiveRun(selectedConversationId, queued)
+            }
+            return
+        }
+
+        val edit = homeState.messageEdit
+
+        val editBoundary = edit?.let {
+            AgentConversationRevisionReducer.boundary(homeState, it.targetMessageId)
+        }
+        if (edit != null && editBoundary == null) {
+            cancelMessageEdit()
+            return
+        }
+
+        val conversationId = selectedConversationId ?: newConversationId().also { freshId ->
+            selectedConversationId = freshId
+            // 在某个工作区里新建的会话，首条消息落库时直接归入该工作区。
+            pendingNewConversationWorkspaceId?.let { workspaceId ->
+                workspaceAssignments = workspaceAssignments + (freshId to workspaceId)
+                persistWorkspaces()
+            }
+            pendingNewConversationWorkspaceId = null
+        }
+        dispatchMessageToConversation(
+            conversationId = conversationId,
+            state = homeState,
+            prompt = prompt,
+            pendingImages = pendingImages,
+            pendingFileReferences = pendingFileReferences,
+            editBoundary = editBoundary,
+        )
+    }
+
+    private fun steerToActiveRun(
+        conversationId: String?,
+        item: QueuedMessageUi,
+    ) {
+        val targetConversationId = conversationId ?: return
+        fun demoteToQueueHead() {
+            val current = conversationsById[targetConversationId] ?: return
+            val demoted = AgentMessageQueueReducer.clearInterruptFlag(current, item.id)
+            if (demoted !== current) {
+                updateConversation(targetConversationId, demoted, updateTimestamp = false)
+            }
+        }
+        val activeRunId = runStore.activeRunId(targetConversationId)
+        val steerPrompt = AgentFileReferencePromptCodec.format(
+            item.content,
+            item.pendingFileReferences.map { it.reference },
+        ).trim()
+        if (activeRunId == null || steerPrompt.isBlank()) {
+            demoteToQueueHead()
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val outcome = AgentRuntimeClient(appContext, AndroidAgentLogger).steerRun(activeRunId, steerPrompt)
+            withContext(Dispatchers.Main) {
+                val current = conversationsById[targetConversationId] ?: return@withContext
+                if (current.queuedMessages.none { it.id == item.id }) return@withContext
+                when (outcome) {
+                    is AgentRuntimeClient.SteerOutcome.Accepted -> {
+                        val updated = AgentMessageQueueReducer.remove(current, item.id)
+                        if (updated !== current) {
+                            updateConversation(targetConversationId, updated, updateTimestamp = false)
+                        }
+                        if (outcome.supplementIndex > 0) {
+                            insertSupplementMessage(
+                                runId = activeRunId,
+                                index = outcome.supplementIndex,
+                                text = steerPrompt,
+                                persist = true,
+                            )
+                        }
+                    }
+                    AgentRuntimeClient.SteerOutcome.Rejected,
+                    AgentRuntimeClient.SteerOutcome.Unavailable,
+                    -> demoteToQueueHead()
+                }
+            }
+        }
+    }
+
+    private fun dispatchQueuedMessage(
+        conversationId: String?,
+        item: QueuedMessageUi,
+    ) {
+        val targetConversationId = conversationId ?: return
+        if (targetConversationId in pendingConversationDeletes) return
+        val state = conversationsById[targetConversationId] ?: return
+        if (state.isStreaming || state.isCompacting) return
+        val fileReferences = item.pendingFileReferences.map { it.reference }
+        if (
+            !AgentFileReferencePolicy.canSend(
+                references = fileReferences,
+                terminalToolsEnabled = agentBooleanForUi(Prefs.Keys.AGENT_TERMINAL_TOOLS) &&
+                    (Prefs.isToolEnabled("read_file") || Prefs.isToolEnabled("terminal")),
+            )
+        ) {
+            Toast.makeText(
+                appContext,
+                appContext.getString(R.string.state_ui_file_path_reference_requires_opening_the_termina_deca4c),
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        dispatchMessageToConversation(
+            conversationId = targetConversationId,
+            state = state,
+            prompt = item.content,
+            pendingImages = item.pendingImages,
+            pendingFileReferences = item.pendingFileReferences,
+            editBoundary = null,
+            preserveCurrentDraft = true,
+        )
+    }
+
+    private fun dispatchMessageToConversation(
+        conversationId: String,
+        state: AgentChatHomeUiState,
+        prompt: String,
+        pendingImages: List<PendingImageUi>,
+        pendingFileReferences: List<PendingFileReferenceUi>,
+        editBoundary: AgentConversationRevisionReducer.Boundary?,
+        preserveCurrentDraft: Boolean = false,
+    ) {
+        val fileReferences = pendingFileReferences.map { it.reference }
+        val runtimePrompt = AgentFileReferencePromptCodec.format(prompt, fileReferences)
+        val runId = "run-${UUID.randomUUID()}"
+        // 登记本轮 run 与会话的绑定：中途插话（steer）按 runId 找任务，缺了这段插话永远失败。
+        currentRunId = runId
+        runConversationIds[runId] = conversationId
+        val userMessage = UserMessageUi(
+            id = editBoundary?.userMessage?.id ?: "user-$runId",
+            content = runtimePrompt,
+            images = pendingImages.map { it.dataUrl },
+            isEdited = editBoundary != null,
+        )
+        val history = editBoundary?.historyPrefix ?: state.history
+        val messages = if (editBoundary == null) {
+            state.messages + userMessage
+        } else {
+            state.messages.take(editBoundary.userMessageIndex) + userMessage
+        }
+        val userHistoryMessage = AgentModelClient.buildUserHistoryMessage(
+            text = runtimePrompt,
+            images = pendingImages.toHistoryImages(),
+        ).copy(messageId = userMessage.id)
+
+        val currentTitle = conversationTitles[conversationId]
+        val oldAutoTitle = editBoundary
+            ?.takeIf { it.userMessageIndex == 0 }
+            ?.userMessage
+            ?.content
+            ?.defaultConversationTitleFromMessage()
+        val nextAutoTitle = defaultConversationTitle(prompt, fileReferences)
+        val isInitialTurn = state.messages.isEmpty() && !state.hasEarlierMessages &&
+            state.roleplay == null && editBoundary == null && !conversationId.isReadOnlyExternalArchiveConversation()
+        val isEditingFirstTurnWithAutoTitle = editBoundary?.userMessageIndex == 0 &&
+            state.roleplay == null &&
+            conversationId !in manuallyRenamedConversationIds &&
+            (currentTitle == oldAutoTitle || currentTitle.isNullOrBlank() || conversationId in autoGeneratedTitleIds)
+        val title = if (isEditingFirstTurnWithAutoTitle) {
+            nextAutoTitle
+        } else {
+            currentTitle?.takeIf(String::isNotBlank) ?: nextAutoTitle
+        }
+        if (isInitialTurn || isEditingFirstTurnWithAutoTitle) {
+            titleGenerationJobs.remove(conversationId)?.cancel()
+            autoGeneratedTitleIds.remove(conversationId)
+            pendingAutoTitleFallbacks[conversationId] = title
+        }
+
+        // 这个会话还没有正式名字：发出去就按提问起名，命名落地前顶栏保持空白。
+        if (currentTitle.isNullOrBlank()) autoNamingPending = autoNamingPending + conversationId
+        conversationTitles = conversationTitles + (conversationId to title)
+        if (selectedConversationId == conversationId) {
+            conversationPaneState = conversationPaneState.copy(selectedConversationId = conversationId)
+        }
+        // 首轮一发出就起名：不等回答结束，顶栏一两秒内就能拿到名字。
+        if (isInitialTurn || isEditingFirstTurnWithAutoTitle) {
+            launchPromptTitleGeneration(
+                conversationId = conversationId,
+                userPrompt = prompt,
+                fileReferences = fileReferences,
+                conversationModelId = state.modelId,
+            )
+        }
+        launchConversationRun(
+            conversationId = conversationId,
+            runId = runId,
+            prompt = runtimePrompt,
+            images = pendingImages,
+            history = history,
+            userHistoryMessage = userHistoryMessage,
+            messages = messages,
+            state = if (preserveCurrentDraft) {
+                state.copy(
+                    history = history,
+                    journal = editBoundary?.journalPrefix ?: state.journal,
+                    messageEdit = null,
+                )
+            } else {
+                state.copy(
+                    history = history,
+                    journal = editBoundary?.journalPrefix ?: state.journal,
+                    input = "",
+                    pendingImages = emptyList(),
+                    pendingFileReferences = emptyList(),
+                    messageEdit = null,
+                )
+            },
+            reasoningEffort = state.reasoningEffort,
+        )
+    }
+
+    private fun restoreInterjectionDraft(conversationId: String, text: String) {
+        val current = conversationsById[conversationId] ?: return
+        if (current.input.isBlank()) updateConversation(conversationId, current.copy(input = text))
+        Toast.makeText(appContext, appContext.getString(R.string.local_chat_interject_unavailable), Toast.LENGTH_SHORT).show()
+    }
+
+    fun beginMessageEdit(messageId: String) {
+        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation ||
+            !homeState.checkpointLoaded) return
+        if (homeState.roleplay != null) {
+            if (messageId !in homeState.roleplayMessages.links) return
+            val content = when (val message = homeState.messages.firstOrNull { it.id == messageId }) {
+                is UserMessageUi -> message.content
+                is AgentMessageUi -> message.content
+                else -> return
+            }
+            updateCurrentConversation(homeState.copy(
+                input = content, pendingImages = emptyList(), pendingFileReferences = emptyList(),
+                messageEdit = MessageEditUiState(messageId, homeState.input, homeState.pendingImages,
+                    homeState.pendingFileReferences, hasLaterTurns = false, preserveFollowingMessages = true),
+            ))
+            return
+        }
+        val boundary = revisionBoundary(messageId) ?: return
+        val images = boundary.userMessage.images.mapIndexed { index, dataUrl ->
+            PendingImageUi(
+                id = "edit-${boundary.userMessage.id}-$index",
+                uri = dataUrl,
+                dataUrl = dataUrl,
+                mimeType = dataUrl.imageMimeType(),
+            )
+        }
+        val parsedPrompt = AgentFileReferencePromptCodec.parse(boundary.userMessage.content)
+        val fileReferences = parsedPrompt.references.mapIndexed { index, reference ->
+            PendingFileReferenceUi(
+                id = "edit-${boundary.userMessage.id}-file-$index",
+                reference = reference,
+            )
+        }
+        updateCurrentConversation(
+            homeState.copy(
+                input = parsedPrompt.request,
+                pendingImages = images,
+                pendingFileReferences = fileReferences,
+                messageEdit = MessageEditUiState(
+                    targetMessageId = boundary.userMessage.id,
+                    previousInput = homeState.input,
+                    previousImages = homeState.pendingImages,
+                    previousFileReferences = homeState.pendingFileReferences,
+                    hasLaterTurns = boundary.laterTurnCount > 0,
+                ),
+            )
+        )
+        if (boundary.contextWasCompacted) showCompactedRevisionNotice()
+    }
+
+    fun cancelMessageEdit() {
+        val edit = homeState.messageEdit ?: return
+        updateCurrentConversation(
+            homeState.copy(
+                input = edit.previousInput,
+                pendingImages = edit.previousImages,
+                pendingFileReferences = edit.previousFileReferences,
+                messageEdit = null,
+            )
+        )
+    }
+
+    fun messageRevisionImpact(messageId: String): MessageRevisionImpact? =
+        if (!homeState.checkpointLoaded) null
+        else if (homeState.roleplay != null && messageId.startsWith("greeting-")) MessageRevisionImpact(0)
+        else revisionBoundary(messageId)?.let { boundary ->
+            MessageRevisionImpact(laterTurnCount = boundary.laterTurnCount)
+        }
+
+    private fun revisionBoundary(messageId: String): AgentConversationRevisionReducer.Boundary? =
+        AgentConversationRevisionReducer.boundary(homeState, messageId).also { boundary ->
+            if (boundary == null && homeState.hasEarlierMessages) {
+                Toast.makeText(appContext, R.string.conversation_load_turn_start, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+    fun deleteMessageTurn(messageId: String) {
+        // 存档未补全时整段转录为空，删除会把删错的范围写回库里。
+        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation ||
+            !homeState.checkpointLoaded) return
+        val conversationId = selectedConversationId ?: return
+        if (homeState.roleplay != null && messageId.startsWith("greeting-")) {
+            val originalId = homeState.roleplayMessages.links[messageId]?.transcriptMessageId ?: return
+            val updated = homeState.copy(
+                messages = homeState.messages.filterNot { it.id == messageId },
+                journal = homeState.journal.filterNot { it.messageId == originalId },
+                history = homeState.history.filterNot { it.messageId == originalId || it.contextSummary },
+                roleplayMessages = homeState.roleplayMessages.copy(
+                    links = homeState.roleplayMessages.links - messageId,
+                    revisions = homeState.roleplayMessages.revisions - messageId,
+                ),
+            )
+            val history = RoleplayConversationReducer.projectJournal(updated) ?: return
+            updateConversation(conversationId, updated.copy(history = history))
+            refreshConversationSummaries()
+            persistConversations()
+            return
+        }
+        if (revisionBoundary(messageId) == null) return
+        val removed = AgentConversationRevisionReducer.deleteFromTurn(homeState, messageId) ?: return
+        val removedIds = homeState.messages.mapTo(mutableSetOf()) { it.id }.apply {
+            removeAll(removed.messages.map { it.id }.toSet())
+        }
+        val revised = if (removed.roleplay == null) removed else removed.copy(roleplayMessages = removed.roleplayMessages.copy(
+            links = removed.roleplayMessages.links.filterKeys { it !in removedIds },
+            revisions = removed.roleplayMessages.revisions.filterKeys { it !in removedIds },
+        ))
+        if (revised.messages.isEmpty() && !revised.hasEarlierMessages) {
+            titleGenerationJobs.remove(conversationId)?.cancel()
+            pendingAutoTitleFallbacks.remove(conversationId)
+            autoGeneratedTitleIds.remove(conversationId)
+            manuallyRenamedConversationIds.remove(conversationId)
+            conversationsById = conversationsById - conversationId
+            conversationTitles = conversationTitles - conversationId
+            conversationUpdatedAt = conversationUpdatedAt - conversationId
+            fileAttachmentOwnerVersion += 1
+            currentDraftReasoningCustomized = false
+            selectedConversationId = null
+            homeState = emptyChatState(defaultReasoningEffort())
+            refreshConversationModel()
+            conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
+            refreshConversationSummaries()
+            persistConversations()
+            return
+        }
+        updateConversation(conversationId, revised)
+        refreshConversationSummaries()
+        persistConversations()
+    }
+
+    fun regenerateMessage(messageId: String) {
+        if (homeState.isStreaming || homeState.messageEdit != null || isBranchingCurrentConversation) return
+        val conversationId = selectedConversationId ?: return
+        if (homeState.roleplay != null) {
+            val target = homeState.messages.filterIsInstance<AgentMessageUi>().firstOrNull { it.id == messageId } ?: return
+            val prefix = RoleplayConversationReducer.rewriteHistory(homeState, messageId) ?: return
+            val runId = "run-${UUID.randomUUID()}"
+            launchConversationRun(
+                conversationId, runId, target.content, emptyList(), prefix, null, homeState.messages,
+                homeState.copy(roleplayMessages = homeState.roleplayMessages.copy(
+                    pendingRewrites = homeState.roleplayMessages.pendingRewrites + (runId to messageId),
+                )), homeState.reasoningEffort, operation = AgentRuntimeWire.OP_REWRITE_REPLY,
+                rewriteTargetMessageId = messageId,
+            )
+            return
+        }
+        val boundary = revisionBoundary(messageId) ?: return
+        val images = boundary.userMessage.images.mapIndexed { index, dataUrl ->
+            PendingImageUi(
+                id = "regenerate-${boundary.userMessage.id}-$index",
+                uri = dataUrl,
+                dataUrl = dataUrl,
+                mimeType = dataUrl.imageMimeType(),
+            )
+        }
+        val runId = "run-${UUID.randomUUID()}"
+        val userHistoryMessage = AgentModelClient.buildUserHistoryMessage(
+            text = boundary.userMessage.content,
+            images = images.toHistoryImages(),
+        )
+        if (boundary.contextWasCompacted) showCompactedRevisionNotice()
+        launchConversationRun(
+            conversationId = conversationId,
+            runId = runId,
+            prompt = boundary.userMessage.content,
+            images = images,
+            history = boundary.historyPrefix,
+            userHistoryMessage = userHistoryMessage,
+            messages = homeState.messages.take(boundary.userMessageIndex + 1),
+            state = homeState.copy(
+                history = boundary.historyPrefix,
+                journal = boundary.journalPrefix,
+            ),
+            reasoningEffort = homeState.reasoningEffort,
+        )
+    }
+
+    fun compactCurrentContext() {
+        val conversationId = selectedConversationId ?: return
+        if (isBranchingCurrentConversation || runStore.activeRunId(conversationId) != null || !homeState.canCompactContext || modelPickerState.isChanging) return
+        launchConversationRun(
+            conversationId = conversationId,
+            runId = java.util.UUID.randomUUID().toString(),
+            prompt = "", images = emptyList(), history = homeState.history,
+            userHistoryMessage = null, messages = homeState.messages, state = homeState,
+            reasoningEffort = homeState.reasoningEffort, operation = AgentRuntimeWire.OP_COMPACT,
+        )
+    }
+
+    private fun launchConversationRun(
+        conversationId: String,
+        runId: String,
+        prompt: String,
+        images: List<PendingImageUi>,
+        history: List<AgentModelClient.ConversationMessage>,
+        userHistoryMessage: AgentModelClient.ConversationMessage?,
+        messages: List<AgentChatMessageUi>,
+        state: AgentChatHomeUiState,
+        reasoningEffort: ReasoningEffort,
+        operation: String = AgentRuntimeWire.OP_CHAT,
+        rewriteTargetMessageId: String? = null,
+    ) {
+        if (conversationId in pendingConversationDeletes || !runStore.register(runId, conversationId)) return
+        // 发送即绑定：会话记住本轮实际使用的模型，回落到默认模型时也随之更新。
+        val runModelId = state.effectiveModelId
+        val runReasoningEffort = providers.enabledModel(runModelId)?.let { (provider, model) ->
+            RuntimeConfigRepository.reasoningCapabilities(provider, model)?.normalize(reasoningEffort)
+        } ?: ReasoningEffort.OFF
+
+        updateConversation(
+            conversationId,
+            state.copy(
+                modelId = runModelId,
+                isStreaming = true,
+                history = if (operation == AgentRuntimeWire.OP_REWRITE_REPLY) state.history else history + listOfNotNull(userHistoryMessage),
+                journal = state.journal.ifEmpty { state.history } + listOfNotNull(userHistoryMessage),
+                isCompacting = operation == AgentRuntimeWire.OP_COMPACT,
+                messages = messages,
+                messageEdit = null,
+            )
+        )
+        refreshConversationSummaries()
+        val initialPersistence = persistConversations()
+
+        val preparationJob = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            // 本轮消耗 = 开跑前的余额 − 整轮跑完后的余额。起点快照立刻发起、不阻塞这一轮，
+            // 到收尾时再 await；挂在 scope 上，不会随本协程被取消而丢掉。
+            val roundStartBalance: Deferred<Double?>? = balanceStore?.let { store ->
+                scope.async(Dispatchers.IO) { store.refreshAndAwaitTotal() }
+            }
+            // write-ahead：用户消息未提交前不把可能产生副作用的 run 交给 Runtime。
+            if (!initialPersistence.await()) {
+                withContext(Dispatchers.Main) {
+                    applyRunResult(
+                        runId,
+                        AgentRuntimeWire.RunResult(
+                            runId = runId,
+                            ok = false,
+                            content = "",
+                            error = appContext.getString(R.string.conversation_persistence_failed),
+                        )
+                    )
+                }
+                return@launch
+            }
+            state.roleplay?.let { binding ->
+                try {
+                    CharacterRepository.initialize(appContext)
+                    CharacterRepository.get(binding.characterId)?.let { profile ->
+                        val updatedBinding = binding.copy(
+                            cardSnapshotJson = CharacterCardCodec.encodeJson(profile.card),
+                            characterName = profile.card.name, avatarPath = profile.avatarPath,
+                        )
+                        val saved = withContext(Dispatchers.Main) {
+                            conversationsById[conversationId]?.let { current ->
+                                updateConversation(conversationId, current.copy(roleplay = updatedBinding))
+                            }
+                            persistConversations()
+                        }.await()
+                        check(saved) { appContext.getString(R.string.ui_misc_character_save_failed) }
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    AndroidAgentLogger.warnThrottled("character_run_prepare_failed") {
+                        "Character preparation failed: type=${failure.safeLogType()}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        applyRunResult(runId, AgentRuntimeWire.RunResult(runId, false, "", appContext.getString(R.string.ui_misc_character_prepare_failed),
+                            operation = operation, rewriteTargetMessageId = rewriteTargetMessageId))
+                    }
+                    return@launch
+                }
+            }
+            val config = RuntimeConfigRepository.runtimeConfigFor(runModelId)?.copy(
+                terminalTools = agentBooleanForUi(Prefs.Keys.AGENT_TERMINAL_TOOLS),
+                browserTools = agentBooleanForUi(Prefs.Keys.AGENT_BROWSER_TOOLS),
+                deviceDirectTools = agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_DIRECT_TOOLS),
+                deviceSensitiveReadTools =
+                    agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_SENSITIVE_READ_TOOLS),
+                deviceSensitiveActionTools =
+                    agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
+                subagentTools = agentBooleanForUi(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
+                thinkingEnabled = runReasoningEffort.enablesReasoning,
+                reasoningEffort = runReasoningEffort,
+            )
+            if (config == null) {
+                withContext(Dispatchers.Main) {
+                    applyRunResult(
+                        runId,
+                        AgentRuntimeWire.RunResult(
+                            runId = runId,
+                            ok = false,
+                            content = "",
+                            error = appContext.getString(R.string.state_ui_please_configure_the_model_provider_and_model_fi_a36e15),
+                        )
+                    )
+                }
+                return@launch
+            }
+            val modelImages = images.map { p ->
+                AgentModelClient.ModelImage(
+                    reference = p.uri,
+                    mimeType = p.mimeType,
+                    bytes = 0,
+                    source = "user_attach",
+                )
+            }
+            if (withContext(Dispatchers.Main) { runStore.isStopRequested(runId) }) {
+                withContext(Dispatchers.Main) {
+                    applyRunResult(runId, AgentRuntimeWire.RunResult(runId, false, "", "已停止", operation = operation))
+                }
+                return@launch
+            }
+            val result = try {
+                runInterruptible {
+                    AgentRuntimeClient(appContext, AndroidAgentLogger).run(
+                        request = AgentRuntimeWire.RunRequest(
+                            operation = operation,
+                            rewriteTargetMessageId = rewriteTargetMessageId,
+                            runId = runId,
+                            prompt = prompt,
+                            config = config,
+                            images = modelImages,
+                            history = history,
+                            handoff = AgentRuntimeWire.EntryHandoff(
+                                id = runId,
+                                source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
+                                payload = conversationId,
+                            ),
+                        ),
+                        onEvent = { event -> enqueueRunEvent(runId, event) },
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                // 界面被回收（切后台被系统回收 Activity/ViewModel）导致的协程取消，不再传染给 runtime：
+                // 只清本地运行句柄，任务继续跑，下次进入界面由恢复流程把结果接管回会话。
+                withContext(NonCancellable + Dispatchers.Main.immediate) { detachLocalRun(runId) }
+                throw cancelled
+            }
+            if (result.errorCode == AgentRuntimeWire.ERROR_RUN_DETACHED) {
+                // 客户端等待被中断、但任务并未取消：同样交回恢复流程，不能写成“已停止”。
+                withContext(NonCancellable + Dispatchers.Main.immediate) { detachLocalRun(runId) }
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                applyRunResult(runId, result, acknowledgeRuntimeResult = true)
+            }
+            if (result.ok) {
+                // 只有整轮完整结束（不是中途回答）才命名 + 结算这一轮的消耗。
+                finishRound(conversationId, prompt, result.content, roundStartBalance)
+            }
+        }
+        runStore.observe(runId, preparationJob)
+        if (!RootAccess.isGranted) {
+            val leaseId = "prepare:$runId"
+            val acquired = AgentExecutionService.acquire(appContext, leaseId) {
+                scope.launch(Dispatchers.Main.immediate) {
+                    if (runId in runStore.observedRunIds) stopRun(runId)
+                }
+            }
+            if (!acquired) {
+                preparationJob.cancel()
+                applyRunResult(runId, AgentRuntimeWire.RunResult(
+                    runId = runId,
+                    ok = false,
+                    content = "",
+                    error = appContext.getString(R.string.capability_background_failed),
+                ))
+                return
+            }
+            preparationJob.invokeOnCompletion { AgentExecutionService.release(leaseId) }
+        }
+        preparationJob.start()
+    }
+
+    private fun List<PendingImageUi>.toHistoryImages(): List<AgentModelClient.ModelImage> =
+        map { image ->
+            AgentModelClient.ModelImage(
+                reference = image.dataUrl,
+                mimeType = image.mimeType,
+                bytes = image.dataUrl.length,
+                source = image.uri,
+            )
+        }
+
+    private fun String.imageMimeType(): String =
+        takeIf { startsWith("data:") }
+            ?.substringAfter("data:")
+            ?.substringBefore(';')
+            ?.takeIf { it.startsWith("image/") }
+            ?: "image/jpeg"
+
+    private fun String.defaultConversationTitle(): String =
+        TitleWidth.truncateByColumns(
+            lineSequence().firstOrNull().orEmpty().trim(),
+        )
+
+    private fun defaultConversationTitle(
+        request: String,
+        references: List<AgentFileReference>,
+    ): String = AgentFileReferencePolicy
+        .titleSource(request, references)
+        .defaultConversationTitle()
+
+    private fun String.defaultConversationTitleFromMessage(): String {
+        val parsed = AgentFileReferencePromptCodec.parse(this)
+        return defaultConversationTitle(parsed.request, parsed.references)
+    }
+
+    private fun showCompactedRevisionNotice() {
+        Toast.makeText(
+            appContext,
+            appContext.getString(R.string.state_ui_the_earlier_context_has_been_compressed_and_will_cf6c86),
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    fun attachImage(uri: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val staged = AgentImageCodec.stageAttachment(
+                    context = appContext,
+                    value = uri,
+                    source = "user_attach",
+                )
+                val image = when (staged) {
+                    is AgentImageCodec.StageResult.Success -> staged.image
+                    AgentImageCodec.StageResult.InsufficientStorage -> {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                appContext,
+                                appContext.getString(R.string.capability_import_insufficient_storage),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        return@launch
+                    }
+                    AgentImageCodec.StageResult.InvalidImage -> {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                appContext,
+                                appContext.getString(R.string.state_ui_unable_to_read_this_image_please_try_again_or_us_d94978),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        return@launch
+                    }
+                }
+                val preview = AgentImageCodec.previewFromReference(appContext, image)
+                if (preview == null) {
+                    deleteStagedAttachmentIfLocal(image.reference)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            appContext,
+                            appContext.getString(R.string.state_ui_unable_to_read_this_image_please_try_again_or_us_d94978),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                    return@launch
+                }
+                val pending = PendingImageUi(
+                    id = "img-${UUID.randomUUID()}",
+                    // 后续发送直接对私有暂存文件开只读 fd 零拷贝传输，既脱离 Photo Picker URI 生命周期，
+                    // 也不在 UI 堆内存中囤积整张原图的 Base64。
+                    uri = image.reference,
+                    dataUrl = preview.reference,
+                    mimeType = image.mimeType,
+                )
+                withContext(Dispatchers.Main) {
+                    updateCurrentConversation(homeState.copy(pendingImages = homeState.pendingImages + pending))
+                }
+            } finally {
+                val selectedUri = Uri.parse(uri)
+                if (selectedUri.scheme == ContentResolver.SCHEME_CONTENT) {
+                    runCatching {
+                        appContext.contentResolver.releasePersistableUriPermission(
+                            selectedUri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun deleteStagedAttachmentIfLocal(reference: String) {
+        if (reference.startsWith("/")) {
+            runCatching { File(reference).delete() }
+        }
+    }
+
+    fun removePendingImage(id: String) {
+        updateCurrentConversation(homeState.copy(pendingImages = homeState.pendingImages.filterNot { it.id == id }))
+    }
+
+    fun attachFiles(uris: List<String>) {
+        if (uris.isEmpty()) return
+        resolveAndAttachFileReferences {
+            val gateway = AgentFileReferenceGateway(appContext, AndroidAgentLogger)
+            uris.map { uri ->
+                gateway.resolveDocumentUri(
+                    uri = Uri.parse(uri),
+                    expectedKind = AgentFileReferenceKind.File,
+                )
+            }
+        }
+    }
+
+    fun attachFolder(uri: String) {
+        resolveAndAttachFileReferences {
+            val gateway = AgentFileReferenceGateway(appContext, AndroidAgentLogger)
+            listOf(
+                gateway.resolveDocumentUri(
+                    uri = Uri.parse(uri),
+                    expectedKind = AgentFileReferenceKind.Directory,
+                )
+            )
+        }
+    }
+
+    fun attachFilePath(path: String) {
+        resolveAndAttachFileReferences {
+            listOf(AgentFileReferenceGateway(AndroidAgentLogger).resolveAbsolutePath(path))
+        }
+    }
+
+    fun removePendingFileReference(id: String) {
+        updateCurrentConversation(
+            homeState.copy(
+                pendingFileReferences = homeState.pendingFileReferences.filterNot { it.id == id }
+            )
+        )
+    }
+
+    fun acceptSharedContent(request: IncomingShareRequest) {
+        val canReuseCurrentDraft = homeState.isConversationLoaded &&
+            homeState.roleplay == null &&
+            selectedConversationId?.isReadOnlyExternalArchiveConversation() != true &&
+            homeState.messages.isEmpty() &&
+            !homeState.hasEarlierMessages &&
+            !homeState.isStreaming &&
+            !homeState.isCompacting &&
+            homeState.messageEdit == null &&
+            homeState.input.isBlank() &&
+            homeState.pendingImages.isEmpty() &&
+            homeState.pendingFileReferences.isEmpty() &&
+            homeState.queuedMessages.isEmpty()
+        if (!canReuseCurrentDraft) {
+            createConversation()
+        }
+        request.text?.takeIf(String::isNotBlank)?.let { sharedText ->
+            val mergedInput = when {
+                homeState.input.isBlank() -> sharedText
+                else -> homeState.input.trimEnd() + "\n" + sharedText
+            }
+            updateCurrentConversation(
+                homeState.copy(
+                    input = mergedInput,
+                    inputSyncVersion = homeState.inputSyncVersion + 1,
+                    focusInputOnSync = false,
+                ),
+                updateTimestamp = false,
+            )
+        }
+        if (request.uris.isEmpty()) return
+        val ownerVersion = fileAttachmentOwnerVersion
+        scope.launch(Dispatchers.IO) {
+            val gateway = AgentFileReferenceGateway(appContext, AndroidAgentLogger)
+            val resolvedImages = mutableListOf<PendingImageUi>()
+            val resolvedFileReferences = mutableListOf<AgentFileReference>()
+            val failures = mutableListOf<AgentFileReferenceGateway.Error>()
+            request.uris.forEach { rawUri ->
+                val uri = Uri.parse(rawUri)
+                if (isSharedImageCandidate(uri, request.mimeType, isSingleUri = request.uris.size == 1)) {
+                    when (
+                        val staged = AgentImageCodec.stageAttachment(
+                            context = appContext,
+                            value = rawUri,
+                            source = "user_attach",
+                        )
+                    ) {
+                        is AgentImageCodec.StageResult.Success -> {
+                            val preview = AgentImageCodec.previewFromReference(appContext, staged.image)
+                            if (preview != null) {
+                                resolvedImages += PendingImageUi(
+                                    id = "img-${UUID.randomUUID()}",
+                                    uri = staged.image.reference,
+                                    dataUrl = preview.reference,
+                                    mimeType = staged.image.mimeType,
+                                )
+                                return@forEach
+                            }
+                            deleteStagedAttachmentIfLocal(staged.image.reference)
+                        }
+                        AgentImageCodec.StageResult.InsufficientStorage -> {
+                            failures += AgentFileReferenceGateway.Error.InsufficientStorage
+                            return@forEach
+                        }
+                        AgentImageCodec.StageResult.InvalidImage -> Unit
+                    }
+                }
+                when (val resolution = resolveSharedFileUri(gateway, uri)) {
+                    is AgentFileReferenceGateway.Resolution.Success -> resolvedFileReferences += resolution.reference
+                    is AgentFileReferenceGateway.Resolution.Failure -> failures += resolution.error
+                }
+            }
+            withContext(Dispatchers.Main) {
+                if (ownerVersion != fileAttachmentOwnerVersion) {
+                    Toast.makeText(
+                        appContext,
+                        appContext.getString(R.string.state_ui_conversation_switched_selected_path_not_added_5bf91e),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    return@withContext
+                }
+                val existingPaths = homeState.pendingFileReferences
+                    .mapTo(mutableSetOf()) { it.reference.absolutePath }
+                val fileAdditions = resolvedFileReferences
+                    .distinctBy { it.absolutePath }
+                    .filter { existingPaths.add(it.absolutePath) }
+                    .map { reference ->
+                        PendingFileReferenceUi(
+                            id = "file-${UUID.randomUUID()}",
+                            reference = reference,
+                        )
+                    }
+                if (resolvedImages.isNotEmpty() || fileAdditions.isNotEmpty()) {
+                    updateCurrentConversation(
+                        homeState.copy(
+                            pendingImages = homeState.pendingImages + resolvedImages,
+                            pendingFileReferences = homeState.pendingFileReferences + fileAdditions,
+                        ),
+                        updateTimestamp = false,
+                    )
+                }
+                val addedCount = resolvedImages.size + fileAdditions.size
+                val message = when {
+                    failures.size == 1 && addedCount == 0 -> failures.single().userMessage
+                    failures.isNotEmpty() -> appContext.resources.getQuantityString(
+                        R.plurals.file_references_added_with_failures,
+                        failures.size,
+                        addedCount,
+                        failures.size,
+                    )
+                    addedCount == 0 && resolvedFileReferences.isNotEmpty() ->
+                        appContext.getString(R.string.state_ui_the_selected_path_has_been_added_42b432)
+                    else -> null
+                }
+                if (message != null) {
+                    Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun isSharedImageCandidate(
+        uri: Uri,
+        intentMimeType: String?,
+        isSingleUri: Boolean,
+    ): Boolean {
+        val resolverType = if (uri.scheme == ContentResolver.SCHEME_CONTENT) {
+            runCatching { appContext.contentResolver.getType(uri) }.getOrNull()
+        } else {
+            null
+        }
+        if (resolverType != null && resolverType != "*/*" && resolverType != "application/octet-stream") {
+            return resolverType.startsWith("image/", ignoreCase = true)
+        }
+        val path = uri.lastPathSegment ?: uri.path.orEmpty()
+        val extension = path.substringAfterLast('.', "").lowercase()
+        if (extension in SHARED_IMAGE_EXTENSIONS) return true
+        return isSingleUri && intentMimeType?.startsWith("image/", ignoreCase = true) == true
+    }
+
+    private fun resolveSharedFileUri(
+        gateway: AgentFileReferenceGateway,
+        uri: Uri,
+    ): AgentFileReferenceGateway.Resolution = when (uri.scheme) {
+        ContentResolver.SCHEME_FILE -> gateway.resolveAbsolutePath(
+            rawPath = uri.path.orEmpty(),
+            expectedKind = AgentFileReferenceKind.File,
+        )
+        else -> gateway.resolveDocumentUri(
+            uri = uri,
+            expectedKind = AgentFileReferenceKind.File,
+        )
+    }
+
+    private fun resolveAndAttachFileReferences(
+        resolver: () -> List<AgentFileReferenceGateway.Resolution>,
+    ) {
+        val ownerVersion = fileAttachmentOwnerVersion
+        scope.launch(Dispatchers.IO) {
+            val resolutions = resolver()
+            val references = resolutions.mapNotNull { resolution ->
+                (resolution as? AgentFileReferenceGateway.Resolution.Success)?.reference
+            }
+            val failures = resolutions.mapNotNull { resolution ->
+                (resolution as? AgentFileReferenceGateway.Resolution.Failure)?.error
+            }
+            withContext(Dispatchers.Main) {
+                if (ownerVersion != fileAttachmentOwnerVersion) {
+                    Toast.makeText(appContext, appContext.getString(R.string.state_ui_conversation_switched_selected_path_not_added_5bf91e), Toast.LENGTH_SHORT).show()
+                    return@withContext
+                }
+                val existingPaths = homeState.pendingFileReferences
+                    .mapTo(mutableSetOf()) { it.reference.absolutePath }
+                val additions = references
+                    .distinctBy { it.absolutePath }
+                    .filter { existingPaths.add(it.absolutePath) }
+                    .map { reference ->
+                        PendingFileReferenceUi(
+                            id = "file-${UUID.randomUUID()}",
+                            reference = reference,
+                        )
+                    }
+                if (additions.isNotEmpty()) {
+                    updateCurrentConversation(
+                        homeState.copy(
+                            pendingFileReferences = homeState.pendingFileReferences + additions
+                        )
+                    )
+                }
+                val message = when {
+                    failures.size == 1 && references.isEmpty() -> failures.single().userMessage
+                    failures.isNotEmpty() -> appContext.resources.getQuantityString(
+                        R.plurals.file_references_added_with_failures,
+                        failures.size,
+                        additions.size,
+                        failures.size,
+                    )
+                    additions.isEmpty() -> appContext.getString(R.string.state_ui_the_selected_path_has_been_added_42b432)
+                    else -> null
+                }
+                if (message != null) {
+                    Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private val AgentFileReferenceGateway.Error.userMessage: String
+        get() = when (this) {
+            AgentFileReferenceGateway.Error.UnsupportedDocumentProvider ->
+                appContext.getString(R.string.capability_import_denied)
+            AgentFileReferenceGateway.Error.InvalidPath -> appContext.getString(R.string.state_ui_please_enter_a_valid_absolute_path_6afeb4)
+            AgentFileReferenceGateway.Error.PathNotFound -> appContext.getString(R.string.state_ui_the_path_does_not_exist_or_is_no_longer_accessib_a9776e)
+            AgentFileReferenceGateway.Error.UnsupportedFileType -> appContext.getString(R.string.state_ui_only_supports_normal_files_and_folders_4adea0)
+            AgentFileReferenceGateway.Error.TypeMismatch -> appContext.getString(R.string.state_ui_the_selected_project_type_does_not_match_3a5c49)
+            AgentFileReferenceGateway.Error.RootUnavailable -> appContext.getString(R.string.state_ui_root_is_not_available_and_the_path_cannot_be_ver_fc4c81)
+            AgentFileReferenceGateway.Error.AccessDenied -> appContext.getString(R.string.capability_import_denied)
+            AgentFileReferenceGateway.Error.ImportFailed -> appContext.getString(R.string.capability_import_failed)
+            AgentFileReferenceGateway.Error.InsufficientStorage -> appContext.getString(R.string.capability_import_insufficient_storage)
+            AgentFileReferenceGateway.Error.ValidationTimedOut -> appContext.getString(R.string.state_ui_path_verification_timed_out_please_try_again_703687)
+        }
+
+    /** 当前界面绑定中的 run；只需一个，后台可并行多个由 runtime 管。 */
+    private var currentRunId: String? = null
+    private var currentRunJob: Job? = null
+    private val runConversationIds = mutableMapOf<String, String>()
+
+    private val stopRequestedRunIds = mutableSetOf<String>()
+    private val CANCEL_RETRY_WINDOW_MS = 3_000L
+    private val userStoppedRunIds = mutableSetOf<String>()
+
+    fun stopCurrentRun() {
+        val runId = runStore.activeRunId(selectedConversationId) ?: return
+        stopRun(runId)
+    }
+
+    private fun stopRun(runId: String) {
+        conversationIdForRun(runId)?.let { id ->
+            conversationsById[id]?.let { state ->
+                val cleared = AgentMessageQueueReducer.clearInterruptFlags(state)
+                if (cleared !== state) {
+                    updateConversation(id, cleared, updateTimestamp = false)
+                }
+            }
+        }
+        requestCancelRun(runId, byUser = true)
+    }
+
+    private fun requestCancelRun(runId: String, byUser: Boolean = false) {
+        if (!runStore.requestStop(runId, byUser)) return
+        scope.launch(Dispatchers.IO) {
+            AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+        }
+        // 取消指令可能落在僵死的连接上被丢掉；runId 只有等本轮真正结束才会移出去重集合，
+        // 期间再点终止会被上面那行直接吞掉，按钮看起来就是"没反应"。这里放开一个重试窗口。
+        scope.launch {
+            kotlinx.coroutines.delay(CANCEL_RETRY_WINDOW_MS)
+            if (currentRunId == runId) stopRequestedRunIds.remove(runId)
+        }
+    }
+
+    /**
+     * 界面侧脱钩（不取消任务）。
+     *
+     * 切后台被系统回收、Activity/ViewModel 销毁等都会取消本界面协程；这不是用户要停任务。
+     * 这里只清掉本地运行句柄，任务继续在 runtime 侧跑完，结果由下次进入界面的恢复流程接管。
+     */
+    private fun detachLocalRun(runId: String) {
+        runConversationIds.remove(runId)
+        if (currentRunId == runId) currentRunId = null
+        if (currentRunJob?.isActive != true) currentRunJob = null
+    }
+
+    /** 顶栏标题：还没命名（第一轮未完成）时返回 null，由界面显示「新任务」。 */
+    fun topBarConversationTitle(conversationId: String?): String? {
+        val id = conversationId ?: return null
+        if (id in autoNamingPending) return null
+        return conversationTitles[id]?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 整轮完整结束后的收尾：先按语义命名（它的花费也算进本轮），再结算本轮消耗。
+     * 两步都在 IO 上跑，任何失败只影响这两项显示，不影响正文与落库。
+     */
+    private fun finishRound(
+        conversationId: String,
+        prompt: String,
+        answer: String,
+        startBalance: Deferred<Double?>?,
+    ) {
+        val store = balanceStore
+        if (answer.isBlank() && store == null) return
+        scope.launch(Dispatchers.IO) {
+            // 命名的判据是「标题仍是第一轮占位原文」；autoNamingPending 只是快路径，
+            // 界面重建或结果走恢复回填时集合会丢，这里仍然能补上。
+            val pendingNaming = withContext(Dispatchers.Main.immediate) {
+                conversationId in autoNamingPending
+            }
+            // 发送时已经按提问起过名了：这里不再用完整问答二次命名，只做收尾。
+            val needsNaming = answer.isNotBlank() &&
+                conversationId !in promptTitleRequested &&
+                (pendingNaming || isPlaceholderTitle(conversationId))
+            if (!needsNaming) {
+                if (answer.isBlank()) {
+                    AndroidAgentLogger.info("Conversation naming skipped: empty answer")
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    autoNamingPending = autoNamingPending - conversationId
+                }
+            } else {
+                try {
+                    val title = ConversationTitleGenerator().generate(prompt, answer)
+                    if (!title.isNullOrBlank()) {
+                        withContext(Dispatchers.Main.immediate) {
+                            conversationTitles = conversationTitles + (conversationId to title)
+                            // 侧栏读的是摘要列表；不主动刷新的话标题要等下一次别的刷新才同步。
+                            refreshConversationSummaries()
+                        }
+                        withContext(Dispatchers.Main.immediate + NonCancellable) { persistConversations() }
+                        AndroidAgentLogger.info("Conversation auto named by model: chars=${title.length}")
+                    }
+                } finally {
+                    // 命名真的结束（成功或失败）才解除占位，避免顶栏先闪一下本轮提问原文。
+                    withContext(Dispatchers.Main.immediate + NonCancellable) {
+                        autoNamingPending = autoNamingPending - conversationId
+                    }
+                }
+            }
+            if (store == null) return@launch
+            // 起点用发消息时抓的快照；抓失败时退回最近一次已知余额，并记日志。
+            val before = startBalance?.await() ?: store.state.total
+            if (before == null) {
+                AndroidAgentLogger.info("Round cost skipped: balance unavailable")
+                return@launch
+            }
+            // DeepSeek 余额有几十秒延迟（实测 45s 内落地），立刻抓第二次只会读到同一个数，
+            // 所以隔一会儿补抓几次（见 DeepSeekBalanceStore.SETTLE_RETRY_DELAYS_MS）。
+            val after = store.settleBalanceChange(before)
+            if (after == null) {
+                AndroidAgentLogger.info("Round cost skipped: balance did not settle in time")
+                return@launch
+            }
+            val cost = before - after
+            AndroidAgentLogger.info("Round cost settled: before=$before after=$after cost=$cost")
+            if (cost <= 0.0) return@launch
+            // 结算期间又开了一轮的话，这次余额变化不再只属于本轮，放弃以免记错。
+            val busy = withContext(Dispatchers.Main.immediate) {
+                currentRunId != null || currentRunJob?.isActive == true
+            }
+            if (busy) {
+                AndroidAgentLogger.info("Round cost skipped: another run is active")
+                return@launch
+            }
+            withContext(Dispatchers.Main.immediate) { attachRoundCost(conversationId, cost) }
+        }
+    }
+
+    /**
+     * 标题是否仍是第一轮提问的占位原文；用户手动改过名字的会话返回 false。
+     *
+     * 占位必须用**会话首条用户消息**算：标题占位是第一轮提问生成的。拿本轮 prompt 去比，
+     * 第二轮起永远对不上，就会把「还没命名」误判成「已有名字」，之后再也不会补命名。
+     */
+    private suspend fun isPlaceholderTitle(conversationId: String): Boolean {
+        val firstUser = withContext(Dispatchers.Main.immediate) {
+            conversationsById[conversationId]
+                ?.messages
+                ?.firstOrNull { it is UserMessageUi }
+                ?.let { (it as UserMessageUi).content }
+        } ?: return false
+        val placeholder = firstUser.defaultConversationTitleFromMessage()
+        return withContext(Dispatchers.Main.immediate) {
+            val current = conversationTitles[conversationId]
+            current.isNullOrBlank() || current == placeholder
+        }
+    }
+
+    /** 把本轮消耗写到该会话最后一条回答上，随消息一起落库；老会话没有这一列就不显示。 */
+    private fun attachRoundCost(conversationId: String, cost: Double) {
+        val conversation = conversationsById[conversationId] ?: return
+        val index = conversation.messages.indexOfLast { it is AgentMessageUi }
+        if (index < 0) return
+        val message = conversation.messages[index] as? AgentMessageUi ?: return
+        if (message.roundCost != null) return
+        val messages = conversation.messages.toMutableList().apply {
+            this[index] = message.copy(roundCost = cost)
+        }
+        updateConversation(conversationId, conversation.copy(messages = messages))
+        // 只精确更新这一行：整会话重写在超大会话里很慢，进程被杀会把记录一起丢掉。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                EtaDatabase.get(appContext).conversationDao()
+                    .updateMessageRoundCost(conversationId, message.id, cost)
+            }.onFailure { failure ->
+                AndroidAgentLogger.warn("Round cost persist failed: type=${failure.safeLogType()}")
+            }
+        }
+    }
+
+    /**
+     * 把本轮用时写到该会话最后一条消息上，随消息一起落库。
+     *
+     * 优先挂在该会话最后一条回答上（统计胶囊外面和弹窗都读它）；
+     * 上下文压缩提示、停止提示这类 notice 常常排在回答之后，不能让回答因此拿不到时长。
+     * 只有本轮没有回答、或回答已经记过时长时，才退回最后一条系统提示。
+     */
+    private fun attachRoundDuration(conversationId: String, durationMs: Long) {
+        if (durationMs <= 0L) return
+        val conversation = conversationsById[conversationId] ?: return
+        val messages = conversation.messages
+        val answerIndex = messages.indexOfLast { it is AgentMessageUi }
+        val noticeIndex = messages.indexOfLast { it is SystemNoticeMessageUi }
+        // 真实用时优先挂在回答底栏（capsule 外面和统计窗口都读它）；
+        // 上下文压缩提示、停止提示这类 notice 常常排在回答之后，不能因此让回答拿不到时长。
+        // 只有本轮没有回答，或回答已经记过时长时，才退回最后一条 notice。
+        val index = when {
+            answerIndex >= 0 &&
+                (messages[answerIndex] as? AgentMessageUi)?.roundDurationMs == null -> answerIndex
+            noticeIndex >= 0 -> noticeIndex
+            else -> return
+        }
+        val target = messages[index]
+        val updated = messages.toMutableList()
+        when (target) {
+            is AgentMessageUi -> {
+                if (target.roundDurationMs != null) return
+                updated[index] = target.copy(roundDurationMs = durationMs)
+            }
+            is SystemNoticeMessageUi -> {
+                if (target.roundDurationMs != null) return
+                updated[index] = target.copy(roundDurationMs = durationMs)
+            }
+            else -> return
+        }
+        val message = updated[index]
+        updateConversation(conversationId, conversation.copy(messages = updated))
+        // 与消耗金额同样只精确更新这一行：整会话重写在大对话里很慢。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                EtaDatabase.get(appContext).conversationDao()
+                    .updateMessageRoundDuration(conversationId, message.id, durationMs)
+            }.onFailure { failure ->
+                AndroidAgentLogger.warn("Round duration persist failed: type=${failure.safeLogType()}")
+            }
+        }
+    }
+
+    private fun isReplyRewrite(runId: String): Boolean =
+        conversationsById[conversationIdForRun(runId)]?.roleplayMessages?.pendingRewrites?.containsKey(runId) == true
+
+    private fun restoreRunEvents(
+        runId: String,
+        events: List<AgentEvent>,
+        replayEpochMs: Long? = null,
+    ) {
+        if (isReplyRewrite(runId)) return
+        // 恢复是完整快照：先清除同一 run 的旧投影，再一次发布，避免历史增量重复追加
+        // 或中途的 Running 状态使已结束的思考重新展开、播放动画。
+        Snapshot.withMutableSnapshot {
+            flushPendingRunDelta(runId)
+            updateMessages(runId, updateTimestamp = false) { messages ->
+                runMessageProjector.resetForReplay(
+                    runId = runId,
+                    messages = messages,
+                    replaySupplementIndexes = events.filterIsInstance<AgentEvent.UserSupplementReceived>()
+                        .mapTo(mutableSetOf()) { it.index },
+                )
+            }
+            events.forEach { event ->
+                applyRunEvent(runId, event, persistSupplement = false, replayEpochMs = replayEpochMs)
+            }
+        }
+    }
+
+    private fun enqueueRunEvent(runId: String, event: AgentEvent) {
+        runStore.enqueue(runId, event)
+    }
+
+    private fun flushPendingRunDelta(runId: String) {
+        runStore.flush(runId)
+    }
+
+    private fun applyRunEvent(
+        runId: String,
+        event: AgentEvent,
+        persistSupplement: Boolean = true,
+        replayEpochMs: Long? = null,
+    ) {
+        if (isReplyRewrite(runId)) {
+            if (event is AgentEvent.RunStarted && runStore.isStopRequested(runId)) scope.launch(Dispatchers.IO) {
+                AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+            }
+            return
+        }
+        when (event) {
+            is AgentEvent.GuiControlChanged -> {
+                runStore.updateGuiStatus(runId, event.status)
+                refreshConversationSummaries()
+            }
+            is AgentEvent.UserSupplementReceived ->
+                insertSupplementMessage(runId, event.index, event.text, persist = persistSupplement)
+            is AgentEvent.RunStarted -> if (runStore.isStopRequested(runId)) scope.launch(Dispatchers.IO) {
+                AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+            }
+            // 流式增量与 Subagent 过程快照只刷新消息，不推进会话时间戳，也不重算侧栏摘要；其余可见变化两者都更新。
+            is AgentEvent.AssistantBlockDelta,
+            is AgentEvent.SubagentProgress,
+            -> updateMessages(runId, updateTimestamp = false) { messages ->
+                runMessageProjector.applyEvent(runId, event, messages, replayEpochMs = replayEpochMs)
+            }
+            // 用量事件既写进消息统计，也记到会话上，供顶栏胶囊显示最近一次请求。
+            is AgentEvent.UsageReceived -> {
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages, replayEpochMs = replayEpochMs) }
+                updateAssistantUsage(runId, event.usage.toUi())
+            }
+            is AgentEvent.ContextCompaction -> {
+                if (event.phase == AgentEvent.ContextCompaction.PHASE_COMPLETED) {
+                    conversationIdForRun(runId)?.let { id ->
+                        conversationsById[id]?.let { current ->
+                            updateConversation(
+                                id,
+                                current.copy(lastModelUsage = current.lastModelUsage?.copy(contextTokens = null)),
+                            )
+                        }
+                    }
+                }
+                updateRunTrace(runId) { messages -> runMessageProjector.applyEvent(runId, event, messages, replayEpochMs = replayEpochMs) }
+            }
+            else -> updateRunTrace(runId) { messages ->
+                runMessageProjector.applyEvent(runId, event, messages, replayEpochMs = replayEpochMs)
+            }
+        }
+    }
+
+    private fun applyRunResult(
+        runId: String,
+        result: AgentRuntimeWire.RunResult,
+        acknowledgeRuntimeResult: Boolean = false,
+    ) {
+        flushPendingRunDelta(runId)
+        val completedConversationId = conversationIdForRun(runId) ?: return
+        if (!runStore.beginSettlement(runId)) return
+        val explicitlyStoppedByUser = runStore.wasStoppedByUser(runId)
+        val rewriting = result.operation == AgentRuntimeWire.OP_REWRITE_REPLY || isReplyRewrite(runId)
+        if (rewriting) {
+            val conversationId = conversationIdForRun(runId)
+            val existing = conversationsById[conversationId]
+            if (conversationId != null && existing != null && result.contextSnapshotRef.isBlank()) {
+                updateConversation(conversationId, RoleplayConversationReducer.applyRewrite(existing, runId, result).copy(isStreaming = true))
+            }
+            runMessageProjector.clearRun(runId)
+            refreshConversationSummaries()
+            persistRunResult(runId, completedConversationId, result, acknowledgeRuntimeResult,
+                explicitlyStoppedByUser, resumeQueue = false)
+            return
+        }
+        val compactionErrorDetail = if (isStoppedResultError(result.error)) {
+            appContext.getString(R.string.ui_misc_compaction_stopped)
+        } else {
+            result.error
+        }
+        updateRunTrace(runId) { messages ->
+            runMessageProjector.finishContextCompaction(runId,
+                runMessageProjector.finalizeRun(runId, messages),
+                if (result.ok) {
+                    appContext.getString(R.string.ui_misc_compaction_completed)
+                } else {
+                    compactionErrorDetail ?: appContext.getString(R.string.ui_misc_compaction_stopped)
+                })
+        }
+        if (result.contextSnapshotRef.isBlank()) {
+            applyConversationHistoryResult(runId, result.transcript, result.contextSnapshot, !result.ok || result.contextSnapshot != null)
+        }
+        when {
+            result.operation == AgentRuntimeWire.OP_COMPACT ||
+                conversationsById[conversationIdForRun(runId)]?.isCompacting == true -> updateMessages(runId) { messages ->
+                    AgentRunMessageProjector.mergeCompactionResultNotice(
+                        runId = runId,
+                        messages = messages,
+                        ok = result.ok,
+                        detail = if (result.ok) {
+                            appContext.getString(R.string.ui_misc_compaction_completed)
+                        } else {
+                            compactionErrorDetail ?: appContext.getString(R.string.ui_misc_compaction_failed)
+                        },
+                    )
+                }
+            else -> {
+                val notice = when {
+                    result.ok && result.content.isNotBlank() -> null
+                    result.ok -> SystemNoticeCode.EmptyResult
+                    isStoppedResultError(result.error) ->
+                        SystemNoticeCode.Stopped
+                    else -> SystemNoticeCode.RuntimeFailed
+                }
+                updateMessages(runId) { messages ->
+                    AgentRunMessageProjector.applyResult(
+                        runId, messages, result.content, notice,
+                        detail = result.error.takeIf { notice == SystemNoticeCode.RuntimeFailed },
+                    )
+                }
+            }
+        }
+        conversationIdForRun(runId)?.let { id -> conversationsById[id]?.let {
+            updateConversation(id, RoleplayConversationReducer.linkRun(it, runId))
+        } }
+        runMessageProjector.clearRun(runId)
+        // 本轮用时：从用户发出消息算到本轮结束（含工具往返）。正常结束写到最后一条回答；
+        // 中途停止/失败时同样记一笔，显示在停止位置。
+        // 优先用 Runtime 回报的实际耗时：浮窗/语音等外部入口的会话由它先跑完再导入，
+        // 界面这边根本没有发送时刻，只能靠它；本地聊天仍回退到发送时刻。
+        if (result.operation != AgentRuntimeWire.OP_COMPACT) {
+            val elapsed = result.elapsedMs.takeIf { it > 0 }
+                ?: runStore.startedAtMs(runId)?.let { startedAt ->
+                    System.currentTimeMillis() - startedAt
+                }
+            elapsed?.let { attachRoundDuration(completedConversationId, it) }
+        }
+        refreshConversationSummaries()
+        persistRunResult(runId, completedConversationId, result, acknowledgeRuntimeResult,
+            explicitlyStoppedByUser, resumeQueue = true)
+        // 本轮已结束：解除插话绑定，否则之后发消息会被当成对已结束任务的插话。
+        runConversationIds.remove(runId)
+        if (currentRunId == runId) currentRunId = null
+    }
+
+    private fun isStoppedResultError(error: String?): Boolean {
+        if (error.isNullOrBlank()) return false
+        return error == LEGACY_STOPPED_ERROR ||
+            error == SYNTHETIC_STATUS_STOPPED ||
+            error == "Stopped" ||
+            error == appContext.getString(R.string.runtime_err_stopped)
+    }
+
+    private fun persistRunResult(
+        runId: String,
+        conversationId: String,
+        result: AgentRuntimeWire.RunResult,
+        acknowledgeRuntimeResult: Boolean,
+        explicitlyStoppedByUser: Boolean,
+        resumeQueue: Boolean,
+    ) {
+        var acknowledged = !acknowledgeRuntimeResult
+        val saved = persistConversations(
+            onSaved = if (acknowledgeRuntimeResult && result.contextSnapshotRef.isBlank()) {
+                {
+                    acknowledged = AgentRuntimeClient(appContext, AndroidAgentLogger).ackResult(runId)
+                }
+            } else {
+                null
+            }
+        )
+        scope.launch {
+            val resultSaved = saved.await() && result.contextSnapshotRef.isBlank()
+            val stoppedDuringSettlement = runStore.wasStoppedByUser(runId)
+            setConversationStreaming(runId, false)
+            runStore.remove(runId)
+            refreshConversationSummaries()
+            if (conversationId in pendingConversationDeletes) {
+                if (resultSaved && acknowledged) {
+                    deleteSettledConversation(conversationId)
+                } else {
+                    abortPendingConversationDelete(conversationId)
+                }
+                return@launch
+            }
+            if (!resultSaved || !resumeQueue || runStore.activeRunId(conversationId) != null) return@launch
+            if (acknowledgeRuntimeResult && result.operation == AgentRuntimeWire.OP_CHAT &&
+                result.ok && result.content.isNotBlank()
+            ) {
+                maybeGenerateConversationTitle(conversationId, result.content)
+            }
+            val finishedState = conversationsById[conversationId]
+            if (finishedState != null && finishedState.queuedMessages.isNotEmpty()) {
+                val stoppedByUser = explicitlyStoppedByUser || stoppedDuringSettlement ||
+                    (!result.ok && isStoppedResultError(result.error))
+                val (afterPopState, nextQueued) = AgentMessageQueueReducer.pollNextToSendAfterRun(
+                    state = finishedState,
+                    stoppedByUser = stoppedByUser,
+                )
+                updateConversation(conversationId, afterPopState, updateTimestamp = false)
+                if (nextQueued != null) {
+                    dispatchQueuedMessage(conversationId, nextQueued)
+                }
+            }
+        }
+    }
+
+    /**
+     * 首轮消息一发出就按提问起名，不等回答结束。
+     *
+     * 只用 prompt：标题质量取决于首句信息量，换来的是发完消息一两秒内就有名字。
+     * 每个会话的首轮只请求一次；失败就退回第一句提问的占位标题，不再用完整问答重试，
+     * 所以 [finishRound] 与 [maybeGenerateConversationTitle] 会看 [promptTitleRequested] 跳过二次命名。
+     */
+    private fun launchPromptTitleGeneration(
+        conversationId: String,
+        userPrompt: String,
+        fileReferences: List<AgentFileReference>,
+        conversationModelId: String?,
+    ) {
+        if (conversationId in manuallyRenamedConversationIds ||
+            conversationId in pendingConversationDeletes ||
+            conversationId.isReadOnlyExternalArchiveConversation()
+        ) {
+            return
+        }
+        val namingPrompt = AgentFileReferencePolicy.titleSource(userPrompt, fileReferences).trim()
+        if (namingPrompt.isBlank()) return
+        promptTitleRequested += conversationId
+        titleGenerationJobs.remove(conversationId)?.cancel()
+        val job = scope.launch {
+            val title = try {
+                ConversationTitleGenerator().generate(
+                    userPrompt = namingPrompt,
+                    assistantReply = "",
+                    conversationModelId = conversationModelId,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                AndroidAgentLogger.warnThrottled("prompt_conversation_title_failed") {
+                    "Prompt conversation title generation failed: type=${failure.safeLogType()}"
+                }
+                null
+            }
+            val applied = withContext(Dispatchers.Main.immediate) {
+                if (conversationId !in conversationsById || conversationId in pendingConversationDeletes) {
+                    return@withContext false
+                }
+                if (!title.isNullOrBlank() && conversationId !in manuallyRenamedConversationIds) {
+                    autoGeneratedTitleIds += conversationId
+                    pendingAutoTitleFallbacks.remove(conversationId)
+                    conversationTitles = conversationTitles + (conversationId to title)
+                }
+                // 成功写标题、失败退回占位原文：两种情况都要解除占位，否则顶栏一直是空白。
+                autoNamingPending = autoNamingPending - conversationId
+                refreshConversationSummaries()
+                !title.isNullOrBlank()
+            }
+            if (applied) persistConversations()
+        }
+        titleGenerationJobs[conversationId] = job
+        job.invokeOnCompletion {
+            if (titleGenerationJobs[conversationId] === job) {
+                titleGenerationJobs.remove(conversationId)
+            }
+        }
+    }
+
+    private fun maybeGenerateConversationTitle(
+        conversationId: String,
+        assistantReply: String,
+    ) {
+        if (conversationId in promptTitleRequested) return
+        if (conversationId in pendingConversationDeletes ||
+            conversationId in manuallyRenamedConversationIds ||
+            conversationId.isReadOnlyExternalArchiveConversation()
+        ) {
+            return
+        }
+        val state = conversationsById[conversationId] ?: return
+        if (state.roleplay != null) return
+        val expectedFallback = pendingAutoTitleFallbacks[conversationId] ?: run {
+            val users = state.messages.filterIsInstance<UserMessageUi>()
+            if (users.size == 1 && conversationId !in autoGeneratedTitleIds) {
+                users.first().content.defaultConversationTitleFromMessage()
+            } else {
+                null
+            }
+        } ?: return
+        val currentTitle = conversationTitles[conversationId].orEmpty()
+        if (currentTitle != expectedFallback && currentTitle.isNotBlank()) return
+        val firstUserPrompt = state.messages
+            .filterIsInstance<UserMessageUi>()
+            .firstOrNull()
+            ?.content
+            .orEmpty()
+        val conversationModelId = state.modelId
+        titleGenerationJobs.remove(conversationId)?.cancel()
+        val job = scope.launch {
+            val generatedTitle = try {
+                titleGenerator.generate(
+                    userPrompt = firstUserPrompt,
+                    assistantReply = assistantReply,
+                    conversationModelId = conversationModelId,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                AndroidAgentLogger.warnThrottled("auto_conversation_title_failed") {
+                    "Auto conversation title generation failed: type=${failure.safeLogType()}"
+                }
+                null
+            }
+            if (generatedTitle.isNullOrBlank()) return@launch
+            if (conversationId !in conversationsById ||
+                conversationId in pendingConversationDeletes ||
+                conversationId in manuallyRenamedConversationIds
+            ) {
+                return@launch
+            }
+            val latestTitle = conversationTitles[conversationId].orEmpty()
+            if (latestTitle != expectedFallback && latestTitle.isNotBlank()) return@launch
+            pendingAutoTitleFallbacks.remove(conversationId)
+            autoGeneratedTitleIds.add(conversationId)
+            conversationTitles = conversationTitles + (conversationId to generatedTitle)
+            autoNamingPending = autoNamingPending - conversationId
+            refreshConversationSummaries()
+            persistConversations()
+        }
+        titleGenerationJobs[conversationId] = job
+        job.invokeOnCompletion {
+            if (titleGenerationJobs[conversationId] === job) {
+                titleGenerationJobs.remove(conversationId)
+            }
+        }
+    }
+
+    private fun updateRunTrace(
+        runId: String,
+        transform: (List<AgentChatMessageUi>) -> List<AgentChatMessageUi>,
+    ) {
+        if (updateMessages(runId, transform = transform)) refreshConversationSummaries()
+    }
+
+    /** 记录会话最近一次模型用量：顶栏胶囊显示 token 数与输出速度。 */
+    private fun updateAssistantUsage(runId: String, usage: TokenUsageUi) {
+        if (usage.isEmpty) return
+        conversationIdForRun(runId)?.let { id ->
+            conversationsById[id]?.let { current ->
+                updateConversation(id, current.copy(lastModelUsage = usage))
+            }
+        }
+    }
+
+    private fun insertSupplementMessage(
+        runId: String,
+        index: Int,
+        text: String,
+        persist: Boolean = true,
+    ) {
+        updateMessages(runId) { messages ->
+            val id = AgentPendingResultRecovery.supplementMessageId(runId, index)
+            if (messages.any { it.id == id }) {
+                messages
+            } else {
+                messages + UserMessageUi(id = id, content = text)
+            }
+        }
+        refreshConversationSummaries()
+        if (persist) persistConversations()
+    }
+
+    private fun updateMessages(
+        runId: String,
+        updateTimestamp: Boolean = true,
+        transform: (List<AgentChatMessageUi>) -> List<AgentChatMessageUi>,
+    ): Boolean {
+        val conversationId = conversationIdForRun(runId) ?: return false
+        val state = conversationsById[conversationId] ?: return false
+        val messages = transform(state.messages)
+        // 投影对无可见变化的事件返回原列表；此时不推进会话时间戳，避免请求开始、轮次开始等事件改变排序。
+        if (messages === state.messages) return false
+        updateConversation(
+            conversationId = conversationId,
+            state = state.copy(messages = messages),
+            updateTimestamp = updateTimestamp,
+        )
+        return true
+    }
+
+    private fun applyConversationHistoryResult(
+        runId: String,
+        additions: List<AgentModelClient.ConversationMessage>,
+        snapshot: AgentContextSnapshot? = null,
+        retainPendingSupplements: Boolean = snapshot != null,
+    ) {
+        val conversationId = conversationIdForRun(runId) ?: return
+        val state = conversationsById[conversationId] ?: return
+        val outcome = AgentRuntimeHistoryReducer.apply(state, runId, additions, snapshot, retainPendingSupplements)
+        if (!outcome.alreadyApplied) updateConversation(conversationId, outcome.state)
+    }
+
+    private fun updateCurrentConversation(
+        state: AgentChatHomeUiState,
+        updateTimestamp: Boolean = true,
+    ) {
+        val conversationId = selectedConversationId
+        if (conversationId == null) {
+            homeState = state
+        } else {
+            updateConversation(conversationId, state, updateTimestamp = updateTimestamp)
+        }
+    }
+
+    private fun moveCurrentDraftToNewConversation() {
+        val draft = homeState
+        selectedConversationId = null
+        currentDraftReasoningCustomized = draft.reasoningEffort != defaultReasoningEffort()
+        homeState = emptyChatState(defaultReasoningEffort()).copy(
+            input = draft.input,
+            thinkingEnabled = draft.reasoningEffort.enablesReasoning,
+            reasoningEffort = draft.reasoningEffort,
+            availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
+            pendingImages = draft.pendingImages,
+            pendingFileReferences = draft.pendingFileReferences,
+            modelId = draft.modelId,
+        )
+        conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
+    }
+
+    private fun updateConversation(
+        conversationId: String,
+        state: AgentChatHomeUiState,
+        updateTimestamp: Boolean = true,
+    ) {
+        conversationsById = conversationsById + (conversationId to state)
+        if (updateTimestamp) {
+            conversationUpdatedAt = conversationUpdatedAt + (conversationId to System.currentTimeMillis())
+        }
+        if (conversationId == selectedConversationId) {
+            homeState = state
+        }
+    }
+
+    private fun setConversationStreaming(runId: String, isStreaming: Boolean) {
+        val conversationId = conversationIdForRun(runId) ?: return
+        val state = conversationsById[conversationId] ?: return
+        updateConversation(conversationId, state.copy(isStreaming = isStreaming, isCompacting = state.isCompacting && isStreaming))
+    }
+
+    private fun conversationIdForRun(runId: String): String? = runStore.conversationId(runId)
+
+    private fun conversationStateForRun(runId: String): AgentChatHomeUiState {
+        val conversationId = conversationIdForRun(runId) ?: return emptyChatState(defaultReasoningEffort())
+        return conversationsById[conversationId] ?: emptyChatState(defaultReasoningEffort())
+    }
+
+    private fun refreshConversationSummaries() {
+        val summaries = conversationsById.entries
+            .sortedWith(
+                compareByDescending<Map.Entry<String, AgentChatHomeUiState>> { (id, _) ->
+                    id in conversationPinnedIds
+                }.thenByDescending { (id, _) ->
+                    conversationUpdatedAt[id] ?: 0L
+                }
+            )
+            .map { (id, state) ->
+                val lastMessage = state.messages.lastOrNull()
+                ConversationSummaryUi(
+                    id = id,
+                    title = conversationTitles[id].orEmpty().ifBlank {
+                        appContext.getString(R.string.conversation_unnamed)
+                    },
+                    preview = when (lastMessage) {
+                        is UserMessageUi -> AgentFileReferencePromptCodec
+                            .parse(lastMessage.content)
+                            .let { parsed ->
+                                AgentFileReferencePolicy.titleSource(
+                                    request = parsed.request,
+                                    references = parsed.references,
+                                )
+                            }
+                        is AgentMessageUi -> lastMessage.content.ifBlank {
+                            appContext.getString(R.string.conversation_preview_reasoning)
+                        }
+                        is SystemNoticeMessageUi -> noticeText(lastMessage.code)
+                        is ThinkingMessageUi -> appContext.getString(R.string.conversation_preview_reasoning)
+                        is ToolActivityMessageUi -> appContext.getString(
+                            R.string.conversation_preview_tool_call,
+                            lastMessage.toolName,
+                        )
+                        else -> appContext.getString(R.string.conversation_preview_empty)
+                    }.take(MAX_PREVIEW_CHARS),
+                    timeLabel = if (state.isStreaming) {
+                        appContext.getString(R.string.time_now)
+                    } else {
+                        conversationUpdatedAt[id]?.let { timestamp ->
+                            ConversationTimeLabels.label(
+                                timestampMillis = timestamp,
+                                locale = appContext.resources.configuration.locales[0],
+                                use24HourClock = DateFormat.is24HourFormat(appContext),
+                                yesterdayLabel = appContext.getString(R.string.time_yesterday),
+                                recentLabel = appContext.getString(R.string.time_recent),
+                            )
+                        } ?: appContext.getString(R.string.time_recent)
+                    },
+                    updatedAtMillis = conversationUpdatedAt[id] ?: 0L,
+                    mode = ConversationModeUi.Chat,
+                    characterName = state.roleplay?.characterName ?: state.conversationCharacterName,
+                    characterAvatarPath = state.roleplay?.avatarPath ?: state.conversationCharacterAvatarPath,
+                    isActiveRun = state.isStreaming,
+                    runStatus = when (runStore.guiStatus(id)) {
+                        GuiControlStatus.Waiting -> appContext.getString(R.string.run_waiting_for_gui)
+                        GuiControlStatus.UserPaused -> appContext.getString(R.string.run_gui_user_paused)
+                        else -> null
+                    },
+                    isPinned = id in conversationPinnedIds,
+                    workspaceId = workspaceAssignments[id]
+                        ?.takeIf { target -> workspaceRecords.any { it.id == target } },
+                )
+            }
+            .sortedByDescending { it.isPinned }
+        val query = conversationPaneState.searchQuery.trim()
+        val buckets = summaries.groupForWorkspaces()
+        // 搜索不受文件夹归属限制：工作区里的会话也展开进同一个池子。
+        // 只过滤未归类会话时，一旦把会话都归了类，标题和内容就全都搜不到。
+        val searchPool = if (buckets.workspaces.isEmpty()) {
+            buckets.loose
+        } else {
+            val seen = HashSet<String>(summaries.size * 2)
+            val merged = ArrayList<ConversationSummaryUi>(summaries.size)
+            buckets.loose.forEach { summary -> if (seen.add(summary.id)) merged += summary }
+            buckets.workspaces.forEach { workspace ->
+                workspace.conversations.forEach { summary -> if (seen.add(summary.id)) merged += summary }
+            }
+            merged.sortedWith(
+                compareByDescending<ConversationSummaryUi> { it.isPinned }
+                    .thenByDescending { summary -> summary.updatedAtMillis },
+            )
+        }
+        conversationPaneState = conversationPaneState.copy(
+            selectedConversationId = selectedConversationId,
+            conversations = if (query.isBlank()) {
+                buckets.loose
+            } else {
+                // 只依赖标题、预览与数据库全量扫描。内存里每个会话只有最近一页窗口，
+                // 逐条全文匹配既扫不全、又会在主线程占住几百毫秒到数秒（打开会话时尤其明显）。
+                searchPool.filter { summary ->
+                    summary.title.matchesSearchQuery(query) ||
+                        summary.preview.matchesSearchQuery(query) ||
+                        summary.id in persistedSearchMatches
+                }
+            },
+            // 搜索时把结果平铺出来，避免命中项被折叠在文件夹里看不见。
+            workspaces = if (query.isBlank()) buckets.workspaces else emptyList(),
+        )
+    }
+
+    /**
+     * 标题/预览匹配：先按原文比一次，再做一次「只保留字母、数字、汉字」的宽松比较。
+     *
+     * 库里标题是「回答上抬，跟顶」这种带全角标点的形态，而用户手打时很容易给出半角逗号，
+     * 或用空格代替标点；标题本身也常带空格（如「读取 /proc/meminfo 和 /proc」）。
+     * 这些差异不该让一条看起来一字不差的标题落空，所以再比一次去掉标点与空白后的形态。
+     */
+    private fun String.matchesSearchQuery(query: String): Boolean {
+        if (query.isEmpty()) return false
+        if (contains(query, ignoreCase = true)) return true
+        val compactText = compactForSearch()
+        val compactQuery = query.compactForSearch()
+        return compactQuery.isNotEmpty() && compactText.contains(compactQuery, ignoreCase = true)
+    }
+
+    /** 全角转半角（NFKC）后只留字母、数字与汉字，用于宽容匹配。 */
+    private fun String.compactForSearch(): String =
+        runCatching { Normalizer.normalize(this, Normalizer.Form.NFKC) }.getOrDefault(this)
+            .filter { it.isLetterOrDigit() }
+
+    private data class WorkspaceBuckets(
+        val workspaces: List<ConversationWorkspaceUi>,
+        val loose: List<ConversationSummaryUi>,
+    )
+
+    /** 按工作区归拢摘要：已归入工作区的会话只在文件夹里出现，不在下方分组里重复。 */
+    private fun List<ConversationSummaryUi>.groupForWorkspaces(): WorkspaceBuckets {
+        if (workspaceRecords.isEmpty()) return WorkspaceBuckets(emptyList(), this)
+        val byWorkspace = groupBy { it.workspaceId }
+        val workspaces = workspaceRecords.map { record ->
+            ConversationWorkspaceUi(
+                id = record.id,
+                name = record.name,
+                collapsed = record.collapsed,
+                conversations = byWorkspace[record.id].orEmpty(),
+            )
+        }
+        return WorkspaceBuckets(workspaces = workspaces, loose = filter { it.workspaceId == null })
+    }
+
+    private fun persistConversations(onSaved: (() -> Unit)? = null): Deferred<Boolean> {
+        val selected = selectedConversationId
+        val conversations = conversationsById
+        val titles = conversationTitles
+        val timestamps = conversationUpdatedAt
+        val pinned = conversationPinnedIds
+        return synchronized(persistenceLock) {
+            // 未保存会阻止结果回执和 write-ahead 运行，由导入后的重载或失败后的补写收尾。
+            if (persistencePaused) return CompletableDeferred(false)
+            val previous = persistenceJob
+            val persistence = conversationPersistence
+            scope.async(Dispatchers.IO) {
+                try {
+                    previous?.join()
+                    persistence.save(
+                        appContext,
+                        AgentConversationStore.Snapshot(selected, conversations, titles, timestamps, pinned),
+                    )
+                    onSaved?.invoke()
+                    scope.launch(Dispatchers.Main.immediate) { releaseInactiveConversations(conversations) }
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    AndroidAgentLogger.error(
+                        "Agent conversation persistence failed: type=${throwable.safeLogType()}"
+                    )
+                    false
+                }
+            }.also { persistenceJob = it }
+        }
+    }
+
+    private companion object {
+        const val MAX_PREVIEW_CHARS = 48
+        /** 放弃搜索后「正在搜索」标题的退场延迟：留给「清空后立刻重搜」，避免标题闪一下。 */
+        const val SEARCH_STATUS_RESET_DELAY_MS = 500L
+        const val LEGACY_STOPPED_ERROR = "已停止"
+        const val SYNTHETIC_STATUS_STOPPED = "eta_status:stopped"
+        private val SHARED_IMAGE_EXTENSIONS = setOf(
+            "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif",
+        )
+
+        fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState =
+            emptyChatState(if (thinkingEnabled) Prefs.defaultReasoningEffort() else ReasoningEffort.OFF)
+
+        fun emptyChatState(reasoningEffort: ReasoningEffort): AgentChatHomeUiState =
+            AgentChatHomeUiState(
+                messages = emptyList(),
+                history = emptyList(),
+                journal = emptyList(),
+                input = "",
+                isStreaming = false,
+                thinkingEnabled = reasoningEffort.enablesReasoning,
+                reasoningEffort = reasoningEffort,
+            )
+
+        fun newConversationId(): String = "conv-${UUID.randomUUID()}"
+    }
+}
+
+internal data class MessageRevisionImpact(
+    val laterTurnCount: Int,
+)
+
+private fun AgentChatHomeUiState.canReplaceMessageWindowOf(saved: AgentChatHomeUiState): Boolean =
+    isConversationLoaded && !isStreaming && messageEdit == null &&
+        messages === saved.messages && messageStartIndex == saved.messageStartIndex &&
+        history === saved.history && journal === saved.journal && roleplayMessages == saved.roleplayMessages
+
+private fun String.isReadOnlyExternalArchiveConversation(): Boolean =
+    startsWith(AgentConversationIdentity.EXTERNAL_ARCHIVE_PREFIX)
+
+private fun agentBooleanForUi(key: String): Boolean {
+    return Prefs.isEnabled(key)
+}

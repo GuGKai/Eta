@@ -41,8 +41,6 @@ import com.itos.coui.layout.Group
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.app.WorkspaceEntry
-import io.github.mangi.eta.ui.app.WorkspaceFileStore
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
 import io.github.mangi.eta.ui.components.ListEmptyState
 import io.github.mangi.eta.ui.components.ScaffoldPage
@@ -50,6 +48,8 @@ import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiSectionTitle
 import io.github.mangi.eta.ui.components.coui.CouiSettingsIcon
+import io.github.mangi.eta.ui.state.WorkspaceEntry
+import io.github.mangi.eta.ui.state.WorkspaceFileStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
