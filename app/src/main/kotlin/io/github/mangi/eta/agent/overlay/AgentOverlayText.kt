@@ -119,5 +119,54 @@ internal fun toolDisplayNameResource(name: String): Int? = when (name) {
     "set_device_state" -> R.string.tool_set_device_state
     "app_state_control" -> R.string.tool_app_state_control
     "get_logcat" -> R.string.tool_get_logcat
+    // 个人数据、媒体与系统查询
+    "read_image" -> R.string.tool_read_image
+    "read_personal_item" -> R.string.tool_read_personal_item
+    "summarize_bills" -> R.string.tool_summarize_bills
+    "search_media" -> R.string.tool_search_media
+    "search_audio" -> R.string.tool_search_audio
+    "search_recordings" -> R.string.tool_search_recordings
+    "search_coloros_recordings" -> R.string.tool_search_coloros_recordings
+    "search_recording_summaries" -> R.string.tool_search_recording_summaries
+    "search_files" -> R.string.tool_search_files
+    "search_calendar_events" -> R.string.tool_search_calendar_events
+    "search_contacts" -> R.string.tool_search_contacts
+    "search_call_history" -> R.string.tool_search_call_history
+    "search_messages" -> R.string.tool_search_messages
+    "search_downloads" -> R.string.tool_search_downloads
+    "search_notes" -> R.string.tool_search_notes
+    "search_system_memories" -> R.string.tool_search_system_memories
+    "search_saved_places" -> R.string.tool_search_saved_places
+    "search_personal_orders" -> R.string.tool_search_personal_orders
+    "search_qq_chat_images" -> R.string.tool_search_qq_chat_images
+    "search_wechat_chat_images" -> R.string.tool_search_wechat_chat_images
+    "search_notification_history" -> R.string.tool_search_notification_history
+    "recent_app_activity" -> R.string.tool_recent_app_activity
+    "app_usage_summary" -> R.string.tool_app_usage_summary
+    "get_current_location" -> R.string.tool_get_current_location
+    "get_device_environment" -> R.string.tool_get_device_environment
+    "list_alarms" -> R.string.tool_list_alarms
+    "list_active_timers" -> R.string.tool_list_active_timers
+    "search_clipboard_history" -> R.string.tool_search_clipboard_history
+    "get_health_summary" -> R.string.tool_get_health_summary
+    // 技能
+    "skills_list" -> R.string.tool_skills_list
+    "skills_read" -> R.string.tool_skills_read
+    "skills_read_resource" -> R.string.tool_skills_read_resource
+    "skills_manage" -> R.string.tool_skills_manage
+    "skills_list_curated" -> R.string.tool_skills_list_curated
+    "skills_inspect_github" -> R.string.tool_skills_inspect_github
+    "skills_install_from_github" -> R.string.tool_skills_install_from_github
+    // 自动任务与会话历史
+    "tasks_triggers" -> R.string.tool_tasks_triggers
+    "tasks_list" -> R.string.tool_tasks_list
+    "tasks_create" -> R.string.tool_tasks_create
+    "tasks_update" -> R.string.tool_tasks_update
+    "tasks_delete" -> R.string.tool_tasks_delete
+    "tasks_run" -> R.string.tool_tasks_run
+    "tasks_cancel" -> R.string.tool_tasks_cancel
+    "tasks_history" -> R.string.tool_tasks_history
+    "scheduled_tasks" -> R.string.tool_scheduled_tasks
+    "conversation_history" -> R.string.tool_conversation_history
     else -> null
 }

@@ -205,9 +205,11 @@ internal sealed interface AgentEvent {
         /** 可选：旧版本 Runtime 不发送，消费端缺省时回退到摘要文本判断。 */
         val success: Boolean? = null,
         val command: String? = null,
+        /** 本次调用实际完成的步骤数：batch 包裹 N 个子调用时按 N 计，其余为 1。 */
+        val stepCount: Int = 1,
     ) : AgentEvent {
         override fun toLogLine(): String =
-            "tool_finished round=$round, name=${name.toSafeLogToken()}, " +
+            "tool_finished round=$round, name=${name.toSafeLogToken()}, steps=$stepCount, " +
                 "${resultSummary.toSafeResultLogFields()}, images=$imageCount, image_bytes=$imageBytes"
     }
 

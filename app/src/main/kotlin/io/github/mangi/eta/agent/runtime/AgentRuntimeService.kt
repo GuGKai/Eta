@@ -52,6 +52,9 @@ import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
+import io.github.mangi.eta.agent.model.AgentFileReferencePolicy
+import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
+import io.github.mangi.eta.agent.model.TitleWidth
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
@@ -74,6 +77,7 @@ import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.AppStrings
 import io.github.mangi.eta.core.safeLogType
+import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
@@ -82,12 +86,17 @@ import io.github.mangi.eta.data.datastore.SettingsDataStore
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
 
 /**
@@ -111,6 +120,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val runs = RuntimeRunRegistry()
     private val guiControl = GuiControlCoordinator()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /** 每个活跃 run 的会话标题订阅；只在主线程读写。 */
+    private val conversationTitleJobs = mutableMapOf<String, Job>()
     @Volatile private var destroyed = false
     @Volatile private var lastGuiOwnerRunId: String? = null
     private var displayedRun: RuntimeRunRegistry.Run? = null
@@ -488,6 +499,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 resultSink = { result -> sendResultTo(replyTo, result) },
                 beforeTerminalPublish = {
                     runs.finish(request.runId, session)?.releaseIncoming()
+                    stopWatchingConversationTitle(request.runId)
                     AgentExecutionService.release("run:${request.runId}")
                     mainHandler.post {
                         if (!destroyed) {
@@ -573,6 +585,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
         publishExecutionState()
         updateKeepScreenOn()
+        watchConversationTitle(run)
         return run
     }
 
@@ -1287,7 +1300,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             notices.add(
                 ExecutionRunNotice(
                     runId = active.runId,
-                    taskLabel = taskLabelOf(active),
+                    conversationTitle = active.conversationTitle,
                     status = if (paused) AgentOverlayStatus.Paused else active.overlayState.status,
                     completedSteps = active.overlayState.completedSteps,
                     paused = paused,
@@ -1297,10 +1310,46 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         AgentExecutionService.updateRunStates(this, notices, taskCount = notices.size)
     }
 
-    /** 卡片上的任务摘要：取首轮用户输入的第一行，截短到能在一行里显示。 */
-    private fun taskLabelOf(run: RuntimeRunRegistry.Run): String {
-        val firstLine = run.request.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
-        return firstLine.take(12)
+    /**
+     * 订阅会话标题，供通知卡片显示。
+     *
+     * 只对普通 Eta 会话生效：标题已经是 [conversationTitlePlaceholder] 之外的值、也就是
+     * ConversationTitleGenerator 真正命名完成之后才上卡片；定时任务、事件自动化、语音等外部入口
+     * 一律不显示标题。订阅用 Room Flow，命名一落库就能补上，不用猜时机。
+     */
+    private fun watchConversationTitle(run: RuntimeRunRegistry.Run) {
+        if (run.request.handoff?.source != AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE) return
+        stopWatchingConversationTitle(run.runId)
+        conversationTitleJobs[run.runId] = serviceScope.launch {
+            val placeholder = conversationTitlePlaceholder(run.request.prompt)
+            val dao = withContext(Dispatchers.IO) {
+                EtaDatabase.get(this@AgentRuntimeService).conversationDao()
+            }
+            dao.observeTitle(run.conversationId)
+                .flowOn(Dispatchers.IO)
+                .catch { failure ->
+                    AndroidAgentLogger.warnThrottled("conversation_title_watch_failed") {
+                        "Conversation title watch failed: type=${failure.safeLogType()}"
+                    }
+                }
+                .collect { stored ->
+                    val title = stored?.takeIf { it.isNotBlank() && it != placeholder }.orEmpty()
+                    if (title == run.conversationTitle) return@collect
+                    run.conversationTitle = title
+                    publishExecutionState()
+                }
+        }
+    }
+
+    private fun stopWatchingConversationTitle(runId: String) {
+        conversationTitleJobs.remove(runId)?.cancel()
+    }
+
+    /** 与 UI 侧生成占位标题的算法保持一致：去掉附件引用块、取首行、按显示列宽收口。 */
+    private fun conversationTitlePlaceholder(prompt: String): String {
+        val parsed = AgentFileReferencePromptCodec.parse(prompt)
+        val source = AgentFileReferencePolicy.titleSource(parsed.request, parsed.references)
+        return TitleWidth.truncateByColumns(source.lineSequence().firstOrNull().orEmpty().trim())
     }
 
     /** 定时任务运行（含「立即试跑」）的受控上下文；非定时任务返回 null。 */

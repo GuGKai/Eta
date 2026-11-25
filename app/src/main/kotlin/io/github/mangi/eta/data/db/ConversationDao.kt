@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 internal interface ConversationDao : ChunkedTextDao {
@@ -25,6 +26,14 @@ internal interface ConversationDao : ChunkedTextDao {
 
     @Query("SELECT id, title, created_at, updated_at, is_pinned FROM conversations")
     suspend fun conversationIdentities(): List<ConversationIdentity>
+
+    /**
+     * 会话标题的实时订阅：runtime 用它判断某个会话是否已经真正命名。
+     *
+     * 只新增查询、不改表结构，因此不需要动 EtaDatabase.version。
+     */
+    @Query("SELECT title FROM conversations WHERE id = :conversationId")
+    fun observeTitle(conversationId: String): Flow<String?>
 
     @Query("UPDATE conversations SET title = :title, updated_at = :updatedAt, is_pinned = :isPinned WHERE id = :conversationId")
     suspend fun updateConversationTitle(conversationId: String, title: String, updatedAt: Long, isPinned: Boolean = false)
