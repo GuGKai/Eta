@@ -14,7 +14,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.mangi.eta.R
+import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.LanguageSettingsRepository
+import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 
 @Composable
@@ -61,12 +64,25 @@ internal fun LanguagePreference(
         }
     }
 
-    GlassDropdownPreference(
-        title = stringResource(R.string.settings_language),
-        items = labels,
-        selectedIndex = selectedIndex,
-        backdrop = currentGlassOverlayBackdrop(),
-        startAction = startAction,
-        onSelectedIndexChange = onSelect,
-    )
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            CouiDropdownPreference(
+                title = stringResource(R.string.settings_language),
+                items = labels,
+                selectedIndex = selectedIndex,
+                icon = startAction,
+                onSelectedIndexChange = onSelect,
+            )
+        }
+        AppearanceUiStyle.MIUIX -> {
+            GlassDropdownPreference(
+                title = stringResource(R.string.settings_language),
+                items = labels,
+                selectedIndex = selectedIndex,
+                backdrop = currentGlassOverlayBackdrop(),
+                startAction = startAction,
+                onSelectedIndexChange = onSelect,
+            )
+        }
+    }
 }
