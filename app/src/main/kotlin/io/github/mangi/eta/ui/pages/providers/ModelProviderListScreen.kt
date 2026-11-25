@@ -49,8 +49,8 @@ import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiIconDivider
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
@@ -205,7 +205,7 @@ internal fun ModelProviderListScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(title = stringResource(R.string.ui_model_provider_e8c7f5), onBack = onBack) {
+            ScaffoldPage(title = stringResource(R.string.ui_model_provider_e8c7f5), onBack = onBack) {
                 item(key = "search") {
                     InputField(
                         query = searchQuery,
@@ -348,7 +348,7 @@ internal fun ModelProviderListScreen(
                 onDismissRequest = { providerToDelete = null },
                 onDismissFinished = { if (providerToDelete == null) retainedProviderToDelete = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.ui_delete_3755f5),
                     destructive = true,
                     onCancel = { providerToDelete = null },

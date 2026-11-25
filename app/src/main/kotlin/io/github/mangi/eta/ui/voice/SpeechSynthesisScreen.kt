@@ -23,7 +23,7 @@ import io.github.mangi.eta.agent.voice.audio.validateSpeechSettings
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.SettingsTextField
 import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
@@ -87,14 +87,14 @@ internal fun SpeechSynthesisScreen(onBack: () -> Unit) {
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.speech_synthesis_title),
                 onBack = onBack,
                 modifier = Modifier.imePadding(),
             ) {
                 if (!store.loaded) {
                     item(key = "loading") { SpeechLoadingState(store.message) }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
                 item(key = "service") {
                     SpeechGroupCard(title = stringResource(R.string.speech_group_service)) {

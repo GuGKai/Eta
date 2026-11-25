@@ -73,7 +73,7 @@ import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.app.TerminalBlockUi
 import io.github.mangi.eta.ui.app.UserTerminalStore
 import io.github.mangi.eta.ui.components.EtaMonospace
-import io.github.mangi.eta.ui.components.EtaTopLayer
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.ansiPlainText
 import io.github.mangi.eta.ui.components.ansiToAnnotatedString
 import io.github.mangi.eta.ui.components.coui.CouiButton
@@ -392,7 +392,7 @@ private fun BlockMenu(
         }
         AppearanceUiStyle.MIUIX -> {
             val overlayBackdrop = currentGlassOverlayBackdrop()
-            EtaTopLayer {
+            TopLayer {
                 GlassPopup(
                     show = show,
                     onDismissRequest = onDismiss,

@@ -95,8 +95,8 @@ import io.github.mangi.eta.data.update.AppUpdateChecker
 import io.github.mangi.eta.ui.app.EnhancementSettingsHistory
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.LanguagePreference
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.StatusSuccess
 import io.github.mangi.eta.ui.components.StatusWarning
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -881,7 +881,6 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     LanguagePreference(
-                        iconTint = SettingsIconColors.Blue,
                         startAction = {
                             CouiSettingsIcon(Icons.Rounded.Language, SettingsIconColors.Blue)
                         },
@@ -1008,7 +1007,7 @@ private fun SettingsPageContent(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.ui_set_up_7debf9),
                 onBack = onBack,
                 overlay = {
@@ -1023,7 +1022,7 @@ private fun SettingsPageContent(
                         onDismissRequest = { availableUpdate = null },
                         onDismissFinished = { if (availableUpdate == null) retainedUpdate = null },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.ui_update_go_download),
                             confirmEnabled = activeUpdate != null,
                             onCancel = { availableUpdate = null },

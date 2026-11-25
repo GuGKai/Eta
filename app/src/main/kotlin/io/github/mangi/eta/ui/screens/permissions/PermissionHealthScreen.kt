@@ -27,7 +27,7 @@ import com.itos.coui.text.Text as CouiText
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.color
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -70,7 +70,7 @@ fun PermissionHealthScreen(
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.ui_permission_health_3048bb),
                 onBack = { onAction(PermissionHealthAction.NavigateBack) },
                 modifier = modifier,

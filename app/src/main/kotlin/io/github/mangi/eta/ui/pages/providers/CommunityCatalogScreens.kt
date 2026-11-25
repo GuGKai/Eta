@@ -42,8 +42,8 @@ import io.github.mangi.eta.ui.app.CommunityCatalogStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiCheckboxPreference
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -202,11 +202,11 @@ internal fun CommunityCatalogScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.catalog_i18n_title),
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Refresh,
                         contentDescription = stringResource(R.string.catalog_i18n_refresh),
                         enabled = !store.loading && !store.refreshing,
@@ -481,7 +481,7 @@ internal fun CommunityCatalogProviderScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = provider?.name ?: stringResource(R.string.catalog_i18n_select_models),
                 onBack = onBack,
                 actions = {
@@ -507,7 +507,7 @@ internal fun CommunityCatalogProviderScreen(
                             )
                         }
                     }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
 
                 item(key = "provider") {

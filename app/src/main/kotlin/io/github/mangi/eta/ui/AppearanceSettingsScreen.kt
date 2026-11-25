@@ -45,8 +45,8 @@ import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
 import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.DecimalDigits
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import io.github.mangi.eta.ui.components.coui.CouiInputDialog
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
@@ -247,7 +247,7 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.appearance_title),
                 onBack = onBack,
                 overlay = {
@@ -270,7 +270,7 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                                     .fillMaxWidth()
                                     .padding(bottom = 16.dp),
                             )
-                            MiuixDialogActions(
+                            DialogActions(
                                 confirmText = stringResource(R.string.action_confirm),
                                 confirmEnabled = parsedScale != null && parsedScale in 80..110,
                                 onCancel = { showScaleDialog = false },

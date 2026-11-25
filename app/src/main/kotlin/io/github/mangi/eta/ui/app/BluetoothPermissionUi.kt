@@ -18,7 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import io.github.mangi.eta.R
-import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.model.PermissionHealthItemUi
 import io.github.mangi.eta.ui.model.PermissionStatusUi
 import top.yukonga.miuix.kmp.layout.DialogDefaults
@@ -53,7 +53,7 @@ internal fun rememberBluetoothPermissionRequest(onResult: () -> Unit): () -> Uni
             summary = stringResource(R.string.local_permission_bluetooth_denied),
             onDismissRequest = { showSettingsGuide = false },
         ) {
-            MiuixDialogActions(
+            DialogActions(
                 confirmText = stringResource(R.string.state_ui_go_to_settings_1f2998),
                 onCancel = { showSettingsGuide = false },
                 onConfirm = {

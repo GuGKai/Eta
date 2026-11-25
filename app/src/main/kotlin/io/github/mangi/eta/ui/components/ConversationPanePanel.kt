@@ -1037,7 +1037,7 @@ private fun ConversationHistoryRow(
             }
             AppearanceUiStyle.MIUIX -> {
                 val overlayBackdrop = currentGlassOverlayBackdrop() ?: miuixBackdrop
-                EtaTopLayer {
+                TopLayer {
                     GlassPopup(
                         show = showActionMenu,
                         onDismissRequest = { showActionMenu = false },

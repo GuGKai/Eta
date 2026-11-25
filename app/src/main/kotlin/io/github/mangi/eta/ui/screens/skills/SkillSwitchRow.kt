@@ -39,7 +39,7 @@ import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.EtaTopLayer
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.ItemDescriptionDialog
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
@@ -223,7 +223,7 @@ internal fun SkillSwitchRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            EtaTopLayer {
+            TopLayer {
                 GlassTransformPopup(
                     show = showMenu,
                     onDismissRequest = { showMenu = false },

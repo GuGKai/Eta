@@ -20,7 +20,7 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.AsrProvider
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.SettingsTextField
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.coui.CouiButton
@@ -125,14 +125,14 @@ internal fun SpeechRecognitionScreen(onBack: () -> Unit, onOpenOss: () -> Unit) 
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.speech_recognition_title),
                 onBack = onBack,
                 modifier = Modifier.imePadding(),
             ) {
                 if (!store.loaded) {
                     item(key = "loading") { SpeechLoadingState(store.message) }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
                 item(key = "recognition_enabled") {
                     SpeechGroupCard {

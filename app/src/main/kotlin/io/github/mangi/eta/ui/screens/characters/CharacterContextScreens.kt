@@ -14,7 +14,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.CharacterLibraryStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
@@ -24,7 +24,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 
 @Composable
 internal fun DefaultAssistantPromptScreen(store: CharacterLibraryStore, onBack: () -> Unit) {
-    MiuixScaffoldPage(title = stringResource(R.string.local_default_prompt_title), onBack = onBack, modifier = Modifier.imePadding()) {
+    ScaffoldPage(title = stringResource(R.string.local_default_prompt_title), onBack = onBack, modifier = Modifier.imePadding()) {
         store.notice?.let { item { CharacterPageMessage(it) } }
         item { CharacterPageMessage(stringResource(R.string.local_default_prompt_description)) }
         item(key = "prompt") {
@@ -68,7 +68,7 @@ internal fun CharacterPersonaScreen(store: CharacterLibraryStore, onBack: () -> 
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(title = personaTitle, onBack = onBack, modifier = Modifier.imePadding()) {
+            ScaffoldPage(title = personaTitle, onBack = onBack, modifier = Modifier.imePadding()) {
                 item(key = "name") { CharacterTextField(nameLabel, store.personaDraft.name, { store.updatePersona(name = it) }, !store.busy, singleLine = true) }
                 item(key = "persona") { CharacterTextField(identityLabel, store.personaDraft.description, { store.updatePersona(description = it) }, !store.busy, minLines = 6) }
                 item(key = "hint") { CharacterPageMessage(personaHint) }
@@ -122,7 +122,7 @@ internal fun CharacterMemoryScreen(id: String, store: CharacterLibraryStore, onB
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(title = memoryTitle, onBack = onBack, modifier = Modifier.imePadding()) {
+            ScaffoldPage(title = memoryTitle, onBack = onBack, modifier = Modifier.imePadding()) {
                 item { CharacterPageMessage(memoryHint) }
                 item(key = "memory") {
                     CharacterTextField(contentLabel, store.memoryDraft, store::updateMemory, !store.busy, minLines = 10)

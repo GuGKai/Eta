@@ -69,7 +69,7 @@ import io.github.mangi.eta.ui.IncomingShareRequest
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.ChatImagePreviewHost
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
-import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiInputDialog
@@ -1149,7 +1149,7 @@ fun AgentAppRoot(
                         label = stringResource(R.string.conversation_rename_hint),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    MiuixDialogActions(
+                    DialogActions(
                         confirmText = stringResource(R.string.action_save),
                         confirmEnabled = renameInputState.text.isNotBlank() && retainedRename != null,
                         onCancel = { conversationRenameTarget = null },
@@ -1188,7 +1188,7 @@ fun AgentAppRoot(
                 onDismissRequest = { conversationDeleteTarget = null },
                 onDismissFinished = { if (conversationDeleteTarget == null) retainedDelete = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = deleteConfirmText,
                     destructive = true,
                     onCancel = { conversationDeleteTarget = null },
@@ -1225,7 +1225,7 @@ fun AgentAppRoot(
                 onDismissRequest = { messageDeleteTarget = null },
                 onDismissFinished = { if (messageDeleteTarget == null) retainedDeleteMessage = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.action_delete),
                     destructive = true,
                     onCancel = { messageDeleteTarget = null },
@@ -1259,7 +1259,7 @@ fun AgentAppRoot(
                 onDismissRequest = { messageRegenerateTarget = null },
                 onDismissFinished = { if (messageRegenerateTarget == null) retainedRegenerate = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.action_regenerate),
                     destructive = true,
                     onCancel = { messageRegenerateTarget = null },

@@ -59,7 +59,7 @@ import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import io.github.mangi.eta.R
-import io.github.mangi.eta.ui.app.LocalEtaTopLayer
+import io.github.mangi.eta.ui.app.LocalTopLayer
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import kotlin.math.PI
@@ -154,11 +154,11 @@ fun ConversationSidePaneScaffold(
 ) {
     val sceneLifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val navigationEventState = rememberNavigationEventState(NavigationEventInfo.None)
-    val existingTopLayer = LocalEtaTopLayer.current
-    val fallbackTopLayer = if (existingTopLayer == null) remember { EtaTopLayerState() } else null
+    val existingTopLayer = LocalTopLayer.current
+    val fallbackTopLayer = if (existingTopLayer == null) remember { TopLayerState() } else null
     val activeTopLayer = existingTopLayer ?: fallbackTopLayer!!
 
-    CompositionLocalProvider(LocalEtaTopLayer provides activeTopLayer) {
+    CompositionLocalProvider(LocalTopLayer provides activeTopLayer) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val density = LocalDensity.current
         // 会话页贴住分界一侧的圆角，跟机身屏幕圆角一致。
@@ -524,7 +524,7 @@ fun ConversationSidePaneScaffold(
             }
         }
         if (fallbackTopLayer != null) {
-            EtaTopLayerHost(fallbackTopLayer)
+            TopLayerHost(fallbackTopLayer)
         }
     }
     }

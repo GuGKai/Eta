@@ -99,7 +99,7 @@ import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.DecimalDigits
 import io.github.mangi.eta.ui.components.EtaChoiceChip
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
-import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.StatusSuccess
 import io.github.mangi.eta.ui.components.captureGlassBackdrop
@@ -722,7 +722,7 @@ internal fun ProviderModelsTab(
                 onDismissRequest = { if (!isMutatingModel) modelPendingDelete = null },
                 onDismissFinished = { if (modelPendingDelete == null) retainedModelPendingDelete = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = deleteConfirmText,
                     cancelEnabled = !isMutatingModel,
                     confirmEnabled = !isMutatingModel && activeDeleteModel != null,
@@ -738,7 +738,7 @@ internal fun ProviderModelsTab(
                 summary = batchSummary,
                 onDismissRequest = { if (!isMutatingModel) showBatchDeleteDialog = false },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = batchConfirmText,
                     cancelEnabled = !isMutatingModel,
                     confirmEnabled = !isMutatingModel,
@@ -1466,7 +1466,7 @@ private fun ModelEditDialog(
                             }
                         }
                     }
-                    MiuixDialogActions(
+                    DialogActions(
                         confirmText = confirmText,
                         confirmEnabled = confirmEnabled,
                         cancelEnabled = !isSaving,

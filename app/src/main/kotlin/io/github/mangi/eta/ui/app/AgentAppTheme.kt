@@ -36,8 +36,8 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.DEFAULT_INTERFACE_SCALE
 import io.github.mangi.eta.data.model.normalizeInterfaceScale
 import io.github.mangi.eta.ui.components.DemandSceneBackdrop
-import io.github.mangi.eta.ui.components.EtaTopLayerHost
-import io.github.mangi.eta.ui.components.EtaTopLayerState
+import io.github.mangi.eta.ui.components.TopLayerHost
+import io.github.mangi.eta.ui.components.TopLayerState
 import io.github.mangi.eta.ui.components.captureGlassBackdrop
 import io.github.mangi.eta.ui.components.rememberGlassBackdrop
 import kotlinx.coroutines.delay
@@ -232,7 +232,7 @@ fun AgentAppTheme(
                     val sceneBackdrop = remember(delegateBackdrop, surfaceColor) {
                         delegateBackdrop?.let { DemandSceneBackdrop(it, fallbackColor = surfaceColor) }
                     }
-                    val topLayer = remember { EtaTopLayerState() }
+                    val topLayer = remember { TopLayerState() }
                     var hasActiveMiuixPopup by remember { mutableStateOf(false) }
                     var hasActiveTopLayerOverlay by remember { mutableStateOf(false) }
                     val hasActiveOverlay = hasActiveMiuixPopup || hasActiveTopLayerOverlay
@@ -265,7 +265,7 @@ fun AgentAppTheme(
                     ) {
                         CompositionLocalProvider(
                             LocalGlassSceneBackdrop provides sceneBackdrop,
-                            LocalEtaTopLayer provides topLayer,
+                            LocalTopLayer provides topLayer,
                         ) {
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Box(
@@ -277,7 +277,7 @@ fun AgentAppTheme(
                                 ) {
                                     scopedContent()
                                 }
-                                EtaTopLayerHost(
+                                TopLayerHost(
                                     state = topLayer,
                                     onActiveOverlayChanged = { hasActiveTopLayerOverlay = it },
                                 )

@@ -27,8 +27,8 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.CharacterLibraryStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ItemDescriptionDialog
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -235,7 +235,7 @@ internal fun CharacterDetailScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = "",
                 onBack = onBack,
                 compactTitle = true,
@@ -247,7 +247,7 @@ internal fun CharacterDetailScreen(
                         summary = deleteMessage,
                         onDismissRequest = { showDeleteConfirm = false },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = deleteConfirmText,
                             destructive = true,
                             confirmEnabled = !store.busy && profile != null,
@@ -268,7 +268,7 @@ internal fun CharacterDetailScreen(
             ) {
                 if (profile == null) {
                     item { CharacterPageMessage(loadStateText) }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
                 item(key = "hero") {
                     CharacterHero(

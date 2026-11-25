@@ -229,7 +229,7 @@ internal fun TurnStatsPill(
         }
 
         if (!isCoui && overlayBackdrop != null) {
-            EtaTopLayer {
+            TopLayer {
                 GlassTransformPopup(
                     show = open,
                     onDismissRequest = { open = false },
@@ -474,7 +474,7 @@ internal fun ContextUsageStatsPopoverPopup(
     val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
     val overlayBackdrop = currentGlassOverlayBackdrop()
     if (!isCoui && anchor != null && anchorContent != null && overlayBackdrop != null) {
-        EtaTopLayer {
+        TopLayer {
             GlassTransformPopup(
                 show = show,
                 onDismissRequest = onDismissRequest,
@@ -506,7 +506,7 @@ internal fun ChatStatsPopoverPopup(
     // 非焦点弹层收不到外部点击与返回键，所以自己补一层应用内全屏遮罩 + BackHandler：
     // 点外面只关卡片，输入框的键盘始终不收起。
     BackHandler { onDismissRequest() }
-    EtaTopLayer {
+    TopLayer {
         Box(
             modifier = Modifier
                 .fillMaxSize()

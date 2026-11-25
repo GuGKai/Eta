@@ -59,9 +59,9 @@ import com.itos.coui.scroll.rememberCouiOverscrollEffect
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffold
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.PageScaffold
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -175,11 +175,11 @@ internal fun AgentMemoryScreen(
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffold(
+            PageScaffold(
                 title = stringResource(R.string.ui_memory_b55ff5),
                 onBack = { onAction(AgentMemoryAction.NavigateBack) },
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Delete,
                         contentDescription = stringResource(R.string.ui_clear_all_memory_a43bd3),
                         enabled = canClear,
@@ -195,7 +195,7 @@ internal fun AgentMemoryScreen(
                         summary = stringResource(R.string.ui_the_entire_contents_of_memory_md_will_be_deleted_and_83a8ac),
                         onDismissRequest = { showClearDialog = false },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.memory_clear),
                             destructive = true,
                             confirmEnabled = !state.isSaving,

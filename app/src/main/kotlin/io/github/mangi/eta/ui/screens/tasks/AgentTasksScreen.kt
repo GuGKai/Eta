@@ -58,7 +58,7 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ItemDescriptionDialog
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -380,7 +380,7 @@ private fun MiuixTasksPage(
     onDescribe: (AgentTaskEntity) -> Unit,
     onSelectTrigger: (TaskTriggerUi) -> Unit,
 ) {
-    MiuixScaffoldPage(
+    ScaffoldPage(
         title = stringResource(R.string.local_automation_title),
         onBack = onBack,
         compactTitle = true,

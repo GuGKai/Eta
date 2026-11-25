@@ -26,8 +26,8 @@ import io.github.mangi.eta.core.safeStackTrace
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.EtaBackupSummary
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -203,7 +203,7 @@ internal fun DataBackupScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.data_backup_title),
                 onBack = onBack,
                 overlay = {
@@ -214,7 +214,7 @@ internal fun DataBackupScreen(
                         summary = stringResource(R.string.data_backup_import_confirm_summary),
                         onDismissRequest = onDismissImport,
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = confirmImportText,
                             destructive = true,
                             cancelEnabled = !busy,

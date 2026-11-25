@@ -138,7 +138,7 @@ internal fun AccountBalanceCapsules(
                 // 输入框与下面两个按钮之间留出间距，原来两者是贴在一起的。
                 Spacer(modifier = Modifier.height(12.dp))
 
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.action_confirm),
                     confirmEnabled = parsed != null,
                     onCancel = { editing = false },

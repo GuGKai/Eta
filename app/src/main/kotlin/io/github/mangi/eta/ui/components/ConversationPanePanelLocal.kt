@@ -395,7 +395,7 @@ internal fun ConversationPaneWorkspaceChips(
     // show 必须由 false 翻到 true，GlassPopup 才会跑展开动画；直接写死 true 就是「首帧全展开」，
     // 看起来像没有动画。
     if (!isCoui) {
-        EtaTopLayer {
+        TopLayer {
             GlassPopup(
                 show = miuixMenuVisible,
                 onDismissRequest = {
@@ -990,7 +990,7 @@ internal fun WorkspaceRow(
             AppearanceUiStyle.MIUIX -> {
                 val renameText = stringResource(R.string.local_action_rename_workspace)
                 val deleteText = stringResource(R.string.local_action_delete_workspace)
-                EtaTopLayer {
+                TopLayer {
                     GlassPopup(
                         show = showActionMenu,
                         onDismissRequest = { showActionMenu = false },
@@ -1094,7 +1094,7 @@ internal fun WorkspaceNameDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = saveText,
                     confirmEnabled = canSave,
                     onCancel = onDismiss,
@@ -1132,7 +1132,7 @@ internal fun WorkspaceDeleteDialog(
             summary = message,
             onDismissRequest = onDismiss,
         ) {
-            MiuixDialogActions(
+            DialogActions(
                 confirmText = deleteText,
                 destructive = true,
                 onCancel = onDismiss,
@@ -1289,7 +1289,7 @@ internal fun WorkspaceMoveDialog(
                     )
                 }
                 if (canRemove) {
-                    MiuixDialogActions(
+                    DialogActions(
                         confirmText = removeText,
                         destructive = true,
                         onCancel = onDismiss,

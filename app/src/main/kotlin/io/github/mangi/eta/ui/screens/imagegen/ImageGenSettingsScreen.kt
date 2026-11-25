@@ -59,8 +59,8 @@ import io.github.mangi.eta.data.model.SpeechRegion
 import io.github.mangi.eta.data.model.XaiImageConfig
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixSecureTextField
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.SecureTextField
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.StatusSuccess
 import io.github.mangi.eta.ui.components.StatusWarning
@@ -627,7 +627,7 @@ internal fun ImageGenSettingsScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.image_gen_settings_title),
                 onBack = onBack,
                 modifier = Modifier.imePadding(),
@@ -643,7 +643,7 @@ internal fun ImageGenSettingsScreen(
                             InfiniteProgressIndicator()
                         }
                     }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
 
                 item(key = "enable_card") {
@@ -866,7 +866,7 @@ internal fun ImageGenSettingsScreen(
                                     }
                                 }
 
-                                MiuixSecureTextField(
+                                SecureTextField(
                                     state = apiKeyField,
                                     label = stringResource(R.string.imagegen_field_api_key),
                                     visible = apiKeyVisible,

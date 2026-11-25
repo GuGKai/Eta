@@ -93,9 +93,9 @@ import io.github.mangi.eta.ui.components.ChatActionIcons
 import io.github.mangi.eta.ui.components.AgentTopBarChatHeader
 import io.github.mangi.eta.ui.components.ChatImagePreviewHost
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
-import io.github.mangi.eta.ui.components.EtaTopLayer
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
-import io.github.mangi.eta.ui.components.MiuixBackButton
+import io.github.mangi.eta.ui.components.TopBarBackButton
 import io.github.mangi.eta.ui.components.NonFocusablePopupProperties
 import io.github.mangi.eta.ui.components.RoleplayChatUi
 import io.github.mangi.eta.ui.components.captureGlassBackdrop
@@ -538,7 +538,7 @@ private fun AgentTopBar(
         backdrop = backdrop,
         expandable = route !is AppRoute.Terminal && !rememberIsWideScreen(),
         scrollBehavior = scrollBehavior,
-        navigationIcon = { MiuixBackButton(onClick = onBack) },
+        navigationIcon = { TopBarBackButton(onClick = onBack) },
         actions = {},
     )
 }
@@ -705,7 +705,7 @@ private fun TopBarOverflowMenu(
     }
 
     if (isCurrentRoute) {
-        EtaTopLayer {
+        TopLayer {
             GlassTransformPopup(
                 show = showMenu,
                 onDismissRequest = { showMenu = false },

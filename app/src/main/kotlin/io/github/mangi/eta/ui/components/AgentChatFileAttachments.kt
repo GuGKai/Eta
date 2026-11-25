@@ -388,7 +388,7 @@ internal fun AgentAttachmentPickerButton(
                         MiuixIcons.Glass.Edit,
                     )
                 }
-                EtaTopLayer {
+                TopLayer {
                     GlassTransformPopup(
                         show = showPopup,
                         onDismissRequest = { showPopup = false },
@@ -468,7 +468,7 @@ internal fun AgentAttachmentPickerButton(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    MiuixDialogActions(
+                    DialogActions(
                         confirmText = stringResource(R.string.attachment_add),
                         confirmEnabled = pathInputState.text.toString().trim().startsWith('/'),
                         onCancel = { showPathDialog = false },

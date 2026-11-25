@@ -62,10 +62,10 @@ import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RemoteModelFetcher
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixPageBottomSpacer
-import io.github.mangi.eta.ui.components.MiuixScaffold
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.PageBottomSpacer
+import io.github.mangi.eta.ui.components.PageScaffold
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.StatusSuccess
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
@@ -169,7 +169,7 @@ internal fun ModelProviderDetailScreen(
                 }
             }
             AppearanceUiStyle.MIUIX -> {
-                MiuixScaffoldPage(
+                ScaffoldPage(
                     title = stringResource(R.string.route_provider_details),
                     onBack = onBack,
                 ) {
@@ -276,7 +276,7 @@ internal fun ModelProviderDetailScreen(
                         scrollBehavior.state.overscrollOffset < -1f
                 }
             }
-            MiuixScaffold(
+            PageScaffold(
                 title = title,
                 onBack = onBack,
                 scrollBehavior = scrollBehavior,
@@ -678,7 +678,7 @@ private fun ProviderConfigTab(
             if (uiStyle == AppearanceUiStyle.COUI) {
                 CouiPageBottomSpacer()
             } else {
-                MiuixPageBottomSpacer()
+                PageBottomSpacer()
             }
         }
     }
@@ -767,7 +767,7 @@ private fun ProviderConfigTab(
                 summary = stringResource(R.string.provider_delete_summary, providerDisplayName),
                 onDismissRequest = { if (!isWorking) showDeleteDialog = false },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = deleteConfirmText,
                     cancelEnabled = !isWorking,
                     confirmEnabled = !isWorking,
@@ -783,7 +783,7 @@ private fun ProviderConfigTab(
                 summary = stringResource(R.string.provider_reset_summary, providerDisplayName),
                 onDismissRequest = { if (!isWorking) showResetDialog = false },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = resetConfirmText,
                     cancelEnabled = !isWorking,
                     confirmEnabled = !isWorking,

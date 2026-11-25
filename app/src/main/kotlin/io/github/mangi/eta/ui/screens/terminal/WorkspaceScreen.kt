@@ -45,7 +45,7 @@ import io.github.mangi.eta.ui.app.WorkspaceEntry
 import io.github.mangi.eta.ui.app.WorkspaceFileStore
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiSectionTitle
@@ -386,7 +386,7 @@ internal fun WorkspaceScreen(onBack: () -> Unit) {
             )
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.capability_workspace),
                 onBack = onBack,
                 content = listContent,

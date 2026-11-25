@@ -53,8 +53,8 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ListEmptyState
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiIcon
@@ -166,7 +166,7 @@ internal fun ImageGenGalleryScreen(
                 backdrop = currentGlassOverlayBackdrop(),
                 onDismissRequest = { confirmClearAll = false },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     cancelText = stringResource(R.string.action_cancel),
                     confirmText = clearAction,
                     destructive = true,
@@ -199,7 +199,7 @@ internal fun ImageGenGalleryScreen(
                 backdrop = currentGlassOverlayBackdrop(),
                 onDismissRequest = { pendingDelete = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     cancelText = stringResource(R.string.action_cancel),
                     confirmText = deleteAction,
                     destructive = true,
@@ -291,7 +291,7 @@ internal fun ImageGenGalleryScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.image_gen_gallery_title),
                 onBack = onBack,
                 actions = {

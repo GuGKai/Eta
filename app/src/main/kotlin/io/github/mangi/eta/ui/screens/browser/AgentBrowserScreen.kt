@@ -36,7 +36,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import kotlinx.coroutines.CancellationException
@@ -183,7 +183,7 @@ internal fun AgentBrowserScreen(
                 summary = stringResource(R.string.browser_clear_shared_data_message),
                 onDismissRequest = { showClearDataDialog = false },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.browser_clear_shared_data),
                     confirmEnabled = !actionPending,
                     destructive = true,

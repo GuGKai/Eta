@@ -12,7 +12,7 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiScaffoldPage
@@ -70,13 +70,13 @@ internal fun SpeechSettingsScreen(onBack: () -> Unit, onNavigate: (AppRoute) -> 
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.speech_settings_title),
                 onBack = onBack,
             ) {
                 if (current == null) {
                     item(key = "loading") { SpeechLoadingState(failure = null) }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
                 item(key = "service") {
                     SpeechGroupCard(title = stringResource(R.string.speech_group_service)) {

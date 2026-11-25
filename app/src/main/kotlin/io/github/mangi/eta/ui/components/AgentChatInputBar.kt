@@ -1030,7 +1030,7 @@ private fun ThinkingEffortChip(
             }
                 AppearanceUiStyle.MIUIX -> {
                     val overlayBackdrop = currentGlassOverlayBackdrop() ?: glassBackdrop
-                    EtaTopLayer {
+                    TopLayer {
                         GlassTransformPopup(
                             show = showPopup && interactive,
                             onDismissRequest = { showPopup = false },

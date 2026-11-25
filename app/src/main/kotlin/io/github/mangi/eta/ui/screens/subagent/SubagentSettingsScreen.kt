@@ -56,9 +56,9 @@ import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.OptionalModelPickerContent
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.coui.CouiButton
@@ -542,11 +542,11 @@ internal fun SubagentSettingsScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.ui_misc_route_subagents),
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Add,
                         contentDescription = stringResource(R.string.subagent_settings_create),
                         onClick = {
@@ -660,7 +660,7 @@ internal fun SubagentSettingsScreen(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))
-                                MiuixDialogActions(
+                                DialogActions(
                                     confirmText = stringResource(R.string.action_save),
                                     onCancel = { editorDraft = null },
                                     onConfirm = { editorDraft?.let(onSaveDraft) },
@@ -688,7 +688,7 @@ internal fun SubagentSettingsScreen(
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 )
                                 Spacer(modifier = Modifier.height(20.dp))
-                                MiuixDialogActions(
+                                DialogActions(
                                     confirmText = stringResource(R.string.action_delete),
                                     destructive = true,
                                     onCancel = { deleteTargetProfile = null },

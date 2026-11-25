@@ -56,9 +56,9 @@ import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.ScheduledTaskRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -365,12 +365,12 @@ internal fun ScheduledTaskDetailScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = title,
                 onBack = onBack,
                 actions = {
                     if (currentTask != null) {
-                        MiuixTopBarActionButton(
+                        TopBarActionButton(
                             icon = MiuixIcons.Glass.Edit,
                             contentDescription = stringResource(R.string.route_scheduled_task_edit),
                             onClick = { onNavigate(AppRoute.ScheduledTaskEditor(taskId = taskId)) },
@@ -421,7 +421,7 @@ internal fun ScheduledTaskDetailScreen(
                                 )
                                 Text(
                                     text = stringResource(
-                                        R.string.scheduled_detail_miuix_model_meta,
+                                        R.string.scheduled_detail_model_meta,
                                         modelDisplay,
                                         ScheduledTaskUiFormatting.deliveryBadge(currentTask.deliveryMode),
                                         stringResource(
@@ -437,7 +437,7 @@ internal fun ScheduledTaskDetailScreen(
                                 )
                                 Text(
                                     text = stringResource(
-                                        R.string.scheduled_detail_miuix_capabilities_meta,
+                                        R.string.scheduled_detail_capabilities_meta,
                                         buildCapabilitiesSummary(currentTask),
                                     ),
                                     fontSize = 12.sp,
@@ -534,7 +534,7 @@ internal fun ScheduledTaskDetailScreen(
                     backdrop = currentGlassOverlayBackdrop(),
                     onDismissRequest = { showDeleteConfirm = false },
                 ) {
-                    MiuixDialogActions(
+                    DialogActions(
                         confirmText = stringResource(R.string.action_delete),
                         destructive = true,
                         onCancel = { showDeleteConfirm = false },
@@ -550,7 +550,7 @@ internal fun ScheduledTaskDetailScreen(
                     backdrop = currentGlassOverlayBackdrop(),
                     onDismissRequest = { showClearMemoConfirm = false },
                 ) {
-                    MiuixDialogActions(
+                    DialogActions(
                         confirmText = stringResource(R.string.scheduled_action_clear),
                         destructive = true,
                         onCancel = { showClearMemoConfirm = false },

@@ -19,7 +19,7 @@ import androidx.compose.ui.res.stringResource
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.device.LocalNetworkPermission
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.model.LOCAL_NETWORK_PERMISSION_ITEM_ID
@@ -75,7 +75,7 @@ internal fun rememberLocalNetworkPermissionRequest(onResult: () -> Unit): () -> 
                 summary = stringResource(R.string.permission_local_network_denied),
                 onDismissRequest = { showSettingsGuide = false },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.state_ui_go_to_settings_1f2998),
                     onCancel = { showSettingsGuide = false },
                     onConfirm = onConfirmSettings,

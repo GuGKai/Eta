@@ -32,8 +32,8 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.CharacterLibraryStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
@@ -205,18 +205,18 @@ internal fun CharacterLibraryScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = libraryTitle,
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Import,
                         contentDescription = importCardDesc,
                         enabled = !store.busy,
                         onClick = importCard,
                     )
                     Spacer(Modifier.width(8.dp))
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Add,
                         contentDescription = createCharacterText,
                         enabled = !store.busy,

@@ -49,7 +49,7 @@ import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.app.launchForegroundExecution
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.app.rememberExecutionNotificationRequest
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -551,7 +551,7 @@ internal fun LinuxEnvironmentScreen(
             )
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.ui_linux_tool_environment_314d22),
                 onBack = onBack,
                 content = listContent,

@@ -79,9 +79,9 @@ import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.repository.ScheduledTaskRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.OptionalModelPickerContent
 import io.github.mangi.eta.ui.components.coui.CouiChipTabs
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -711,12 +711,12 @@ internal fun ScheduledTaskEditorScreen(
             var pickerDaysOfWeek by remember { mutableStateOf(daysOfWeek) }
             var pickerHour by remember { mutableIntStateOf(hour) }
             var pickerMinute by remember { mutableIntStateOf(minute) }
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = pageTitle,
                 onBack = onBack,
                 modifier = Modifier.imePadding(),
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Ok,
                         contentDescription = stringResource(R.string.action_save),
                         enabled = canSave,
@@ -792,7 +792,7 @@ internal fun ScheduledTaskEditorScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.action_confirm),
                             onCancel = { showTimePicker = false },
                             onConfirm = {

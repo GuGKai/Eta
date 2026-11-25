@@ -29,9 +29,9 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
-import io.github.mangi.eta.ui.components.MiuixFooterHint
+import io.github.mangi.eta.ui.components.FooterHint
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.OptionalModelPickerContent
 import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
@@ -206,7 +206,7 @@ internal fun AssistantOverlaySettingsScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = pageTitle,
                 onBack = onBack,
                 overlay = {
@@ -255,7 +255,7 @@ internal fun AssistantOverlaySettingsScreen(
                             )
                         }
                     }
-                    MiuixFooterHint(text = noteText)
+                    FooterHint(text = noteText)
                 }
             }
         }

@@ -87,7 +87,7 @@ class GlassComponentsTest {
                     provideGlassHost = true,
                 ) {
                     Column {
-                        EtaGlassSpinnerPreference(
+                        GlassSpinnerPreference(
                             title = "运行方式",
                             items = listOf(
                                 DropdownItem(text = "PRoot", summary = "无需 Root", enabled = true),
@@ -145,7 +145,7 @@ class GlassComponentsTest {
                     applyInterfaceScale = false,
                 ) {
                     Scaffold {
-                        EtaGlassSpinnerPreference(
+                        GlassSpinnerPreference(
                             title = "音色",
                             items = listOf(
                                 DropdownItem(text = "Cherry", summary = "清澈女声"),
@@ -192,7 +192,7 @@ class GlassComponentsTest {
                     appearance = AppearanceUiStyle.MIUIX.let { AppearanceSettings(uiStyle = it) },
                     applyInterfaceScale = false,
                 ) {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Refresh,
                         contentDescription = "刷新",
                         enabled = enabled,
@@ -471,7 +471,7 @@ class GlassComponentsTest {
                     if (style == AppearanceUiStyle.COUI) {
                         CouiTextField(state = state, label = "密钥", secretVisible = visible)
                     } else {
-                        MiuixSecureTextField(state = state, label = "密钥", visible = visible)
+                        SecureTextField(state = state, label = "密钥", visible = visible)
                     }
                 }
             }

@@ -56,7 +56,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.browser.BrowserSessionSnapshot
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.EtaTopLayer
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
@@ -297,7 +297,7 @@ private fun BrowserOverflowMenu(items: List<DropdownItem>) {
             }
             AppearanceUiStyle.MIUIX -> {
                 val overlayBackdrop = currentGlassOverlayBackdrop()
-                EtaTopLayer {
+                TopLayer {
                     GlassTransformPopup(
                         show = expanded,
                         onDismissRequest = { expanded = false },

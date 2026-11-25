@@ -65,8 +65,8 @@ import io.github.mangi.eta.agent.terminal.shellQuote
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.EtaMonospace
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -271,7 +271,7 @@ internal fun SharedFoldersScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.shared_folders_title),
                 onBack = onBack,
                 overlay = {
@@ -295,7 +295,7 @@ internal fun SharedFoldersScreen(
                         onDismissRequest = { removeTarget = null },
                         onDismissFinished = { if (removeTarget == null) retainedRemoveTarget = null },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.action_delete),
                             destructive = true,
                             confirmEnabled = activeRemoveTarget != null,
@@ -673,7 +673,7 @@ private fun SharedFolderPickerBody(
     } else {
         Column {
             bodyContent()
-            MiuixDialogActions(
+            DialogActions(
                 confirmText = stringResource(R.string.shared_folders_add),
                 onCancel = onDismiss,
                 onConfirm = onValidateAndConfirm,

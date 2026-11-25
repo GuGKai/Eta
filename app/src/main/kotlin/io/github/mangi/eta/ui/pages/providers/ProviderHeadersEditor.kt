@@ -35,7 +35,7 @@ import com.itos.coui.layout.Divider
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixSecureTextField
+import io.github.mangi.eta.ui.components.SecureTextField
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiTextField
@@ -263,7 +263,7 @@ private fun ProviderHeaderRow(
                         label = nameLabel,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    MiuixSecureTextField(
+                    SecureTextField(
                         state = valueState,
                         label = valueLabel,
                         visible = visible,

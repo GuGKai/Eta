@@ -78,7 +78,7 @@ internal fun SettingsTextField(
         }
         AppearanceUiStyle.MIUIX -> {
             if (secret) {
-                MiuixSecureTextField(
+                SecureTextField(
                     state = fieldState,
                     inputTransformation = inputTransformation,
                     label = label,

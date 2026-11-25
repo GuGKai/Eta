@@ -1,22 +1,27 @@
 package io.github.mangi.eta.ui.app
 
 import android.os.Looper
-import android.util.DisplayMetrics
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
@@ -25,13 +30,14 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
 import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
 import io.github.mangi.eta.agent.overlay.AgentResultCard
 import io.github.mangi.eta.data.model.AppearanceSettings
-import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
@@ -43,6 +49,7 @@ import io.github.mangi.eta.ui.model.PermissionStatusUi
 import io.github.mangi.eta.ui.model.SkillItemUi
 import io.github.mangi.eta.ui.model.ToolGroupUi
 import io.github.mangi.eta.ui.model.ToolItemUi
+import io.github.mangi.eta.ui.navigation.NewProviderType
 import io.github.mangi.eta.ui.pages.providers.CommunityCatalogScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
@@ -69,9 +76,12 @@ import io.github.mangi.eta.ui.voice.SpeechOssScreen
 import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
 import io.github.mangi.eta.ui.voice.SpeechSettingsScreen
 import io.github.mangi.eta.ui.voice.SpeechSynthesisScreen
+import java.time.Duration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -81,36 +91,50 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EtaApp::class, sdk = [36])
 @LooperMode(LooperMode.Mode.PAUSED)
-class UiStyleThemeAndScreensTest {
+class AppThemeAndScreensTest {
 
     @Test
-    fun switchingUiStylePreservesStateAndSynchronizesPageAndDialogScaleWith100PercentBaseline() {
+    fun switchingThemeModePreservesStateAndUsesSystemDensity() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         val looper = shadowOf(Looper.getMainLooper())
-        val baseDensity = activity.resources.configuration.densityDpi.toFloat() / DisplayMetrics.DENSITY_DEFAULT
+        val baseDensity = activity.resources.displayMetrics.density
 
-        var appearance by mutableStateOf(
-            AppearanceSettings(
-                uiStyle = AppearanceUiStyle.COUI,
-                interfaceScale = 1.0f,
-            ),
-        )
-        var observedStyle by mutableStateOf<AppearanceUiStyle?>(null)
+        var appearance by mutableStateOf(AppearanceSettings(themeMode = AppearanceThemeMode.LIGHT))
+        var resolvedDark by mutableStateOf<Boolean?>(null)
         var pageDensity by mutableStateOf(0f)
         var dialogDensity by mutableStateOf(0f)
         var mountCount = 0
         var latestDraft = ""
 
+        val frameClock = BroadcastFrameClock()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + frameClock)
+        val recomposer = Recomposer(scope.coroutineContext)
+
+        fun settle() {
+            repeat(6) {
+                Snapshot.sendApplyNotifications()
+                looper.idleFor(Duration.ofMillis(16))
+                frameClock.sendFrame(SystemClock.uptimeMillis() * 1_000_000L)
+                forceLayoutTree(activity.window.decorView)
+                measureAndLayoutActivity(activity)
+                looper.idle()
+            }
+        }
+
         try {
-            activity.setContent {
+            scope.launch { recomposer.runRecomposeAndApplyChanges() }
+            val view = ComposeView(activity)
+            view.setParentCompositionContext(recomposer)
+            view.setContent {
                 AgentAppTheme(
                     appearance = appearance,
-                    applyInterfaceScale = true,
+                    onResolvedDarkModeChange = { resolvedDark = it },
                 ) {
                     var draftText by rememberSaveable { mutableStateOf("initial-draft") }
                     var counter by remember { mutableIntStateOf(1) }
@@ -119,7 +143,6 @@ class UiStyleThemeAndScreensTest {
                         draftText = "edited-draft-$counter"
                     }
                     latestDraft = draftText
-                    observedStyle = LocalUiStyle.current
                     pageDensity = LocalDensity.current.density
                     Box(Modifier.size(100.dp))
                     Dialog(onDismissRequest = {}) {
@@ -128,54 +151,42 @@ class UiStyleThemeAndScreensTest {
                     }
                 }
             }
-            looper.idle()
-            measureAndLayoutActivity(activity)
-            looper.idle()
+            activity.setContentView(view)
+            settle()
 
-            assertEquals(AppearanceUiStyle.COUI, observedStyle)
+            assertEquals(false, resolvedDark)
             assertEquals(1, mountCount)
             assertEquals("edited-draft-1", latestDraft)
             assertEquals(baseDensity, pageDensity, 0.001f)
             assertEquals(baseDensity, dialogDensity, 0.001f)
 
-            // 切换到 90% 缩放并切换 UI 样式到 Miuix：草稿与组合树状态保持不丢失，页面与独立窗口缩放一致
-            appearance = appearance.copy(
-                uiStyle = AppearanceUiStyle.MIUIX,
-                interfaceScale = 0.9f,
-            )
-            looper.idle()
-            measureAndLayoutActivity(activity)
-            looper.idle()
+            appearance = appearance.copy(themeMode = AppearanceThemeMode.DARK)
+            settle()
 
-            assertEquals(AppearanceUiStyle.MIUIX, observedStyle)
+            assertEquals(true, resolvedDark)
             assertEquals(1, mountCount)
             assertEquals("edited-draft-1", latestDraft)
-            assertEquals(baseDensity * 0.9f, pageDensity, 0.001f)
-            assertEquals(baseDensity * 0.9f, activity.resources.displayMetrics.density, 0.001f)
-
-            // 再切回 COUI：状态依然保持不变
-            appearance = appearance.copy(uiStyle = AppearanceUiStyle.COUI)
-            looper.idle()
-            measureAndLayoutActivity(activity)
-            looper.idle()
-
-            assertEquals(AppearanceUiStyle.COUI, observedStyle)
-            assertEquals(1, mountCount)
-            assertEquals("edited-draft-1", latestDraft)
+            assertEquals(baseDensity, pageDensity, 0.001f)
+            assertEquals(baseDensity, activity.resources.displayMetrics.density, 0.001f)
         } finally {
+            recomposer.cancel()
+            scope.cancel()
             controller.pause().stop().destroy()
         }
     }
 
     @Test
-    fun primaryAndSecondaryScreensComposeAndInteractAcrossCouiAndMiuix() {
+    fun primaryAndSecondaryScreensComposeAndInteract() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         val looper = shadowOf(Looper.getMainLooper())
+        val appInfo = activity.application.applicationInfo
+        val previousLocaleConfig = ReflectionHelpers.getField<Int>(appInfo, "localeConfigRes")
 
-        var uiStyle by mutableStateOf(AppearanceUiStyle.COUI)
         var screenIndex by mutableIntStateOf(0)
         var backPressedCount = 0
+        val baseDensity = activity.resources.displayMetrics.density
+        var pageDensity = 0f
 
         val toolsState = AgentToolsUiState(
             groups = listOf(
@@ -225,86 +236,86 @@ class UiStyleThemeAndScreensTest {
         val browserSession = BrowserSessionRegistry.get("test-session")
 
         try {
+            // Robolectric 的 ApplicationInfo 未载入 Manifest 引用的语言资源。
+            ReflectionHelpers.setField(appInfo, "localeConfigRes", R.xml.locales_config)
             activity.setContent {
-                AgentAppTheme(
-                    appearance = AppearanceSettings(uiStyle = uiStyle),
-                    applyInterfaceScale = true,
-                ) {
-                    when (screenIndex) {
-                        0 -> AppearanceSettingsScreen(onBack = { backPressedCount++ })
-                        1 -> SettingsScreen(context = activity, onNavigate = {}, onBack = { backPressedCount++ })
-                        2 -> ModelProviderListScreen(onNavigate = {}, onBack = { backPressedCount++ })
-                        3 -> ModelProviderDetailScreen(
-                            newType = io.github.mangi.eta.ui.navigation.NewProviderType.OpenAiCompatible,
-                            onBack = { backPressedCount++ },
-                        )
-                        4 -> AgentToolsScreen(state = toolsState, onAction = {})
-                        5 -> WebToolsSettingsScreen(onBack = { backPressedCount++ })
-                        6 -> AgentSkillsScreen(state = skillsState, onAction = {})
-                        7 -> SubagentSettingsScreen(onBack = { backPressedCount++ })
-                        8 -> McpServersScreen(onNavigate = {}, onBack = { backPressedCount++ })
-                        9 -> PermissionHealthScreen(state = permissionsState, onAction = {})
-                        10 -> SystemEnhanceScreen(onAction = {})
-                        11 -> DataBackupScreen(
-                            context = activity,
-                            onBack = { backPressedCount++ },
-                            onExport = { error("unused") },
-                            onImport = { error("unused") },
-                        )
-                        12 -> AgentMemoryScreen(state = memoryState, onAction = {})
-                        13 -> SpeechSettingsScreen(onBack = { backPressedCount++ }, onNavigate = {})
-                        14 -> SpeechRecognitionScreen(onBack = { backPressedCount++ }, onOpenOss = {})
-                        15 -> SpeechSynthesisScreen(onBack = { backPressedCount++ })
-                        16 -> SpeechOssScreen(onBack = { backPressedCount++ })
-                        17 -> CommunityCatalogScreen(store = catalogStore, onNavigate = {}, onBack = { backPressedCount++ })
-                        18 -> CharacterLibraryScreen(store = characterStore, onNavigate = {}, onBack = { backPressedCount++ })
-                        19 -> CharacterPersonaScreen(store = characterStore, onBack = { backPressedCount++ })
-                        20 -> CharacterMemoryScreen(id = "char-1", store = characterStore, onBack = { backPressedCount++ })
-                        21 -> LinuxEnvironmentScreen(context = activity, onNavigate = {}, onBack = { backPressedCount++ })
-                        22 -> LinuxFilesScreen(context = activity, distribution = "alpine", onBack = { backPressedCount++ })
-                        23 -> SharedFoldersScreen(context = activity, onBack = { backPressedCount++ })
-                        24 -> WorkspaceScreen(onBack = { backPressedCount++ })
-                        25 -> AgentBrowserScreen(session = browserSession, onBack = { backPressedCount++ })
-                        26 -> AgentResultCard(
-                            state = AgentOverlayState(
-                                phase = AgentOverlayPhase.FINISHED,
-                                status = AgentOverlayStatus.ResultReady,
-                                detailText = "Task completed",
-                            ),
-                            onClose = {},
-                            onOpenEta = {},
-                        )
-                        27 -> AgentAppRoot()
-                        28 -> ConversationTitleSettingsScreen(onBack = { backPressedCount++ })
-                        29 -> AssistantOverlaySettingsScreen(onBack = { backPressedCount++ })
+                key(screenIndex) {
+                    AgentAppTheme(appearance = AppearanceSettings()) {
+                        pageDensity = LocalDensity.current.density
+                        when (screenIndex) {
+                            0 -> AppearanceSettingsScreen(onBack = { backPressedCount++ })
+                            1 -> SettingsScreen(context = activity, onNavigate = {}, onBack = { backPressedCount++ })
+                            2 -> ModelProviderListScreen(onNavigate = {}, onBack = { backPressedCount++ })
+                            3 -> ModelProviderDetailScreen(
+                                newType = NewProviderType.OpenAiCompatible,
+                                onBack = { backPressedCount++ },
+                            )
+                            4 -> AgentToolsScreen(state = toolsState, onAction = {})
+                            5 -> WebToolsSettingsScreen(onBack = { backPressedCount++ })
+                            6 -> AgentSkillsScreen(state = skillsState, onAction = {})
+                            7 -> SubagentSettingsScreen(onBack = { backPressedCount++ })
+                            8 -> McpServersScreen(onNavigate = {}, onBack = { backPressedCount++ })
+                            9 -> PermissionHealthScreen(state = permissionsState, onAction = {})
+                            10 -> SystemEnhanceScreen(onAction = {})
+                            11 -> DataBackupScreen(
+                                context = activity,
+                                onBack = { backPressedCount++ },
+                                onExport = { error("unused") },
+                                onImport = { error("unused") },
+                            )
+                            12 -> AgentMemoryScreen(state = memoryState, onAction = {})
+                            13 -> SpeechSettingsScreen(onBack = { backPressedCount++ }, onNavigate = {})
+                            14 -> SpeechRecognitionScreen(onBack = { backPressedCount++ }, onOpenOss = {})
+                            15 -> SpeechSynthesisScreen(onBack = { backPressedCount++ })
+                            16 -> SpeechOssScreen(onBack = { backPressedCount++ })
+                            17 -> CommunityCatalogScreen(store = catalogStore, onNavigate = {}, onBack = { backPressedCount++ })
+                            18 -> CharacterLibraryScreen(store = characterStore, onNavigate = {}, onBack = { backPressedCount++ })
+                            19 -> CharacterPersonaScreen(store = characterStore, onBack = { backPressedCount++ })
+                            20 -> CharacterMemoryScreen(id = "char-1", store = characterStore, onBack = { backPressedCount++ })
+                            21 -> LinuxEnvironmentScreen(context = activity, onNavigate = {}, onBack = { backPressedCount++ })
+                            22 -> LinuxFilesScreen(context = activity, distribution = "alpine", onBack = { backPressedCount++ })
+                            23 -> SharedFoldersScreen(context = activity, onBack = { backPressedCount++ })
+                            24 -> WorkspaceScreen(onBack = { backPressedCount++ })
+                            25 -> AgentBrowserScreen(session = browserSession, onBack = { backPressedCount++ })
+                            26 -> AgentResultCard(
+                                state = AgentOverlayState(
+                                    phase = AgentOverlayPhase.FINISHED,
+                                    status = AgentOverlayStatus.ResultReady,
+                                    detailText = "Task completed",
+                                ),
+                                onClose = {},
+                                onOpenEta = {},
+                            )
+                            27 -> AgentAppRoot()
+                            28 -> ConversationTitleSettingsScreen(onBack = { backPressedCount++ })
+                            29 -> AssistantOverlaySettingsScreen(onBack = { backPressedCount++ })
+                        }
                     }
                 }
             }
 
             for (index in 0..29) {
                 screenIndex = index
-                for (style in listOf(AppearanceUiStyle.COUI, AppearanceUiStyle.MIUIX)) {
-                    uiStyle = style
-                    looper.idle()
-                    measureAndLayoutActivity(activity)
-                    looper.idle()
-                    val nodes = collectSemanticsNodes(activity.window.decorView)
-                    assertTrue(
-                        "Expected non-empty semantics tree for screenIndex=$index, style=$style",
-                        nodes.isNotEmpty(),
-                    )
-                }
+                looper.idle()
+                measureAndLayoutActivity(activity)
+                looper.idle()
+                assertEquals(baseDensity, pageDensity, 0.001f)
+                val nodes = collectSemanticsNodes(activity.window.decorView)
+                assertTrue(
+                    "Expected non-empty semantics tree for screenIndex=$index",
+                    nodes.isNotEmpty(),
+                )
             }
 
-            // 验证 AppearanceSettingsScreen 在 COUI 模式下的返回按钮语义点击可触发 onBack
+            // 验证 AppearanceSettingsScreen 返回按钮语义点击可触发 onBack
             screenIndex = 0
-            uiStyle = AppearanceUiStyle.COUI
             looper.idle()
             measureAndLayoutActivity(activity)
             looper.idle()
-            val backButtons = collectSemanticsNodes(activity.window.decorView).filter { node ->
+            val backLabel = activity.getString(R.string.action_back)
+            val backButtons = collectSemanticsNodes(activity.window.decorView, merged = true).filter { node ->
                 node.config.contains(SemanticsActions.OnClick) &&
-                    node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.isNotBlank() } == true
+                    node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it == backLabel } == true
             }
             assertTrue(backButtons.isNotEmpty())
             val clicked = backButtons.first().config[SemanticsActions.OnClick].action?.invoke()
@@ -312,6 +323,14 @@ class UiStyleThemeAndScreensTest {
             assertEquals(1, backPressedCount)
         } finally {
             controller.pause().stop().destroy()
+            ReflectionHelpers.setField(appInfo, "localeConfigRes", previousLocaleConfig)
+        }
+    }
+
+    private fun forceLayoutTree(view: View) {
+        view.forceLayout()
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) forceLayoutTree(view.getChildAt(index))
         }
     }
 
@@ -323,7 +342,7 @@ class UiStyleThemeAndScreensTest {
         decor.layout(0, 0, 1080, 2400)
     }
 
-    private fun collectSemanticsNodes(root: View): List<SemanticsNode> {
+    private fun collectSemanticsNodes(root: View, merged: Boolean = false): List<SemanticsNode> {
         val result = mutableListOf<SemanticsNode>()
         fun visitView(view: View) {
             if (view is AbstractComposeView) {
@@ -332,14 +351,15 @@ class UiStyleThemeAndScreensTest {
                     runCatching {
                         val ownerField = child.javaClass.getMethod("getSemanticsOwner")
                         val semanticsOwner = ownerField.invoke(child)
-                        val unmergedRoot = semanticsOwner.javaClass
-                            .getMethod("getUnmergedRootSemanticsNode")
+                        val rootMethod = if (merged) "getRootSemanticsNode" else "getUnmergedRootSemanticsNode"
+                        val rootNode = semanticsOwner.javaClass
+                            .getMethod(rootMethod)
                             .invoke(semanticsOwner) as SemanticsNode
                         fun collect(node: SemanticsNode) {
                             result.add(node)
                             node.children.forEach(::collect)
                         }
-                        collect(unmergedRoot)
+                        collect(rootNode)
                     }
                 }
             }

@@ -477,7 +477,7 @@ internal fun AgentTopBarChatHeader(
                 val selectedId = select.pending?.let { it.modelId } ?: state.selectedModel?.id
                 val showGroupLabels = state.providerGroups.size > 1
 
-                EtaTopLayer {
+                TopLayer {
                     GlassTransformPopup(
                         show = showPopup,
                         onDismissRequest = { showPopup = false },

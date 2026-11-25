@@ -57,8 +57,8 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
-import io.github.mangi.eta.ui.components.MiuixPageBottomSpacer
-import io.github.mangi.eta.ui.components.MiuixScaffold
+import io.github.mangi.eta.ui.components.PageBottomSpacer
+import io.github.mangi.eta.ui.components.PageScaffold
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiSectionTitle
@@ -264,7 +264,7 @@ fun AgentToolsScreen(
                         scrollBehavior.state.overscrollOffset < -1f
                 }
             }
-            MiuixScaffold(
+            PageScaffold(
                 title = stringResource(R.string.ui_tool_ability_9f0f80),
                 onBack = { onAction(AgentToolsAction.NavigateBack) },
                 modifier = modifier,
@@ -403,7 +403,7 @@ fun AgentToolsScreen(
                             }
                         }
                         item(key = "bottom_spacer") {
-                            MiuixPageBottomSpacer()
+                            PageBottomSpacer()
                         }
                     }
                 }

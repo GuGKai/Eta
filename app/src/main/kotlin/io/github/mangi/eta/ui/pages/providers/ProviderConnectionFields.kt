@@ -33,8 +33,8 @@ import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.EtaGlassSpinnerPreference
-import io.github.mangi.eta.ui.components.MiuixSecureTextField
+import io.github.mangi.eta.ui.components.GlassSpinnerPreference
+import io.github.mangi.eta.ui.components.SecureTextField
 import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.coui.CouiSwitchPreference
@@ -258,7 +258,7 @@ internal fun ProviderConnectionFields(
                 )
             }
             if (provider is GeminiProviderSetting) {
-                EtaGlassSpinnerPreference(
+                GlassSpinnerPreference(
                     title = geminiPlatformTitle,
                     items = listOf(
                         DropdownItem(text = "Google AI Studio"),
@@ -277,7 +277,7 @@ internal fun ProviderConnectionFields(
                 )
             }
             if (accountMode != null) {
-                EtaGlassSpinnerPreference(
+                GlassSpinnerPreference(
                     title = authMethodTitle,
                     items = listOf(DropdownItem(text = "API Key"), DropdownItem(text = accountLoginLabel)),
                     selectedIndex = if (oauth) 1 else 0,
@@ -309,7 +309,7 @@ internal fun ProviderConnectionFields(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    MiuixSecureTextField(
+                    SecureTextField(
                         state = apiKeyState,
                         label = "API Key",
                         enabled = enabled,
@@ -354,7 +354,7 @@ internal fun ProviderConnectionFields(
                     }
                 }
                 if (provider !is AnthropicProviderSetting && provider !is GeminiProviderSetting) {
-                    EtaGlassSpinnerPreference(
+                    GlassSpinnerPreference(
                         title = stringResource(R.string.ui_endpoint_mode_3c8546),
                         items = listOf(DropdownItem(text = "Chat Completions API"), DropdownItem(text = "Responses API")),
                         selectedIndex = if (draft.endpointMode == OpenAiEndpointMode.RESPONSES) 1 else 0,
