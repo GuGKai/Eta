@@ -1,10 +1,16 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.tts
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings
 import io.github.mangi.eta.data.model.MiniMaxTtsConfig
 import okhttp3.Request
 import org.json.JSONObject
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechHttp
+import io.github.mangi.eta.agent.voice.audio.SpeechSegmentAudio
+import io.github.mangi.eta.agent.voice.audio.readSpeechEvents
+import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 
 internal suspend fun synthesizeMiniMax(
     config: MiniMaxTtsConfig,

@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.asr
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentConversationCodec
@@ -21,6 +21,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
 
 /**
  * 用当前对话模型保守修正识别文字。纠错是可选增强：任何失败、超时或可疑输出都返回原文，

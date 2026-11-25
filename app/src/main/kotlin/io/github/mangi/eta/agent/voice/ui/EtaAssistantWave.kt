@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.ui
 
 import android.content.Context
 import android.graphics.BitmapFactory

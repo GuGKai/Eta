@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.asr
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings
@@ -8,6 +8,10 @@ import okhttp3.MultipartBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechHttp
+import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 
 internal suspend fun recognizeDeepSeekSpeech(
     config: DeepSeekAsrConfig,

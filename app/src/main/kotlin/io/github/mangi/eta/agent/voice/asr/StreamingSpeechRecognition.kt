@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.asr
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings
@@ -13,6 +13,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import okhttp3.Request
 import org.json.JSONObject
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechRecorder
+import io.github.mangi.eta.agent.voice.audio.SpeechSocket
+import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
+import io.github.mangi.eta.agent.voice.audio.doubaoHeaders
 
 internal suspend fun recognizeSpeechStream(
     settings: SpeechSettings,

@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.asr
 
 import android.content.Context
 import io.github.mangi.eta.R
@@ -19,6 +19,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import io.github.mangi.eta.agent.voice.audio.SpeechAudioCapture
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechRecorder
+import io.github.mangi.eta.agent.voice.audio.collectSpeechAudio
+import io.github.mangi.eta.agent.voice.audio.speechFailure
+import io.github.mangi.eta.agent.voice.audio.validateSpeechSettings
+import io.github.mangi.eta.agent.voice.audio.SpeechAudioLease
+import io.github.mangi.eta.agent.voice.ui.EtaSpeechPhase
 
 internal data class SpeechInputState(
     val phase: EtaSpeechPhase = EtaSpeechPhase.IDLE,

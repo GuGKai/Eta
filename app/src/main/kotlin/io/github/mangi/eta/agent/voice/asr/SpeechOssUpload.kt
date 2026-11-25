@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.asr
 
 import android.content.Context
 import io.github.mangi.eta.R
@@ -16,6 +16,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechHttp
 
 /** 日志先于上传落盘；进程被杀或上传结果不明时仍能找回待删除对象。 */
 internal class SpeechOssUpload(

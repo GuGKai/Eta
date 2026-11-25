@@ -6,6 +6,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechSegmentFade
 
 class SpeechSegmentFadeTest {
     private fun pcm(vararg samples: Int): ByteArray =

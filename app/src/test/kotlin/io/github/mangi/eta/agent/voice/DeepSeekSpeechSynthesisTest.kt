@@ -6,6 +6,10 @@ import okio.Buffer
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.tts.supportsSpeechSession
+import io.github.mangi.eta.agent.voice.tts.deepSeekBillingCharCount
+import io.github.mangi.eta.agent.voice.tts.deepSeekTtsRequest
+import io.github.mangi.eta.agent.voice.tts.deepSeekTtsStreamRequest
 
 class DeepSeekSpeechSynthesisTest {
     @Test fun httpRequestUsesExpectedJsonBodyAndPath() {

@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.asr
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings
@@ -7,6 +7,10 @@ import java.util.Base64
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechHttp
+import io.github.mangi.eta.agent.voice.audio.speechBaseUrl
 
 internal suspend fun recognizeMimoSpeech(config: MimoAsrConfig, key: String, wav: ByteArray): String =
     mimoAsrTranscript(SpeechHttp.json(mimoAsrRequest(config, key, wav)))

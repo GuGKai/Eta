@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -39,6 +39,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
+import io.github.mangi.eta.agent.voice.AssistantCapsuleElevation
+import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.couiAssistantCapsule
 
 private val assistantSuggestionResIds = listOf(
     R.string.voice_i18n_suggestion_summarize_screen,

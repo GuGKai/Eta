@@ -7,6 +7,9 @@ import java.util.Base64
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechPcmDecoder
+import io.github.mangi.eta.agent.voice.tts.SpeechAudioStreamDecoder
 
 class SpeechPcmDecoderTest {
     private val samples = byteArrayOf(1, 2, 3, 4, 5, 6)

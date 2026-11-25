@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -80,6 +80,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
+import io.github.mangi.eta.agent.voice.AssistantActionGlyph
+import io.github.mangi.eta.agent.voice.AssistantCapsuleElevation
+import io.github.mangi.eta.agent.voice.AssistantGlyphKind
+import io.github.mangi.eta.agent.voice.AssistantVoiceOrb
+import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.couiAssistantCapsule
 
 private val ComposerModeEasing = CubicBezierEasing(0.20f, 0f, 0f, 1f)
 

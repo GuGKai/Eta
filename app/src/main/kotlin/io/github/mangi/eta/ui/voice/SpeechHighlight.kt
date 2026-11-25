@@ -2,7 +2,7 @@ package io.github.mangi.eta.ui.voice
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import io.github.mangi.eta.agent.voice.SpeechText
+import io.github.mangi.eta.agent.voice.tts.SpeechText
 
 /**
  * 与朗读端完全一致的切句结果。

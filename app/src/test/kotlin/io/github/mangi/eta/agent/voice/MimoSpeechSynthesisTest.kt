@@ -10,6 +10,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.readSpeechSse
+import io.github.mangi.eta.agent.voice.tts.MimoTtsDecoder
+import io.github.mangi.eta.agent.voice.tts.mimoTtsRequest
 
 class MimoSpeechSynthesisTest {
     @Test fun requestKeepsStyleSeparateAndPutsExactTextInAssistantMessage() {

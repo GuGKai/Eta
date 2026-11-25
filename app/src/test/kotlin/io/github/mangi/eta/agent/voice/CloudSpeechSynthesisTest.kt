@@ -10,6 +10,15 @@ import okio.buffer
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechSegmentAudio
+import io.github.mangi.eta.agent.voice.audio.SpeechSseDecoder
+import io.github.mangi.eta.agent.voice.audio.readSpeechSse
+import io.github.mangi.eta.agent.voice.tts.GeminiSpeechDecoder
+import io.github.mangi.eta.agent.voice.tts.MiniMaxSpeechDecoder
+import io.github.mangi.eta.agent.voice.tts.geminiSpeechRequest
+import io.github.mangi.eta.agent.voice.tts.minimaxSpeechRequest
 
 class CloudSpeechSynthesisTest {
     @Test fun geminiKeepsStyleSeparateFromTranscriptAndDisablesStorage() {

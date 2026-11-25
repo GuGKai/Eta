@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.voice
 
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.tts.SpeechText
 
 class SpeechTextTest {
     @Test fun spokenTextReadsInlineCodeButSkipsCodeBlocksWithNotice() {

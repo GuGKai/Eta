@@ -84,6 +84,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
+import io.github.mangi.eta.agent.voice.asr.SpeechInputController
+import io.github.mangi.eta.agent.voice.tts.SpeechPlaybackController
+import io.github.mangi.eta.agent.voice.ui.EtaSpeechPhase
+import io.github.mangi.eta.agent.voice.ui.EtaSpeechState
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePanel
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePhase
+import io.github.mangi.eta.agent.voice.ui.EtaVoiceUiState
 
 /**
  * Eta 数字助理的用户界面窗口。

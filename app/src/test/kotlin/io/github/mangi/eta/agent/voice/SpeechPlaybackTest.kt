@@ -20,6 +20,12 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.tts.SpeechAudioOutput
+import io.github.mangi.eta.agent.voice.tts.SpeechPlaybackController
+import io.github.mangi.eta.agent.voice.tts.SpeechText
+import io.github.mangi.eta.agent.voice.audio.SpeechAudioLease
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)

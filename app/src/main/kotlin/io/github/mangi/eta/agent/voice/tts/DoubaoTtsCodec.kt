@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.tts
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings
@@ -7,6 +7,9 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.zip.GZIPInputStream
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechHttp
 
 /**
  * 豆包双向流式合成的二进制帧。头部 4 字节：版本/头长、消息类型/标志、序列化/压缩、保留；

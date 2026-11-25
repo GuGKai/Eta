@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.asr.OssSpeechSigner
 
 class OssSpeechSignerTest {
     private val config = SpeechOssConfig(region = "cn-hangzhou", endpoint = "https://oss-cn-hangzhou.aliyuncs.com", bucket = "examplebucket")

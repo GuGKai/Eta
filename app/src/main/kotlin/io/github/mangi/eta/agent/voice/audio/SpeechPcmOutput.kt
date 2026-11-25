@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.audio
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -6,6 +6,7 @@ import android.media.AudioTrack
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings
 import kotlinx.coroutines.CancellationException
+import io.github.mangi.eta.agent.voice.tts.SpeechAudioOutput
 
 /** 按 [sampleRate] 建流式音轨；采样率必须与写入的 PCM 一致，否则会变调变速。 */
 internal class SpeechPcmOutput(private val sampleRate: Int = DEFAULT_SAMPLE_RATE) : SpeechAudioOutput {

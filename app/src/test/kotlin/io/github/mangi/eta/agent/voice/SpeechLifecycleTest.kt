@@ -20,6 +20,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import io.github.mangi.eta.agent.voice.asr.SpeechInputController
+import io.github.mangi.eta.agent.voice.asr.SpeechTranscriptRefiner
+import io.github.mangi.eta.agent.voice.audio.SpeechAudioCapture
+import io.github.mangi.eta.agent.voice.audio.SpeechAudioLease
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)

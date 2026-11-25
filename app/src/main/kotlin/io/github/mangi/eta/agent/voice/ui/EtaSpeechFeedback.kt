@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -37,6 +37,9 @@ import com.itos.coui.motion.rememberCouiPressMotion
 import com.itos.coui.shape.CouiCapsuleShape
 import io.github.mangi.eta.R
 import top.yukonga.miuix.kmp.basic.Text
+import io.github.mangi.eta.agent.voice.AssistantCapsuleElevation
+import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.couiAssistantCapsule
 
 internal enum class EtaSpeechPhase { IDLE, STARTING, LISTENING, RECOGNIZING }
 

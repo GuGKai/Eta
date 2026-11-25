@@ -17,6 +17,9 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.asr.SpeechTranscriptRefiner
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
 
 class SpeechTranscriptRefinerTest {
     private val requests = mutableListOf<ProviderRequest>()

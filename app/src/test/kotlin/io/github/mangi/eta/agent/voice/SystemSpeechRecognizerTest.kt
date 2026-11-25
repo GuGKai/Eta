@@ -11,6 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import io.github.mangi.eta.agent.voice.asr.SystemSpeechRecognizer
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)

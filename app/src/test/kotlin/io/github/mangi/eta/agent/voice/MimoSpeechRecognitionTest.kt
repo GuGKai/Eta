@@ -12,6 +12,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechRecorder
+import io.github.mangi.eta.agent.voice.audio.pcmToWav
+import io.github.mangi.eta.agent.voice.audio.validateSpeechSettings
+import io.github.mangi.eta.agent.voice.asr.mimoAsrRequest
+import io.github.mangi.eta.agent.voice.asr.mimoAsrTranscript
 
 class MimoSpeechRecognitionTest {
     @Test fun requestUsesDedicatedModelAndOneAudioMessageWithoutChatInstructions() {

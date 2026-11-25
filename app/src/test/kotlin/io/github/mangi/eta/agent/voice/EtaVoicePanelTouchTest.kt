@@ -49,6 +49,11 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
+import io.github.mangi.eta.agent.voice.ui.EtaSpeechPhase
+import io.github.mangi.eta.agent.voice.ui.EtaSpeechState
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePanel
+import io.github.mangi.eta.agent.voice.ui.EtaVoicePhase
+import io.github.mangi.eta.agent.voice.ui.EtaVoiceUiState
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], application = Application::class, qualifiers = "w411dp-h896dp-xhdpi")

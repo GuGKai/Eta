@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -90,6 +90,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.basic.Text
+import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
+import io.github.mangi.eta.agent.voice.TopCouiSheetShape
+import io.github.mangi.eta.agent.voice.buildTopCouiRimPath
+import io.github.mangi.eta.agent.voice.buildTopCouiSheetPath
+import io.github.mangi.eta.agent.voice.rememberEtaVoicePanelColors
 
 internal enum class EtaVoicePhase {
     READY,

@@ -11,6 +11,9 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.Request
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechHttp
 
 class SpeechHttpTest {
     @Test fun cancellationClosesConnectionWhileBodyIsStillArriving() = runBlocking {

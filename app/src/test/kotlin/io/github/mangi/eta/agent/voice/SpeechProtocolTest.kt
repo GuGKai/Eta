@@ -8,6 +8,15 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechRecorder
+import io.github.mangi.eta.agent.voice.audio.collectSpeechAudio
+import io.github.mangi.eta.agent.voice.audio.pcmToWav
+import io.github.mangi.eta.agent.voice.tts.SpeechAudioStreamDecoder
+import io.github.mangi.eta.agent.voice.asr.DoubaoAsrCodec
+import io.github.mangi.eta.agent.voice.asr.QwenTranscript
+import io.github.mangi.eta.agent.voice.asr.fileTranscript
 
 class SpeechProtocolTest {
     @Test fun qwenRevisionsReplaceDraftAndLatePreviewCannotReplaceFinal() {

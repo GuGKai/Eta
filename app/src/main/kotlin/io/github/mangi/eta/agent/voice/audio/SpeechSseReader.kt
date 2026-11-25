@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.audio
 
 import io.github.mangi.eta.R
 import io.github.mangi.eta.core.AppStrings

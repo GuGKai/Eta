@@ -19,7 +19,7 @@ import androidx.compose.ui.res.stringResource
 import com.itos.coui.dialog.CouiDialogDefaults
 import com.itos.coui.layout.Divider
 import io.github.mangi.eta.R
-import io.github.mangi.eta.agent.voice.validateSpeechSettings
+import io.github.mangi.eta.agent.voice.audio.validateSpeechSettings
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.ui.app.LocalUiStyle

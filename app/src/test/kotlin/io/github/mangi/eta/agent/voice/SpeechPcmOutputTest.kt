@@ -12,6 +12,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowAudioTrack
+import io.github.mangi.eta.agent.voice.audio.SpeechPcmOutput
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class, shadows = [SpeechPcmOutputTest.BufferedAudioTrack::class])

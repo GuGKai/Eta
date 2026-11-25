@@ -5,6 +5,12 @@ import okio.Buffer
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
+import io.github.mangi.eta.agent.voice.audio.SpeechRecorder
+import io.github.mangi.eta.agent.voice.audio.pcmToWav
+import io.github.mangi.eta.agent.voice.asr.deepSeekAsrRequest
+import io.github.mangi.eta.agent.voice.asr.deepSeekAsrTranscript
 
 class DeepSeekSpeechRecognitionTest {
     @Test fun requestUsesMultipartFormAndBearerAuth() {

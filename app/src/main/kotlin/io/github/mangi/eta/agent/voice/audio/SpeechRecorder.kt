@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.audio
 
 import android.annotation.SuppressLint
 import android.media.AudioFormat

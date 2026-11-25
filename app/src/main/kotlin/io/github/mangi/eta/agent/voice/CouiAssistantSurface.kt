@@ -63,6 +63,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import io.github.mangi.eta.agent.voice.ui.EtaSpeechPhase
 
 @Immutable
 internal data class EtaVoicePanelColors(

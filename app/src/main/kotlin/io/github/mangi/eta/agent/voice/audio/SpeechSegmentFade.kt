@@ -1,4 +1,4 @@
-package io.github.mangi.eta.agent.voice
+package io.github.mangi.eta.agent.voice.audio
 
 /**
  * 长文本按段独立合成后无缝拼接播放，相邻两段的末尾与开头采样不一定在零点附近，
