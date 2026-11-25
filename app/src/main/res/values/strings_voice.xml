@@ -25,6 +25,8 @@
     <string name="voice_i18n_speech_text_ordered_item">"Item %1$d: "</string>
     <string name="voice_i18n_speech_text_task_done">"Completed: "</string>
     <string name="voice_i18n_speech_text_task_todo">"Incomplete: "</string>
+    <string name="voice_i18n_speech_text_code_block_skipped">Code block, skipped.</string>
+    <string name="voice_i18n_speech_text_math_block_skipped">Formula, skipped.</string>
 
     <!-- General speech errors, permissions, audio & network -->
     <string name="voice_i18n_credentials_decrypt_failed">Unable to decrypt speech credentials. Please re-enter and save them.</string>

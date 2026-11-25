@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.markdown
 
 import io.github.mangi.eta.agent.voice.SpeechText
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -74,21 +75,33 @@ class MarkdownSpeechLocatorTest {
     }
 
     @Test
-    fun fencedCodeIsSpokenAndHighlightedPerLine() {
+    fun fencedCodeIsSkippedWithNotice() {
         val markdown = "改这两行：\n\n```kotlin\nval a = 1\nval b = 2\n```\n\n就这么多。"
         val sentences = sentencesOf(markdown)
-        // 围栏标记不读，只读代码内容；每行单独成句。
-        assertEquals(listOf("改这两行：", "val a = 1", "val b = 2", "就这么多。"), sentences)
-        assertEquals(condensed("val a = 1"), highlighted(markdown, 1))
-        assertEquals(condensed("val b = 2"), highlighted(markdown, 2))
-        assertEquals("就这么多。", highlighted(markdown, 3))
+        // 代码内容不读，每块只念一句占位提示；占位句不给高亮，不在代码框里涂近似区间。
+        assertEquals(listOf("改这两行：", "代码块，略。", "就这么多。"), sentences)
+        assertNull(highlighted(markdown, 1))
+        assertEquals("就这么多。", highlighted(markdown, 2))
     }
 
     @Test
-    fun indentedCodeIsSpoken() {
+    fun indentedCodeIsSkippedWithNotice() {
         val markdown = "示例：\n\n    val c = 3\n\n结束。"
-        assertEquals(listOf("示例：", "val c = 3", "结束。"), sentencesOf(markdown))
-        assertEquals(condensed("val c = 3"), highlighted(markdown, 1))
+        assertEquals(listOf("示例：", "代码块，略。", "结束。"), sentencesOf(markdown))
+        assertNull(highlighted(markdown, 1))
+    }
+
+    @Test
+    fun skipNoticeDoesNotJumpToSameTextLaterInDocument() {
+        // 文末说明里原样出现「代码块，略。」：占位句不能搜过去，否则高亮跳到不相干段落。
+        val markdown = "先看一下。\n\n```kotlin\nval a = 1\n```\n\n后文提到「代码块，略。」这句话。"
+        assertEquals(
+            listOf("先看一下。", "代码块，略。", "后文提到「代码块，略。」", "这句话。"),
+            sentencesOf(markdown),
+        )
+        assertNull(highlighted(markdown, 1))
+        assertEquals(condensed("后文提到「代码块，略。」"), highlighted(markdown, 2))
+        assertEquals("这句话。", highlighted(markdown, 3))
     }
 
     @Test
@@ -183,6 +196,55 @@ class MarkdownSpeechLocatorTest {
         val range = requireNotNull(last).ranges.first()
         val block = document.blocks.flattenTextBlocks().firstOrNull { it.offset == range.blockOffset }
         assertEquals("结尾一句。", block?.text?.text?.substring(range.start, range.end))
+    }
+
+    /** 单测没有 RaTeX 原生库：预置不可用标记走「保留带定界符原文」路径，块文本字符与设备上
+     *  appendInlineContent(alternateText = 原始源码) 完全一致（都带 $ 定界符）。 */
+    private fun disableNativeMathEngine() {
+        val field = RaTeXMathLayoutEngine::class.java.getDeclaredField("nativeUnavailable")
+        field.isAccessible = true
+        (field.get(RaTeXMathLayoutEngine) as AtomicBoolean).set(true)
+    }
+
+    @Test
+    fun inlineMathSentencesHighlightWholeSentenceIncludingFormula() {
+        disableNativeMathEngine()
+        // 块文本里的公式是带 $ 定界符的原始源码，朗读文本剥掉了 $：定位时必须容忍这个差异，
+        // 否则整句对不上、句首兜底区间偏短，游标漂移还会吃掉下一句的开头。
+        val markdown = "半径 \$r\$ 的圆面积是 \$\\pi r^2\$，这个式子小学就背过。\n\n" +
+            "周长 2πr 的推导更直观：把圆剪成很多细扇形拼起来，拼出的长方形一边是 \$r\$，另一边是周长的一半 \$\\pi r\$。\n\n" +
+            "所以两式互为表里，只是 \$r\$ 的幂次差一次。"
+        assertEquals(
+            condensed("半径 \$r\$ 的圆面积是 \$\\pi r^2\$，这个式子小学就背过。"),
+            highlighted(markdown, 0),
+        )
+        assertEquals(
+            condensed("周长 2πr 的推导更直观：把圆剪成很多细扇形拼起来，拼出的长方形一边是 \$r\$，另一边是周长的一半 \$\\pi r\$。"),
+            highlighted(markdown, 1),
+        )
+        assertEquals(
+            condensed("所以两式互为表里，只是 \$r\$ 的幂次差一次。"),
+            highlighted(markdown, 2),
+        )
+    }
+
+    @Test
+    fun sentenceStartingWithInlineMathHighlightsFromFormula() {
+        disableNativeMathEngine()
+        // 句首就是公式：候选落点也要从定界符 '$' 开始试，区间盖住整个公式区域。
+        val markdown = "\$r\$ 是半径，别和直径搞混。\n\n下一句收尾。"
+        assertEquals(
+            condensed("\$r\$ 是半径，别和直径搞混。"),
+            highlighted(markdown, 0),
+        )
+        assertEquals("下一句收尾。", highlighted(markdown, 1))
+    }
+
+    @Test
+    fun plainDollarTextStillMatchesLiterally() {
+        // 普通文本里的 '$' 不是公式定界符，朗读与块文本都有它，精确匹配优先，不受影响。
+        val markdown = "这杯咖啡要 \$30，太贵了。"
+        assertEquals(condensed("这杯咖啡要 \$30，太贵了。"), highlighted(markdown, 0))
     }
 
     @Test

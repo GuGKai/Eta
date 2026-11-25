@@ -25,6 +25,8 @@
     <string name="voice_i18n_speech_text_ordered_item">第 %1$d 項：</string>
     <string name="voice_i18n_speech_text_task_done">已完成：</string>
     <string name="voice_i18n_speech_text_task_todo">未完成：</string>
+    <string name="voice_i18n_speech_text_code_block_skipped">程式碼區塊，略。</string>
+    <string name="voice_i18n_speech_text_math_block_skipped">公式，略。</string>
 
     <!-- General speech errors, permissions, audio & network -->
     <string name="voice_i18n_credentials_decrypt_failed">語音憑據無法解密，請重新填寫並儲存</string>

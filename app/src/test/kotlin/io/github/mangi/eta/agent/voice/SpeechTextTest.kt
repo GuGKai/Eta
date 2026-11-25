@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpeechTextTest {
-    @Test fun spokenTextReadsCodeKeepsLinkLabelAndInlineIdentifiers() {
+    @Test fun spokenTextReadsInlineCodeButSkipsCodeBlocksWithNotice() {
         val text = SpeechText.readable("""
             # 操作说明
 
@@ -23,11 +23,27 @@ class SpeechTextTest {
         assertTrue(text.contains("帮助"))
         assertTrue(text.contains("user_name"))
         assertFalse(text.contains("https://"))
-        // 代码块与缩进代码都照读，只丢掉围栏与缩进标记。
-        assertTrue(text.contains("secretCommand()"))
-        assertTrue(text.contains("anotherSecretCommand()"))
+        // 整块代码（围栏与缩进）不朗读，每块只留一句占位提示；行内代码继续照读。
+        assertFalse(text.contains("secretCommand"))
+        assertEquals(2, Regex("代码块，略。").findAll(text).count())
         assertFalse(text.contains("**"))
         assertTrue(text.endsWith("完成。"))
+    }
+
+    @Test fun mathBlocksAreSkippedWithNoticeWhileInlineMathSourceIsRead() {
+        val text = SpeechText.readable("""
+            先看结论。
+
+            ${'$'}${'$'}E = mc^2${'$'}${'$'}
+
+            当 ${'$'}x^2${'$'} 很大时就发散。
+        """.trimIndent())
+        // 显示公式块跳过并占位；行内小公式照读源码，定界 $ 不出声。
+        assertTrue(text.contains("公式，略。"))
+        assertFalse(text.contains("E = mc"))
+        assertTrue(text.contains("x^2"))
+        assertFalse(text.contains("$"))
+        assertTrue(text.contains("先看结论。"))
     }
 
     @Test fun sentenceChunkingPreservesContentAndSurrogatePairs() {
@@ -185,8 +201,8 @@ class SpeechTextTest {
         }
     }
 
-    @Test fun codeOnlyAnswerReadsTheCodeBody() {
-        // 只有代码块的回答也要读：只跳过围栏标记，代码内容照读。
-        assertEquals("hello", SpeechText.readable("```\nhello\n```"))
+    @Test fun codeOnlyAnswerReadsTheSkipNotice() {
+        // 只有代码块的回答也不冷场：内容不念，读一句占位提示。
+        assertEquals("代码块，略。", SpeechText.readable("```\nhello\n```"))
     }
 }

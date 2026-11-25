@@ -45,6 +45,27 @@ class SpeechSentenceTest {
     }
 
     @Test
+    fun `顿号与空格不再断开超长句`() {
+        // 一整句内部的顿号不是切点：找不到逗号或冒号时只在 80 字处硬切。
+        val chinese = "甲乙丙丁戊己庚辛、".repeat(12)
+        val resultChinese = sentences(chinese)
+        resultChinese.forEach { println("[顿号分片 ${it.length}字]") }
+        assertEquals(2, resultChinese.size)
+        assertEquals(80, resultChinese[0].length)
+        assertFalse(resultChinese[0].endsWith("、"))
+        assertEquals(chinese, resultChinese.joinToString(""))
+
+        // 空格同样不是切点：空格位于 10/21/32/43/54/65/76，旧逻辑会断在 76 的空格，
+        // 现在找不到逗号或冒号只能在 80 字处硬切，即使落在「单词」中间。
+        val english = "0123456789 ".repeat(9).trim()
+        val resultEnglish = sentences(english)
+        resultEnglish.forEach { println("[空格分片 ${it.length}字] $it") }
+        assertEquals(2, resultEnglish.size)
+        assertEquals(80, resultEnglish[0].length)
+        assertEquals(english, resultEnglish.joinToString(""))
+    }
+
+    @Test
     fun `短句保持独立成句`() {
         assertEquals(listOf("按下暂停。", "好。"), sentences("按下暂停。好。"))
         assertEquals(
@@ -85,8 +106,9 @@ class SpeechSentenceTest {
         val readable = SpeechText.readable(markdown)
         val result = sentences(readable)
         result.forEachIndexed { index, sentence -> println("[${index + 1}] $sentence") }
-        // 代码块照读：围栏标记不出现，代码内容会出现。
-        assertTrue(readable.contains("val x = 1"))
+        // 代码块不朗读：内容与围栏都不出现，只留占位句。
+        assertFalse(readable.contains("val x = 1"))
+        assertTrue(readable.contains("代码块，略。"))
         assertFalse(readable.contains("##"))
         assertTrue(result.isNotEmpty())
         assertTrue(result.all { it.length <= 80 })
