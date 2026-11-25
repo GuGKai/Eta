@@ -365,6 +365,7 @@ internal fun AgentChatBody(
             input = input,
             isCompacting = isCompacting,
             isBranching = isBranching,
+            isDrawerOpen = isDrawerOpen,
             contextUsage = contextUsage,
             isStreaming = isStreaming,
             reasoningEffort = reasoningEffort,
@@ -447,6 +448,7 @@ private fun AgentChatScaffold(
     input: String,
     isCompacting: Boolean,
     isBranching: Boolean,
+    isDrawerOpen: Boolean,
     contextUsage: AgentContextUsageUi,
     isStreaming: Boolean,
     reasoningEffort: ReasoningEffort,
@@ -528,6 +530,7 @@ private fun AgentChatScaffold(
                 onOverlayTopChanged = { chatOverlayTopPx.value = it },
                 messageBackdrop = messageBackdrop.takeIf { frostEnabled },
                 input = input,
+                imeAvoidanceEnabled = !isDrawerOpen,
                 isCompacting = isCompacting,
                 contextUsage = contextUsage,
                 showContextUsage = hasMessages,
@@ -596,7 +599,7 @@ private fun AgentChatScaffold(
                     onBranchMessage = onBranchMessage,
                     onSelectReplyCandidate = onSelectReplyCandidate,
                     onEditGeneratedImage = onAttachImage,
-                    messageActionsEnabled = !isStreaming && !isCompacting && !isBranching && messageEdit == null,
+                    messageActionsEnabled = !isStreaming && !isCompacting && messageEdit == null,
                     editTargetMessageId = messageEdit?.targetMessageId,
                     currentBrowserMessageId = currentBrowserMessageId,
                     hasEarlierMessages = hasEarlierMessages,
@@ -2554,6 +2557,7 @@ internal fun resolveFinalResultMessageIds(
 @Composable
 private fun AgentChatBottomBar(
     messageBackdrop: LayerBackdrop?,
+    imeAvoidanceEnabled: Boolean,
     input: String,
     isCompacting: Boolean,
     contextUsage: AgentContextUsageUi,
@@ -2595,7 +2599,7 @@ private fun AgentChatBottomBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .imePadding()
+            .then(if (imeAvoidanceEnabled) Modifier.imePadding() else Modifier)
             // 放在 imePadding 之后量的是内容本身：imePadding 是背景留白，不算输入器可见区域。
             .onGloballyPositioned { onOverlayTopChanged(it.boundsInWindow().top) },
     ) {

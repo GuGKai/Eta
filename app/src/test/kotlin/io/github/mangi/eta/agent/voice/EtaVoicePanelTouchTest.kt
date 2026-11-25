@@ -435,7 +435,7 @@ class EtaVoicePanelTouchTest {
             val view = ComposeView(activity)
             view.setParentCompositionContext(recomposer)
             view.setContent {
-                AgentAppTheme(appearance, applyInterfaceScale = false) {
+                AgentAppTheme(appearance) {
                     CompositionLocalProvider(
                         LocalSquircleEnabled provides false,
                         LocalSoftwareKeyboardController provides keyboard,

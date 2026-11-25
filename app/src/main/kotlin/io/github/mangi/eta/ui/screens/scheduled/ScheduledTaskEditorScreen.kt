@@ -222,14 +222,11 @@ internal fun ScheduledTaskEditorScreen(
             )
         }
     }
-    val nextRunPreview = if (scheduleError != null) {
-        scheduleError
-    } else {
-        stringResource(
+    val nextRunPreview = scheduleError
+        ?: stringResource(
             R.string.scheduled_next_run_prefix,
             ScheduledTaskScheduleCalculator.formatNextRunLabel(nextRunTimestamp, previewNowMs),
         )
-    }
 
     val pickerState = remember(providers, primaryProviderId, primaryModelId) {
         AgentModelPickerProjector.project(providers, primaryProviderId, primaryModelId)

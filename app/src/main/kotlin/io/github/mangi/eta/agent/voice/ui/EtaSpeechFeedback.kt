@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CircleShape as CouiCapsuleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -31,11 +32,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.mangi.eta.R
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.motion.couiPressMotion
 import com.itos.coui.motion.rememberCouiPressMotion
-import com.itos.coui.shape.CouiCapsuleShape
-import io.github.mangi.eta.R
 import top.yukonga.miuix.kmp.basic.Text
 import io.github.mangi.eta.agent.voice.AssistantCapsuleElevation
 import io.github.mangi.eta.agent.voice.EtaVoicePanelColors
@@ -99,7 +99,6 @@ internal fun EtaSpeechFeedback(
                         interactive = speech.configureAvailable,
                         interactionSource = rowSource,
                         pressMotion = if (speech.configureAvailable) rowPress else null,
-                        spotlightEnabled = speech.configureAvailable,
                     )
                     .then(
                         if (speech.configureAvailable) {

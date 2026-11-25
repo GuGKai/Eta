@@ -34,6 +34,7 @@ internal object BackgroundCommandNotification {
         }
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFF4285F4.toInt())
             .setContentTitle(title)
             .setContentText(task.description.ifBlank { context.getString(R.string.execution_bg_cmd_open_hint) })
             .setSubText(task.exitCode?.let { context.getString(R.string.execution_bg_cmd_exit_code, it) })

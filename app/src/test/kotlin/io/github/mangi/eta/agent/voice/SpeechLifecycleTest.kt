@@ -30,6 +30,7 @@ import io.github.mangi.eta.agent.voice.audio.SpeechAudioLease
 class SpeechLifecycleTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val results = mutableListOf<String>()
+    private val holdResults = mutableListOf<String>()
     private val sessions = mutableListOf<FakeStreamSession>()
     private lateinit var controller: SpeechInputController
 
@@ -45,6 +46,7 @@ class SpeechLifecycleTest {
     private fun createController(
         automaticEndpoint: Boolean = false,
         refiner: SpeechTranscriptRefiner = SpeechTranscriptRefiner(),
+        onHoldResult: ((String) -> Unit)? = null,
     ): SpeechInputController {
         var pending: FakeStreamSession? = null
         return SpeechInputController(
@@ -59,6 +61,7 @@ class SpeechLifecycleTest {
                 session.attach(onReady, onPreview, onEndpoint, endpointSilenceMs)
                 session.awaitTranscript()
             },
+            onHoldResult = onHoldResult,
             onResult = results::add,
         )
     }
@@ -242,6 +245,44 @@ class SpeechLifecycleTest {
                 overlay.cancel()
                 results.clear()
             }
+        }
+    }
+
+    @Test fun holdToTalkRoutesResultToHoldCallbackAndResetsCleanly() {
+        val dictation = createController(onHoldResult = holdResults::add)
+        try {
+            val holdSession = start(dictation, holdToTalk = true)
+            assertTrue(dictation.state.value.holdToTalk)
+            assertEquals(EtaSpeechPhase.LISTENING, dictation.state.value.phase)
+            dictation.finish()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(dictation.state.value.holdToTalk)
+            assertEquals(EtaSpeechPhase.RECOGNIZING, dictation.state.value.phase)
+            holdSession.complete("按住直接发送")
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(listOf("按住直接发送"), holdResults)
+            assertTrue(results.isEmpty())
+            assertFalse(dictation.state.value.active)
+            assertFalse(dictation.state.value.holdToTalk)
+
+            // 失败（空语音）或取消后再次轻点听写，不能残留 holdToTalk 状态。
+            val failedHold = start(dictation, holdToTalk = true)
+            dictation.finish()
+            failedHold.complete("   ")
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse(dictation.state.value.active)
+            assertFalse(dictation.state.value.holdToTalk)
+            assertNotNull(dictation.state.value.error)
+
+            val tapSession = start(dictation, holdToTalk = false)
+            assertFalse(dictation.state.value.holdToTalk)
+            dictation.finish()
+            tapSession.complete("轻点插入草稿")
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(listOf("轻点插入草稿"), results)
+            assertEquals(1, holdResults.size)
+        } finally {
+            dictation.cancel()
         }
     }
 

@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -481,10 +482,11 @@ fun AgentAppRoot(
     }
     ChatImagePreviewHost {
         val previewer = LocalChatImagePreviewer.current
-        val activeRoute = backStack.lastOrNull()
-        LaunchedEffect(activeRoute, navigationResetKey) {
-            if (previewer?.request != null) {
-                previewer.closeImmediately()
+        LaunchedEffect(previewer, navigationResetKey) {
+            snapshotFlow { backStack.lastOrNull() }.collect {
+                if (previewer?.request != null) {
+                    previewer.closeImmediately()
+                }
             }
         }
         key(navigationResetKey) {
@@ -648,14 +650,14 @@ fun AgentAppRoot(
                         )
                     }
                     entry<AppRoute.Characters>(swipeDismiss = activeSwipeDismiss) {
-                        LaunchedEffect(backStack.lastOrNull() == AppRoute.Characters) {
-                            if (backStack.lastOrNull() == AppRoute.Characters) characterStore.loadLibrary()
+                        LaunchedEffect(Unit) {
+                            characterStore.loadLibrary()
                         }
                         CharacterLibraryScreen(characterStore, { if (navigator.current() == AppRoute.Characters) pushRoute(it) }, ::popRoute)
                     }
                     entry<AppRoute.CharacterDetail>(swipeDismiss = activeSwipeDismiss) { route ->
-                        LaunchedEffect(route.characterId, backStack.lastOrNull() == route) {
-                            if (backStack.lastOrNull() == route) characterStore.loadDetail(route.characterId)
+                        LaunchedEffect(route.characterId) {
+                            characterStore.loadDetail(route.characterId)
                         }
                         CharacterDetailScreen(route.characterId, characterStore, { if (navigator.current() == route) pushRoute(it) }, ::popRoute) { binding, greeting ->
                             if (navigator.current() == route) {
@@ -668,16 +670,16 @@ fun AgentAppRoot(
                         }
                     }
                     entry<AppRoute.CharacterEditor>(swipeDismiss = activeSwipeDismiss) { route ->
-                        LaunchedEffect(route.characterId, backStack.lastOrNull() == route) {
-                            if (backStack.lastOrNull() == route) characterStore.loadEditor(route.characterId)
+                        LaunchedEffect(route.characterId) {
+                            characterStore.loadEditor(route.characterId)
                         }
                         CharacterEditorScreen(route.characterId, characterStore, ::popRoute) { id ->
                             if (navigator.current() == route) navigator.replace(AppRoute.CharacterDetail(id))
                         }
                     }
                     entry<AppRoute.CharacterPersona>(swipeDismiss = activeSwipeDismiss) {
-                        LaunchedEffect(backStack.lastOrNull() == AppRoute.CharacterPersona) {
-                            if (backStack.lastOrNull() == AppRoute.CharacterPersona) characterStore.loadPersona()
+                        LaunchedEffect(Unit) {
+                            characterStore.loadPersona()
                         }
                         CharacterPersonaScreen(characterStore) {
                             if (navigator.current() == AppRoute.CharacterPersona) popRoute()
@@ -692,8 +694,8 @@ fun AgentAppRoot(
                         }
                     }
                     entry<AppRoute.CharacterMemory>(swipeDismiss = activeSwipeDismiss) { route ->
-                        LaunchedEffect(route.characterId, backStack.lastOrNull() == route) {
-                            if (backStack.lastOrNull() == route) characterStore.loadMemory(route.characterId)
+                        LaunchedEffect(route.characterId) {
+                            characterStore.loadMemory(route.characterId)
                         }
                         CharacterMemoryScreen(route.characterId, characterStore, ::popRoute)
                     }
