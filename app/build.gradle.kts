@@ -38,6 +38,14 @@ val etaIsSolo = etaAppIdSuffix.isNotEmpty()
 val etaApplicationId =
     "io.github.mangi.eta" + if (etaIsSolo) ".$etaAppIdSuffix" else ""
 
+// 共存包（Solo）的出包差异统一走 -P 参数，默认值与主包一致：
+// 这样两边 build.gradle.kts 保持逐字相同，合并上游时不会再因为出包配置产生冲突。
+//   -Peta.versionCode=2026112402      共存包自己的版本号
+//   -Peta.debugSignWithRelease=true   Debug 包用 release 签名（覆盖安装已装的同包名版本）
+val etaVersionCode = providers.gradleProperty("eta.versionCode").orNull?.toIntOrNull() ?: 2026112507
+val etaDebugSignWithRelease =
+    providers.gradleProperty("eta.debugSignWithRelease").orNull?.toBoolean() ?: false
+
 android {
     namespace = "io.github.mangi.eta"
     compileSdk {
@@ -54,8 +62,8 @@ android {
         minSdk = 34
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026112329
-        versionName = "3.5.0"
+        versionCode = etaVersionCode
+        versionName = "3.5.1"
 
         ndk {
             // 同时过滤本地与依赖 AAR 的原生库，确保 APK 仅包含 ARM64。
@@ -80,9 +88,11 @@ android {
             versionNameSuffix = "-debug" + buildMetadataSuffix
             isMinifyEnabled = false
             isPseudoLocalesEnabled = true
-            // 测试包用固定 release 签名：Debug 包才能覆盖安装已经装上的同包名版本，
-            // 不用每次都卸载（卸载会清掉会话与数据库）。正式构建不受影响。
-            signingConfig = signingConfigs.findByName("release")
+            // 覆盖安装已装同包名版本时需要固定 release 签名，由 -Peta.debugSignWithRelease 控制；
+            // 主包默认不启用，正式构建不受影响。
+            if (etaDebugSignWithRelease) {
+                signingConfig = signingConfigs.findByName("release")
+            }
         }
         release {
             versionNameSuffix = buildMetadataSuffix
