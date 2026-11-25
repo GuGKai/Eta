@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import com.itos.coui.backdrop.CouiBackdrop
+import com.itos.coui.effect.resolveCouiThemeTint
 import com.itos.coui.motion.CouiTouchMotion
 import com.itos.coui.shape.CouiCornerWeight
 import com.itos.coui.shape.CouiShape
@@ -91,6 +92,7 @@ internal fun couiMenuMaterial(
     val mix = if (dark) Color(0x99262626) else Color(0x99CDCDCD)
     val blend = if (dark) Color(0x99262626) else Color(0xBFEEEEEE)
     val themeTint = LocalCouiMenuStyle.current.themeTint
+    val effectiveTint = if (themeTintEnabled) resolveCouiThemeTint(themeTint) else Color.Transparent
     val runtimeShaderSupported = Build.VERSION.SDK_INT >= 33
     val blurredBackdrop = rememberCouiMenuBlur(backdrop, surface)
     val backgroundLayer = rememberGraphicsLayer()
@@ -113,7 +115,7 @@ internal fun couiMenuMaterial(
     val edgeRadiusPx = LocalCouiMenuStyle.current.resolvedRadius.value * density.density
     val edgeWeight = (LocalCouiMenuStyle.current.shape as? CouiShape)?.cornerWeight ?: CouiCornerWeight
     val edge = if (runtimeShaderSupported) {
-        rememberCouiMenuEdge(dark, edgeRadiusPx, edgeWeight, mix, blend)
+        rememberCouiMenuEdge(dark, edgeRadiusPx, edgeWeight, mix, blend, effectiveTint)
     } else null
     if (!runtimeShaderSupported) {
         // shortcut: API 33 以下保留旧 Gaussian/Canvas 混合, 不视为厂商逐像素等价实现。
@@ -185,10 +187,10 @@ internal fun couiMenuMaterial(
             if (!runtimeShaderSupported) {
                 drawRect(mix, blendMode = BlendMode.Luminosity)
                 drawRect(blend, blendMode = BlendMode.Overlay)
-            }
-            if (themeTintEnabled) {
-                // 只引入页面色相, 保留材质亮度, 不让前景参与混色。
-                drawRect(themeTint, blendMode = BlendMode.Color)
+                if (effectiveTint.alpha > 0f) {
+                    // 只引入页面色相, 保留材质亮度, 不让前景参与混色。
+                    drawRect(effectiveTint, blendMode = BlendMode.Color)
+                }
             }
             if (edgeFadeLayer != null && blendProgress > 0f) {
                 val outline = shape.createOutline(size, layoutDirection, density)

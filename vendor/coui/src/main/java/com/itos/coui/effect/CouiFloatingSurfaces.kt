@@ -59,6 +59,7 @@ data class CouiFloatingMaterial(
     val index: Int = 2,
     val extension: Int = 0,
     val lightColor: Color = Color.White,
+    /** 染色基准色；透明或未指定颜色关闭染色，非透明按库内固定强度执行保亮度染色。 */
     val themeTint: Color = Color.Transparent,
     val edgeWidthDp: Float = 2.5f,
     val innerGlowScale: Float = 1f,
@@ -383,7 +384,7 @@ private fun Modifier.floatingSurfaces(
                         shader.setFloatUniform("u_shadowArray", glow)
                         shader.setFloatUniform("u_shadowShapeCtxArray", floatingShadowShapeContext(ball, glow))
                         shader.setColorUniform("u_color", Color.Transparent.toArgb())
-                        shader.setColorUniform("u_themeTint", material.themeTint.toArgb())
+                        shader.setColorUniform("u_themeTint", resolveCouiThemeTint(material.themeTint).toArgb())
                         val effect = RenderEffect.createChainEffect(
                             RenderEffect.createRuntimeShaderEffect(shader, "u_originShader"), materialInputs[index],
                         )

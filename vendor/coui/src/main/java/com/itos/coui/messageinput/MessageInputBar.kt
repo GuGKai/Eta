@@ -87,6 +87,8 @@ import com.itos.coui.theme.CouiTheme
  * modifier 作用于含遮罩和留白的整个底部区域，shape 只控制胶囊的裁剪与材质几何。
  * 组件消费剩余的底部导航栏占位，IME 避让由宿主容器处理。
  * Activity 的 IME 调整模式在同窗最后一个使用者退出时恢复，Compose Dialog 自行管理窗口模式。
+ * 默认 material 注入当前主题的染色基准色，themeTint 默认沿用 material.themeTint；
+ * 显式传入 themeTint 时覆盖材质染色基准色（强度由库统一控制，透明关闭；关闭系统模糊时强制关闭，不染不透明底色）。
  */
 @RequiresApi(34)
 @Composable
@@ -99,7 +101,7 @@ fun MessageInputBar(
     backdrop: CouiBackdrop = checkNotNull(LocalCouiBackdrop.current) { "消息输入栏需要所属页面的正文背景源" },
     renderer: CouiFloatingRenderer = remember { CouiFloatingRenderer.standalone() },
     colors: CouiMessageInputBarColors = CouiMessageInputBarDefaults.colors(dark),
-    material: CouiFloatingMaterial = CouiMessageInputBarDefaults.material(dark),
+    material: CouiFloatingMaterial = CouiMessageInputBarDefaults.material(dark).copy(themeTint = CouiTheme.materialTintFor(dark)),
     contourGlowEnabled: Boolean = LocalCouiContourGlowEnabled.current,
     shape: CouiShape = CouiMessageInputBarDefaults.shape,
     textStyle: TextStyle = TextStyle.Default,
@@ -113,6 +115,7 @@ fun MessageInputBar(
     placeholderMaxLines: Int = 1,
     placeholderOverflow: TextOverflow = TextOverflow.Ellipsis,
     lineLimits: TextFieldLineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 3),
+    themeTint: Color = material.themeTint,
 ) {
     require(placeholderMaxLines > 0) { "提示文字的最大行数必须大于 0" }
     ConfigureCouiImeWindow()
@@ -122,12 +125,15 @@ fun MessageInputBar(
     val materialSettings = rememberMessageInputMaterialSettings()
     val contour = contourGlowEnabled && materialSettings.stroke
     val shadow = CouiMessageInputBarDefaults.shadow(dark, density.density, contour)
-    val resolvedMaterial = if (materialSettings.blur) material else material.copy(
+    val resolvedMaterial = if (materialSettings.blur) {
+        if (themeTint == material.themeTint) material else material.copy(themeTint = themeTint)
+    } else material.copy(
         blurRadius = 0f,
         firstColor = CouiMessageInputBarDefaults.backgroundColor(dark),
         firstBlendMode = BlendMode.SRC_OVER,
         secondColor = Color.Transparent,
         secondBlendMode = BlendMode.SRC_OVER,
+        themeTint = Color.Transparent,
     )
     val fontScale = LocalConfiguration.current.fontScale
     var multiline by remember(state) { mutableStateOf(false) }

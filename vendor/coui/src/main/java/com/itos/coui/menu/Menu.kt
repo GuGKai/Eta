@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -783,7 +784,10 @@ private fun CouiMenuDivider() {
     )
 }
 
-/** 默认使用当前 COUI 主题；显式 style 优先。菜单独立管理窗口、输入和退场资源。 */
+/**
+ * 默认使用当前 COUI 主题；显式 style 优先。菜单独立管理窗口、输入和退场资源。
+ * themeTint 覆盖材质染色基准色（强度由库统一控制，Color.Transparent 关闭染色）。
+ */
 @Composable
 fun <T> Menu(
     modifier: Modifier = Modifier,
@@ -797,15 +801,18 @@ fun <T> Menu(
     anchor: CouiMenuAnchor? = null,
     headerText: String? = null,
     headerTextAlign: TextAlign = TextAlign.Center,
+    themeTint: Color = style.themeTint,
     onSpotlightDiagnostic: ((SpotlightDiagnostic) -> Unit)? = null,
 ) {
+    val resolvedStyle = if (themeTint == style.themeTint) style else style.copy(themeTint = themeTint)
     CompositionLocalProvider(
-        LocalCouiMenuStyle provides style,
+        LocalCouiMenuStyle provides resolvedStyle,
         LocalCouiMenuDiagnostic provides onSpotlightDiagnostic,
     ) {
         CouiMenuContent(
             expanded, onDismissRequest, items, onItemClick, modifier,
-            offset, properties, anchor, headerText, headerTextAlign, style.themeTint.alpha > 0f,
+            offset, properties, anchor, headerText, headerTextAlign,
+            resolvedStyle.themeTint.isSpecified && resolvedStyle.themeTint.alpha > 0f,
         )
     }
 }

@@ -6,17 +6,29 @@ import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.toArgb
 
 /** 材质的第二层混合模式。 */
 enum class CouiMaterialBlendMode { Overlay, ColorDodge }
 
-/** 两层材质混色, 只作用于背景输入。组件负责选择颜色和模式预设。 */
+/** 全库材质保亮度染色的统一固定强度；只作用于模糊材质染色步骤，不影响不透明背景与遮罩。 */
+internal const val CouiMaterialTintStrength = 0.30f
+
+/** 将基准色归一化为最终染色值；透明或未指定颜色关闭染色，非透明色忽略外部 alpha 并采用库内固定强度。 */
+internal fun resolveCouiThemeTint(baseColor: Color): Color =
+    if (baseColor.isSpecified && baseColor.alpha > 0f) baseColor.copy(alpha = CouiMaterialTintStrength) else Color.Transparent
+
+/** 两层材质混色, 只作用于背景输入。组件负责选择颜色和模式预设；themeTint 为染色基准色，透明关闭染色。 */
 @RequiresApi(33)
 @Composable
-fun rememberCouiMaterialEffect(mix: Color, blend: Color,
-    blendMode: CouiMaterialBlendMode = CouiMaterialBlendMode.Overlay): RenderEffect =
-    rememberCouiMaterialEffect(mix, blend, blendMode, rgbMix = false)
+fun rememberCouiMaterialEffect(
+    mix: Color,
+    blend: Color,
+    blendMode: CouiMaterialBlendMode = CouiMaterialBlendMode.Overlay,
+    themeTint: Color = Color.Transparent,
+): RenderEffect =
+    rememberCouiMaterialEffect(mix, blend, blendMode, rgbMix = false, themeTint = themeTint)
 
 @RequiresApi(33)
 @Composable
@@ -27,9 +39,10 @@ internal fun rememberCouiMaterialEffect(
     rgbMix: Boolean,
     slightDither: Boolean = false,
     themeTint: Color = Color.Transparent,
-): RenderEffect =
-    remember(mix, blend, blendMode, rgbMix, slightDither, themeTint) {
-        val tintEnabled = themeTint.alpha > 0f
+): RenderEffect {
+    val resolvedTint = resolveCouiThemeTint(themeTint)
+    return remember(mix, blend, blendMode, rgbMix, slightDither, resolvedTint) {
+        val tintEnabled = resolvedTint.alpha > 0f
         val shader = RuntimeShader(
             "const bool RGB_MIX = $rgbMix;\nconst bool SLIGHT_DITHER = $slightDither;\n" +
                 "const bool THEME_TINT = $tintEnabled;\n" + CouiMaterialShader,
@@ -37,9 +50,10 @@ internal fun rememberCouiMaterialEffect(
         shader.setFloatUniform("uMixColor", mix.red, mix.green, mix.blue, mix.alpha)
         shader.setFloatUniform("uBlendColor", blend.red, blend.green, blend.blue, blend.alpha)
         shader.setFloatUniform("uColorDodge", if (blendMode == CouiMaterialBlendMode.ColorDodge) 1f else 0f)
-        if (tintEnabled) shader.setColorUniform("uThemeTint", themeTint.toArgb())
+        if (tintEnabled) shader.setColorUniform("uThemeTint", resolvedTint.toArgb())
         RenderEffect.createRuntimeShaderEffect(shader, "content")
     }
+}
 
 internal const val CouiMaterialShaderFunctions = """
     float lum(float3 color) {
@@ -58,6 +72,11 @@ internal const val CouiMaterialShaderFunctions = """
             return sourceLum + ((color - sourceLum) * (1.0 - sourceLum)) / (maxColor - sourceLum);
         }
         return color;
+    }
+
+    half3 applyCouiThemeTint(half3 rgb, half4 tint) {
+        float3 clamped = clamp(float3(rgb), 0.0, 1.0);
+        return half3(mix(clamped, luminosity(clamped, float3(tint.rgb)), float(tint.a)));
     }
 
     float overlay(float source, float destination) {
@@ -139,8 +158,7 @@ private const val CouiMaterialShader = CouiMaterialShaderFunctions + CouiSlightD
         }
         if (THEME_TINT) {
             // ColorDodge 可超过 SDR 白点，染色以可见的材质亮度为准。
-            float3 rgb = clamp(color.rgb, 0.0, 1.0);
-            color.rgb = mix(rgb, luminosity(rgb, uThemeTint.rgb), uThemeTint.a);
+            color.rgb = applyCouiThemeTint(color.rgb, uThemeTint);
         }
         if (SLIGHT_DITHER) {
             color.rgb = (color.rgb + slightDither(coordinate)) * color.a;

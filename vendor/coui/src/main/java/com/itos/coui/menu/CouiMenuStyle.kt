@@ -34,7 +34,10 @@ object CouiMenuDefaults {
     internal val subMenuEdgeFadeBlurRadius = 2.dp
 
     @Composable
-    fun style(dark: Boolean = CouiTheme.isDark): CouiMenuStyle {
+    fun style(
+        dark: Boolean = CouiTheme.isDark,
+        themeTint: Color = CouiTheme.materialTintFor(dark),
+    ): CouiMenuStyle {
         val colors = CouiTheme.colorSchemeFor(dark)
         return CouiMenuStyle(
             colors = CouiMenuColors(colors.menuSurface, colors.container, colors.accentOnSurface,
@@ -43,13 +46,13 @@ object CouiMenuDefaults {
             checkboxShape = CouiCheckboxDefaults.shape, checkboxBorderShape = CouiCheckboxDefaults.borderShape,
             checkboxColors = CouiCheckboxDefaults.colors(colors.menuCheckboxAccent, dark),
             itemTextStyle = CouiTheme.typography.menuItem, headerTextStyle = CouiTheme.typography.label,
-            themeTint = CouiTheme.materialTintFor(dark),
+            themeTint = themeTint,
             dark = dark,
         )
     }
 }
 
-/** 仅描述宿主外观。CouiShape 自动提供半径；其他 Shape 须显式提供 radius。 */
+/** 仅描述宿主外观。CouiShape 自动提供半径；其他 Shape 须显式提供 radius；themeTint 为材质染色基准色。 */
 data class CouiMenuStyle(
     val colors: CouiMenuColors,
     val shape: Shape,

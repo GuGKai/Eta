@@ -13,9 +13,16 @@ import com.itos.coui.effect.LocalCouiContourGlowEnabled
 
 @RequiresApi(33)
 @Composable
-internal fun rememberCouiMenuEdge(dark: Boolean, radiusPx: Float, cornerWeight: Float, mix: Color, blend: Color): CouiMenuEdge {
+internal fun rememberCouiMenuEdge(
+    dark: Boolean,
+    radiusPx: Float,
+    cornerWeight: Float,
+    mix: Color,
+    blend: Color,
+    themeTint: Color,
+): CouiMenuEdge {
     val contourGlowEnabled = LocalCouiContourGlowEnabled.current
-    return remember(dark, radiusPx, cornerWeight, mix, blend, contourGlowEnabled) {
+    return remember(dark, radiusPx, cornerWeight, mix, blend, contourGlowEnabled, themeTint) {
         CouiMenuEdge(
             CouiEdge(
                 style = if (dark) CouiEdgeStyle.Dark else CouiEdgeStyle.Light,
@@ -26,6 +33,7 @@ internal fun rememberCouiMenuEdge(dark: Boolean, radiusPx: Float, cornerWeight: 
                 innerGlowAlpha = 0.6f * if (dark) 0.1f else 0.9f,
                 contourGlowEnabled = contourGlowEnabled,
                 lineAlpha = if (dark) 0.60f else 0.66f,
+                themeTint = themeTint,
             ),
         )
     }

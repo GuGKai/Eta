@@ -110,6 +110,7 @@ import kotlin.math.roundToInt
  * small 使用 32dp/2dp 紧凑预设；普通预设为 40dp/4dp。
  * Modifier 可覆盖尺寸，指示器、采样和输入均使用实际约束。取消不新增提交，已即时提交的选择由宿主保留。
  * 从选中项或移动中的指示器起拖，越过横向阈值后持续持有手势；此前的纵向拖动可由页面接管。
+ * themeTint 为透明模糊模式的材质染色基准色（强度由库统一控制，透明关闭；普通填色模式忽略）。
  */
 @RequiresApi(34)
 @Composable
@@ -127,6 +128,7 @@ fun SegmentedControl(
     containerColor: Color = CouiSegmentedControlDefaults.containerColor(dark),
     indicatorColor: Color = CouiSegmentedControlDefaults.indicatorColor(dark),
     renderer: CouiFloatingRenderer? = if (backdrop != null) remember { CouiFloatingRenderer.standalone() } else null,
+    themeTint: Color = CouiTheme.materialTintFor(dark),
 ) {
     require(labels.isNotEmpty() && selectedIndex in labels.indices) { "分段标签不能为空，选中下标必须在范围内" }
     require(backdrop == null || renderer != null) { "透明模糊需要独立的单主体 renderer" }
@@ -149,7 +151,7 @@ fun SegmentedControl(
     val indicatorShape = remember { CouiShape(999.dp, 2f) }
     val indicatorDrawing = remember(density, rtl) { SegmentIndicatorDrawing() }
     val contentLayer = if (backdrop != null) rememberGraphicsLayer() else null
-    val material = remember(dark) { CouiSegmentedControlDefaults.material(dark) }
+    val material = remember(dark, themeTint) { CouiSegmentedControlDefaults.material(dark).copy(themeTint = themeTint) }
     val labelColor = textStyle.color.takeOrElse { CouiTheme.colorSchemeFor(dark).onSurface }
     val shadow = remember { CouiFloatingShadow(0f, Color.Transparent, 0f, 0f, 0f, Color.Transparent, Rect.Zero, 0f) }
     val (lightInput, light) = if (backdrop != null) {

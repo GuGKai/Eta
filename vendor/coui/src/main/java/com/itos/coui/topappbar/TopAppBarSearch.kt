@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.LayerOutsets
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -92,6 +94,7 @@ import kotlin.math.roundToInt
  * 标题槽位入口。visible 只控制整组淡化，不改变搜索展收目标或页面查询。
  * action 提供右侧融合胶囊的非交互内容；点击、材质与反馈由组件持有。
  * onActionClick 为 null 时禁用动作；收起时保留融合绘制并立即关闭输入与语义。
+ * themeTint 指定时覆盖 style 的材质染色基准色；Color.Unspecified 沿用 style 设置。
  */
 @RequiresApi(34)
 @Composable
@@ -111,9 +114,14 @@ fun TopAppBarSearch(
     trailingIcon: @Composable () -> Unit = {},
     action: (@Composable () -> Unit)? = null,
     onActionClick: (() -> Unit)? = null,
+    themeTint: Color = Color.Unspecified,
     title: @Composable () -> Unit,
 ) {
-    CompositionLocalProvider(LocalCouiToolbarStyle provides style) {
+    val resolvedStyle = remember(style, themeTint) {
+        if (themeTint.isSpecified) style.copy(material = { capsule -> style.material(capsule).copy(themeTint = themeTint) })
+        else style
+    }
+    CompositionLocalProvider(LocalCouiToolbarStyle provides resolvedStyle) {
         val requester = remember { FocusRequester() }
         BoxWithConstraints(
             modifier.fillMaxWidth().height(64.dp)
@@ -211,7 +219,7 @@ fun TopAppBarSearch(
     }
 }
 
-/** 与展开搜索框共用材质。收起尾段仍允许重新按下入口。 */
+/** 与展开搜索框共用材质。收起尾段仍允许重新按下入口；themeTint 指定时覆盖 style 染色基准色。 */
 @RequiresApi(34)
 @Composable
 fun TopAppBarSearchButton(
@@ -221,8 +229,13 @@ fun TopAppBarSearchButton(
     onClick: () -> Unit,
     contentDescription: String,
     enabled: Boolean = true,
+    themeTint: Color = Color.Unspecified,
 ) {
-    CompositionLocalProvider(LocalCouiToolbarStyle provides style) {
+    val resolvedStyle = remember(style, themeTint) {
+        if (themeTint.isSpecified) style.copy(material = { capsule -> style.material(capsule).copy(themeTint = themeTint) })
+        else style
+    }
+    CompositionLocalProvider(LocalCouiToolbarStyle provides resolvedStyle) {
         val overlay = LocalCouiToolbarOverlay.current
         TopAppBarSearchAction(
             modifier = modifier.onPlaced {

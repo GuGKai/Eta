@@ -6,12 +6,13 @@ import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import kotlin.math.max
 
 /** 背景感知描边的色彩样式, 共用深色描边几何。 */
 enum class CouiEdgeStyle { Light, Dark }
 
-/** 接收原始模糊图与组件材质配色; contourGlowEnabled 同时控制描边与内光晕。 */
+/** 接收原始模糊图与组件材质配色; contourGlowEnabled 同时控制描边与内光晕; themeTint 为染色基准色。 */
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 class CouiEdge(
     style: CouiEdgeStyle,
@@ -22,8 +23,12 @@ class CouiEdge(
     private val innerGlowAlpha: Float,
     contourGlowEnabled: Boolean = true,
     private val lineAlpha: Float = if (style == CouiEdgeStyle.Light) 0.55f else 0.5f,
+    themeTint: Color = Color.Transparent,
 ) {
-    private val shader = RuntimeShader(CouiEdgeShader)
+    private val resolvedThemeTint = resolveCouiThemeTint(themeTint)
+    private val shader = RuntimeShader(
+        "const bool THEME_TINT = ${resolvedThemeTint.alpha > 0f};\n" + CouiEdgeShader,
+    )
     private var lastSize = Size.Zero
     private var lastDensity = 0f
     private var lastSlightDither = false
@@ -38,6 +43,9 @@ class CouiEdge(
         shader.setFloatUniform("uBlendColor", blend.red, blend.green, blend.blue, blend.alpha)
         shader.setFloatUniform("uUseLightEdgeColor", if (style == CouiEdgeStyle.Light) 1f else 0f)
         shader.setFloatUniform("uContourGlowEnabled", if (contourGlowEnabled) 1f else 0f)
+        if (resolvedThemeTint.alpha > 0f) {
+            shader.setColorUniform("uThemeTint", resolvedThemeTint.toArgb())
+        }
     }
 
     fun renderEffect(size: Size, density: Float): RenderEffect = renderEffect(size, density, slightDither = false)
@@ -440,27 +448,35 @@ private const val CouiEdgeShader = CouiMaterialShaderFunctions + CouiContourShad
         uniform float4 uMixColor;
         uniform float4 uBlendColor;
         uniform float uSlightDither;
+        layout(color) uniform half4 uThemeTint;
 
         half4 main(float2 fragCoord) {
             half4 sourceColor = content.eval(fragCoord);
             half4 displayColor = couiMaterial(sourceColor, uMixColor, uBlendColor);
             half4 materialColor = displayColor;
             if (uSlightDither > 0.5) materialColor.rgb += slightDither(fragCoord) * materialColor.a;
-            if (uContourGlowEnabled < 0.5) return materialColor;
-            half4 edgeReferenceColor = displayColor;
-            if (uUseLightEdgeColor > 0.5) {
-                edgeReferenceColor = lightEdgeReferenceColor(sourceColor);
+            half4 color = materialColor;
+            if (uContourGlowEnabled >= 0.5) {
+                half4 edgeReferenceColor = displayColor;
+                if (uUseLightEdgeColor > 0.5) {
+                    edgeReferenceColor = lightEdgeReferenceColor(sourceColor);
+                }
+                float2 coords = float2(fragCoord.x, u_commonArray[1]*2.0-fragCoord.y);
+                CommonDataRect rectData;
+                rectData.halfResolution = float2(u_commonArray[0], u_commonArray[1]);
+                rectData.pos = coords - float2(u_commonArray[2], u_commonArray[3]) - rectData.halfResolution;
+                rectData.halfSize = float2(u_commonArray[4], u_commonArray[5]);
+                rectData.coner = u_commonArray[6];
+                rectData.weight = u_commonArray[7];
+                float d = smoothSDF_D(rectData.pos, rectData.halfSize, rectData.coner, rectData.weight);
+                color = blendMenuInnerGlow(rectData, materialColor, d, fragCoord);
+                color = blendEdge(rectData, color, edgeReferenceColor, d, 1.0);
             }
-            float2 coords = float2(fragCoord.x, u_commonArray[1]*2.0-fragCoord.y);
-            CommonDataRect rectData;
-            rectData.halfResolution = float2(u_commonArray[0], u_commonArray[1]);
-            rectData.pos = coords - float2(u_commonArray[2], u_commonArray[3]) - rectData.halfResolution;
-            rectData.halfSize = float2(u_commonArray[4], u_commonArray[5]);
-            rectData.coner = u_commonArray[6];
-            rectData.weight = u_commonArray[7];
-            float d = smoothSDF_D(rectData.pos, rectData.halfSize, rectData.coner, rectData.weight);
-            half4 color = blendMenuInnerGlow(rectData, materialColor, d, fragCoord);
-            color = blendEdge(rectData, color, edgeReferenceColor, d, 1.0);
+            if (THEME_TINT) {
+                if (color.a > 0.0) {
+                    color.rgb = applyCouiThemeTint(color.rgb / color.a, uThemeTint) * color.a;
+                }
+            }
             // shortcut: 整材质由调用方的公开 Shape Path 裁剪, 未移植厂商 GPU 抗锯齿覆盖率。
             return color;
         }

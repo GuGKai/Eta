@@ -90,7 +90,7 @@ object CouiTheme {
             else if (dark) CouiPresets.Dark else CouiPresets.Light
     }
 
-    /** 透明表示不做额外页面色相染色；显式材质配置始终由调用方负责。 */
+    /** 透明表示不做额外页面色相染色；非透明颜色作为染色基准色，由材质管道统一控制强度。 */
     @Composable
     fun materialTintFor(dark: Boolean): Color {
         val local = LocalCouiTheme.current
@@ -100,7 +100,7 @@ object CouiTheme {
 }
 
 /**
- * 可选外观上下文。materialTint 默认为透明；Material 宿主可显式传入页面表面色启用项目染色。
+ * 可选外观上下文。materialTint 默认为透明；Material 宿主可传入染色基准色启用统一固定强度染色。
  * 不提供主题时使用初始化策略，未初始化则使用原生预设。业务状态及资源生命周期仍由原接口管理。
  */
 @Composable
