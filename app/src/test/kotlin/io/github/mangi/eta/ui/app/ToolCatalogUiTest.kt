@@ -85,9 +85,9 @@ class ToolCatalogUiTest {
         val groups = buildToolsState(context).groups
         val appGroup = projectToolGroups(groups, false, false, false).single { it.id == "app" }
         val batch = appGroup.tools.single { it.id == "batch" }
-        assertEquals(context.getString(R.string.tool_batch), batch.title)
-        assertEquals(context.getString(R.string.tool_batch_description), batch.summary)
-        assertEquals(R.string.tool_batch, toolDisplayNameResource("batch"))
+        assertEquals(context.getString(R.string.local_tool_batch), batch.title)
+        assertEquals(context.getString(R.string.local_tool_batch_description), batch.summary)
+        assertEquals(R.string.local_tool_batch, toolDisplayNameResource("batch"))
         assertEquals(RootRequirement.NONE, toolCardRequirement("batch").rootRequirement)
     }
 

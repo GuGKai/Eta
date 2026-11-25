@@ -114,7 +114,7 @@ internal fun SpeechVoiceSection(store: SpeechSettingsStore) {
                     TtsProvider.MIMO -> R.string.speech_mimo_voice_note
                     TtsProvider.DEEPSEEK -> R.string.speech_deepseek_voice_note
                     // 系统语音的音色来自设备引擎，界面里另有选择器与说明。
-                    TtsProvider.SYSTEM -> R.string.speech_system_tts_note
+                    TtsProvider.SYSTEM -> R.string.local_speech_system_tts_note
                     TtsProvider.NONE -> error("No synthesis provider")
                 },
             ),

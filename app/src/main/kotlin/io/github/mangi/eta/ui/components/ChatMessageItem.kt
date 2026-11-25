@@ -954,7 +954,7 @@ private fun AgentMessageBlock(
                     // 颜色与动作按钮图标统一（同一 onSurfaceVariantSummary，同样的 0.75 透明度）。
                     message.roundCost?.let { cost ->
                         Text(
-                            text = stringResource(R.string.chat_round_cost, plainCost(cost)),
+                            text = stringResource(R.string.local_chat_round_cost, plainCost(cost)),
                             modifier = Modifier.padding(start = AnswerTextGap),
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
                             style = MiuixTheme.textStyles.footnote1,

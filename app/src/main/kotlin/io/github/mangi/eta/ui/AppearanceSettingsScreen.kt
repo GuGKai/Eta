@@ -107,8 +107,8 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
     val uiStyles = remember { AppearanceUiStyle.entries.sortedBy { it != AppearanceUiStyle.Default } }
     val uiStyleLabels = uiStyles.map { style ->
         when (style) {
-            AppearanceUiStyle.MIUIX -> stringResource(R.string.appearance_ui_style_miuix)
-            AppearanceUiStyle.COUI -> stringResource(R.string.appearance_ui_style_coui)
+            AppearanceUiStyle.MIUIX -> stringResource(R.string.local_appearance_ui_style_miuix)
+            AppearanceUiStyle.COUI -> stringResource(R.string.local_appearance_ui_style_coui)
         }
     }
     val themeModes = AppearanceThemeMode.entries
@@ -152,7 +152,7 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
             ) {
                 Group(title = stringResource(R.string.appearance_group_color)) {
                     CouiDropdownPreference(
-                        title = stringResource(R.string.appearance_ui_style),
+                        title = stringResource(R.string.local_appearance_ui_style),
                         items = uiStyleLabels,
                         selectedIndex = uiStyles.indexOf(appearance.uiStyle),
                         onSelectedIndexChange = { index ->
@@ -192,8 +192,8 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                     )
                     Divider()
                     CouiSliderPreference(
-                        title = stringResource(R.string.appearance_interface_scale),
-                        summary = stringResource(R.string.appearance_interface_scale_summary),
+                        title = stringResource(R.string.local_appearance_interface_scale),
+                        summary = stringResource(R.string.local_appearance_interface_scale_summary),
                         value = scaleDraft.coerceIn(
                             MIN_INTERFACE_SCALE * 100f,
                             MAX_INTERFACE_SCALE * 100f,
@@ -211,8 +211,8 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                     )
                     Divider()
                     CouiSliderPreference(
-                        title = stringResource(R.string.appearance_chat_text_scale),
-                        summary = stringResource(R.string.appearance_chat_text_scale_summary),
+                        title = stringResource(R.string.local_appearance_chat_text_scale),
+                        summary = stringResource(R.string.local_appearance_chat_text_scale_summary),
                         value = chatTextScaleDraft.coerceIn(
                             MIN_CHAT_TEXT_SCALE * 100f,
                             MAX_CHAT_TEXT_SCALE * 100f,
@@ -231,11 +231,11 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
 
             CouiInputDialog(
                 visible = showScaleDialog,
-                title = stringResource(R.string.appearance_interface_scale_dialog_title),
-                message = stringResource(R.string.appearance_interface_scale_dialog_summary),
+                title = stringResource(R.string.local_appearance_interface_scale_dialog_title),
+                message = stringResource(R.string.local_appearance_interface_scale_dialog_summary),
                 state = scaleInputState,
                 inputTransformation = DecimalDigits.maxLengthTrim(3),
-                placeholder = stringResource(R.string.appearance_interface_scale_input_label),
+                placeholder = stringResource(R.string.local_appearance_interface_scale_input_label),
                 confirmText = stringResource(R.string.action_confirm),
                 confirmEnabled = parsedScale != null && parsedScale in 80..110,
                 onConfirm = {
@@ -254,8 +254,8 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                     GlassDialog(
                         show = showScaleDialog,
                         backdrop = currentGlassOverlayBackdrop(),
-                        title = stringResource(R.string.appearance_interface_scale_dialog_title),
-                        summary = stringResource(R.string.appearance_interface_scale_dialog_summary),
+                        title = stringResource(R.string.local_appearance_interface_scale_dialog_title),
+                        summary = stringResource(R.string.local_appearance_interface_scale_dialog_summary),
                         onDismissRequest = { showScaleDialog = false },
                     ) {
                         Column {
@@ -263,7 +263,7 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                                 state = scaleInputState,
                                 lineLimits = TextFieldLineLimits.SingleLine,
                                 inputTransformation = DecimalDigits.maxLengthTrim(3),
-                                label = stringResource(R.string.appearance_interface_scale_input_label),
+                                label = stringResource(R.string.local_appearance_interface_scale_input_label),
                                 colors = glassOverlayTextFieldColors(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier
@@ -292,7 +292,7 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                             .padding(bottom = 12.dp),
                     ) {
                         GlassDropdownPreference(
-                            title = stringResource(R.string.appearance_ui_style),
+                            title = stringResource(R.string.local_appearance_ui_style),
                             items = uiStyleLabels,
                             selectedIndex = uiStyles.indexOf(appearance.uiStyle),
                             backdrop = backdrop,
@@ -394,8 +394,8 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                             )
                         }
                         SliderPreference(
-                            title = stringResource(R.string.appearance_interface_scale),
-                            summary = stringResource(R.string.appearance_interface_scale_summary),
+                            title = stringResource(R.string.local_appearance_interface_scale),
+                            summary = stringResource(R.string.local_appearance_interface_scale_summary),
                             value = scaleDraft.coerceIn(
                                 MIN_INTERFACE_SCALE * 100f,
                                 MAX_INTERFACE_SCALE * 100f,
@@ -415,8 +415,8 @@ internal fun AppearanceSettingsScreen(onBack: () -> Unit) {
                             holdDownState = showScaleDialog,
                         )
                         SliderPreference(
-                            title = stringResource(R.string.appearance_chat_text_scale),
-                            summary = stringResource(R.string.appearance_chat_text_scale_summary),
+                            title = stringResource(R.string.local_appearance_chat_text_scale),
+                            summary = stringResource(R.string.local_appearance_chat_text_scale_summary),
                             value = chatTextScaleDraft.coerceIn(
                                 MIN_CHAT_TEXT_SCALE * 100f,
                                 MAX_CHAT_TEXT_SCALE * 100f,

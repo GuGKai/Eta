@@ -114,7 +114,7 @@ internal object LaunchUpdateNotice {
                     .apply()
                 if (newer) {
                     mainHandler.post {
-                        Toast.makeText(context, R.string.ui_update_available_toast, Toast.LENGTH_SHORT)
+                        Toast.makeText(context, R.string.local_ui_update_available_toast, Toast.LENGTH_SHORT)
                             .show()
                     }
                 }

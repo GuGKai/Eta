@@ -65,7 +65,7 @@ internal fun SpeechSettingsScreen(onBack: () -> Unit, onNavigate: (AppRoute) -> 
                         },
                     )
                 }
-                SpeechNote(stringResource(R.string.speech_overview_note))
+                SpeechNote(stringResource(R.string.local_speech_overview_note))
                 CouiPageBottomSpacer()
             }
         }
@@ -108,7 +108,7 @@ internal fun SpeechSettingsScreen(onBack: () -> Unit, onNavigate: (AppRoute) -> 
                                 },
                             )
                         }
-                        SpeechNote(stringResource(R.string.speech_overview_note))
+                        SpeechNote(stringResource(R.string.local_speech_overview_note))
                     }
                 }
             }

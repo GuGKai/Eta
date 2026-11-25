@@ -348,7 +348,7 @@ private fun SettingsPageContent(
             }
         }
     }
-    val defaultEffortTitle = stringResource(R.string.settings_default_reasoning_effort)
+    val defaultEffortTitle = stringResource(R.string.local_settings_default_reasoning_effort)
     val defaultEffortUnsupported = stringResource(R.string.conversation_title_settings_reasoning_unsupported)
     val defaultEffortEnabled = agentPrefs != null && defaultThinkingEnabled && effortOptions.size > 1
     var powerAssistantTarget by remember(prefs) {
@@ -666,7 +666,7 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
-                        title = stringResource(R.string.automation_title),
+                        title = stringResource(R.string.local_automation_title),
                         icon = { CouiSettingsIcon(Icons.Rounded.FilterAlt, SettingsIconColors.Blue) },
                         onClick = { onNavigate(AppRoute.Tasks) },
                     )
@@ -840,7 +840,7 @@ private fun SettingsPageContent(
                 }
 
                 if (prefs != null || hasConnectedFramework) {
-                    Group(title = stringResource(R.string.ui_search_in_one_turn_179584)) {
+                    Group(title = stringResource(R.string.local_ui_search_in_one_turn_179584)) {
                         SwitchPref(
                             context = context,
                             prefs = prefs,
@@ -853,7 +853,7 @@ private fun SettingsPageContent(
                         SwitchPref(
                             context = context,
                             prefs = prefs,
-                            title = stringResource(R.string.ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
+                            title = stringResource(R.string.local_ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
                             key = Prefs.Keys.DOUBLE_FINGER_CIRCLE_TO_SEARCH,
                             icon = Icons.Rounded.TouchApp,
                             iconTint = SettingsIconColors.Blue,
@@ -1247,7 +1247,7 @@ private fun SettingsPageContent(
 
                 if (prefs != null || hasConnectedFramework) {
                     item(key = "section_circle_to_search_title") {
-                        SmallTitle(stringResource(R.string.ui_search_in_one_turn_179584))
+                        SmallTitle(stringResource(R.string.local_ui_search_in_one_turn_179584))
                     }
                     item(key = "section_circle_to_search") {
                         SettingsGroupCard {
@@ -1261,7 +1261,7 @@ private fun SettingsPageContent(
                             SwitchPref(
                                 context = context,
                                 prefs = prefs,
-                                title = stringResource(R.string.ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
+                                title = stringResource(R.string.local_ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
                                 key = Prefs.Keys.DOUBLE_FINGER_CIRCLE_TO_SEARCH,
                                 icon = Icons.Rounded.TouchApp,
                             )

@@ -284,7 +284,7 @@ internal class CharacterLibraryStore(
 
     fun loadDefaultPrompt() {
         if (defaultPromptLoaded && defaultPromptDraft != defaultPromptSaved) return
-        runOperation(R.string.default_prompt_load_failed, "默认提示词读取失败，请重试", queueIfBusy = true) {
+        runOperation(R.string.local_default_prompt_load_failed, "默认提示词读取失败，请重试", queueIfBusy = true) {
             defaultPromptSaved = io { SettingsDataStore.settings().defaultAssistantSystemPrompt }
                 .ifBlank { BuiltinProviders.DEFAULT_SYSTEM_PROMPT }
             defaultPromptDraft = defaultPromptSaved
@@ -296,7 +296,7 @@ internal class CharacterLibraryStore(
 
     fun resetDefaultPrompt() { if (!busy) defaultPromptDraft = BuiltinProviders.DEFAULT_SYSTEM_PROMPT }
 
-    fun saveDefaultPrompt(onSaved: () -> Unit) = runOperation(R.string.default_prompt_save_failed, "默认提示词保存失败，请重试") {
+    fun saveDefaultPrompt(onSaved: () -> Unit) = runOperation(R.string.local_default_prompt_save_failed, "默认提示词保存失败，请重试") {
         val prompt = defaultPromptDraft.trim()
         io {
             SettingsDataStore.updateSettings { it.copy(defaultAssistantSystemPrompt =

@@ -283,7 +283,7 @@ internal fun VirtualDisplayStageSection(
             )
             StagePillButton(
                 modifier = Modifier.weight(1f),
-                label = stringResource(R.string.overlay_virtual_collapse),
+                label = stringResource(R.string.local_overlay_virtual_collapse),
                 highlighted = false,
                 accent = accent,
                 onClick = onCollapse,

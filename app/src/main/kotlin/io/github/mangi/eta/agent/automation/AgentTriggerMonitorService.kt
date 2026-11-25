@@ -83,7 +83,7 @@ internal class AgentTriggerMonitorService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL,
-                getString(R.string.automation_channel),
+                getString(R.string.local_automation_channel),
                 NotificationManager.IMPORTANCE_LOW
             )
         )
@@ -95,8 +95,8 @@ internal class AgentTriggerMonitorService : Service() {
         )
         val notification =
             Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(getString(R.string.automation_monitor_title))
-                .setContentText(getString(R.string.automation_monitor_summary))
+                .setContentTitle(getString(R.string.local_automation_monitor_title))
+                .setContentText(getString(R.string.local_automation_monitor_summary))
                 .setContentIntent(open).setOngoing(true).build()
         if (android.os.Build.VERSION.SDK_INT >= 34) startForeground(
             1111,

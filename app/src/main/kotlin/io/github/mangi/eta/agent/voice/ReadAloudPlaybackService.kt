@@ -126,7 +126,7 @@ internal class ReadAloudPlaybackService : Service() {
                 .setSmallIcon(Icon.createWithResource(context, iconRes))
                 .setContentTitle(
                     context.getString(
-                        if (paused) R.string.read_aloud_paused_title else R.string.read_aloud_notification_title,
+                        if (paused) R.string.local_read_aloud_paused_title else R.string.read_aloud_notification_title,
                     ),
                 )
                 .setContentIntent(open)
@@ -136,7 +136,7 @@ internal class ReadAloudPlaybackService : Service() {
                 .addAction(
                     Notification.Action.Builder(
                         null,
-                        context.getString(if (paused) R.string.speech_read_resume else R.string.speech_read_pause),
+                        context.getString(if (paused) R.string.local_speech_read_resume else R.string.local_speech_read_pause),
                         toggle,
                     ).build(),
                 )
@@ -147,7 +147,7 @@ internal class ReadAloudPlaybackService : Service() {
                 builder
                     .setShortCriticalText(
                         context.getString(
-                            if (paused) R.string.read_aloud_paused_short_text else R.string.read_aloud_live_short_text,
+                            if (paused) R.string.local_read_aloud_paused_short_text else R.string.local_read_aloud_live_short_text,
                         ),
                     )
                     .setRequestPromotedOngoing(true)

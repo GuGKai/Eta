@@ -24,18 +24,18 @@ import top.yukonga.miuix.kmp.basic.TextButton
 
 @Composable
 internal fun DefaultAssistantPromptScreen(store: CharacterLibraryStore, onBack: () -> Unit) {
-    MiuixScaffoldPage(title = stringResource(R.string.default_prompt_title), onBack = onBack, modifier = Modifier.imePadding()) {
+    MiuixScaffoldPage(title = stringResource(R.string.local_default_prompt_title), onBack = onBack, modifier = Modifier.imePadding()) {
         store.notice?.let { item { CharacterPageMessage(it) } }
-        item { CharacterPageMessage(stringResource(R.string.default_prompt_description)) }
+        item { CharacterPageMessage(stringResource(R.string.local_default_prompt_description)) }
         item(key = "prompt") {
-            CharacterTextField(stringResource(R.string.default_prompt_field), store.defaultPromptDraft,
+            CharacterTextField(stringResource(R.string.local_default_prompt_field), store.defaultPromptDraft,
                 store::updateDefaultPrompt, !store.busy, minLines = 10)
         }
         item(key = "actions") {
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(stringResource(R.string.default_prompt_reset), onClick = store::resetDefaultPrompt,
+                TextButton(stringResource(R.string.local_default_prompt_reset), onClick = store::resetDefaultPrompt,
                     enabled = !store.busy, modifier = Modifier.weight(1f))
-                TextButton(stringResource(R.string.default_prompt_save), onClick = { store.saveDefaultPrompt(onBack) },
+                TextButton(stringResource(R.string.local_default_prompt_save), onClick = { store.saveDefaultPrompt(onBack) },
                     enabled = !store.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.textButtonColorsPrimary())
             }
         }

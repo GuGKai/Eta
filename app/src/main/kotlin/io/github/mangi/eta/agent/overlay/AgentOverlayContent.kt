@@ -265,7 +265,7 @@ internal fun OverlaySupplementInput(
         ) {
             if (state.text.isBlank()) {
                 Text(
-                    text = stringResource(R.string.overlay_supplement_hint),
+                    text = stringResource(R.string.local_overlay_supplement_hint),
                     color = textColor.copy(alpha = 0.45f),
                     fontSize = 14.sp,
                     lineHeight = 18.sp,

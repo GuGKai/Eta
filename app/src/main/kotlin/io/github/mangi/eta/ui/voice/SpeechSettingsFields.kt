@@ -60,7 +60,7 @@ internal fun TtsProvider.label(): String = stringResource(
         TtsProvider.MINIMAX -> R.string.speech_tts_minimax
         TtsProvider.MIMO -> R.string.speech_tts_mimo
         TtsProvider.DEEPSEEK -> R.string.speech_tts_deepseek
-        TtsProvider.SYSTEM -> R.string.speech_tts_system
+        TtsProvider.SYSTEM -> R.string.local_speech_tts_system
     },
 )
 

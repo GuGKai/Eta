@@ -28,8 +28,8 @@ internal fun bluetoothPermissionHealthItem(context: Context): PermissionHealthIt
     val granted = hasBluetoothConnectionPermission(context)
     return PermissionHealthItemUi(
         id = "bluetooth",
-        title = context.getString(R.string.permission_bluetooth_title),
-        summary = context.getString(R.string.permission_bluetooth_summary),
+        title = context.getString(R.string.local_permission_bluetooth_title),
+        summary = context.getString(R.string.local_permission_bluetooth_summary),
         status = if (granted) PermissionStatusUi.Available else PermissionStatusUi.Missing,
         primaryActionLabel = context.getString(
             if (granted) R.string.state_ui_go_to_settings_1f2998 else R.string.state_ui_to_authorize_762ec4,
@@ -49,8 +49,8 @@ internal fun rememberBluetoothPermissionRequest(onResult: () -> Unit): () -> Uni
         WindowDialog(
             show = true,
             cornerRadius = DialogDefaults.CornerRadius,
-            title = stringResource(R.string.permission_bluetooth_title),
-            summary = stringResource(R.string.permission_bluetooth_denied),
+            title = stringResource(R.string.local_permission_bluetooth_title),
+            summary = stringResource(R.string.local_permission_bluetooth_denied),
             onDismissRequest = { showSettingsGuide = false },
         ) {
             MiuixDialogActions(
@@ -78,6 +78,6 @@ private fun openBluetoothPermissionSettings(context: Context) {
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
         )
     } catch (_: ActivityNotFoundException) {
-        Toast.makeText(context, R.string.permission_bluetooth_settings_unavailable, Toast.LENGTH_LONG).show()
+        Toast.makeText(context, R.string.local_permission_bluetooth_settings_unavailable, Toast.LENGTH_LONG).show()
     }
 }

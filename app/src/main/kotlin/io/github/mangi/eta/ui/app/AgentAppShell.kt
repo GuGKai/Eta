@@ -416,7 +416,7 @@ private fun CouiTopBarOverflowMenu(
 
     val newConversationText = stringResource(R.string.action_new_conversation)
     val openBrowserText = stringResource(R.string.action_open_browser)
-    val openTasksText = stringResource(R.string.automation_title)
+    val openTasksText = stringResource(R.string.local_automation_title)
     val openScheduledText = stringResource(R.string.route_scheduled_tasks)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
@@ -678,7 +678,7 @@ private fun TopBarOverflowMenu(
     val autoReadEnabled = speechSettings?.chatAutoSpeak == true
     val newConversationText = stringResource(R.string.action_new_conversation)
     val openBrowserText = stringResource(R.string.action_open_browser)
-    val openTasksText = stringResource(R.string.automation_title)
+    val openTasksText = stringResource(R.string.local_automation_title)
     val openScheduledText = stringResource(R.string.route_scheduled_tasks)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
@@ -822,7 +822,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.CharacterDetail -> stringResource(R.string.ui_misc_route_character_detail)
     is AppRoute.CharacterEditor -> stringResource(R.string.ui_misc_route_character_editor)
     is AppRoute.CharacterPersona -> stringResource(R.string.ui_misc_route_character_persona)
-    is AppRoute.DefaultAssistantPrompt -> stringResource(R.string.default_prompt_title)
+    is AppRoute.DefaultAssistantPrompt -> stringResource(R.string.local_default_prompt_title)
     is AppRoute.CharacterMemory -> stringResource(R.string.ui_misc_route_character_memory)
     is AppRoute.Permissions -> stringResource(R.string.route_permissions)
     is AppRoute.SystemEnhance -> stringResource(R.string.route_system_enhancements)
@@ -834,7 +834,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.AppearanceSettings -> stringResource(R.string.appearance_title)
     is AppRoute.DataBackup -> stringResource(R.string.data_backup_title)
     is AppRoute.Memory -> stringResource(R.string.route_memory)
-    is AppRoute.Tasks -> stringResource(R.string.automation_title)
+    is AppRoute.Tasks -> stringResource(R.string.local_automation_title)
     is AppRoute.LinuxEnvironment -> stringResource(R.string.route_linux_environment)
     is AppRoute.Workspace -> stringResource(R.string.capability_workspace)
     is AppRoute.SharedFolders -> stringResource(R.string.route_shared_folders)

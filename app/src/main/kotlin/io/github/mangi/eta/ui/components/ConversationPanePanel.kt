@@ -288,7 +288,7 @@ internal fun ConversationPanePanel(
     val isSearching = query.isNotBlank()
     // 第二阶段（全库正文扫描）在跑时，顶栏标题换成「正在搜索」；第一阶段与空闲时保持应用名。
     val searchRunningTitle = if (state.isSearchRunning) {
-        stringResource(R.string.conversation_searching)
+        stringResource(R.string.local_conversation_searching)
     } else {
         null
     }
@@ -409,8 +409,8 @@ internal fun ConversationPanePanel(
     }
 
     // 新建工作区时的默认名，例如「工作区 3」；在 Composable 作用域解析，供后续 lambda 复用。
-    val defaultWorkspaceNameFormat = stringResource(R.string.workspace_default_name)
-    val createWorkspaceLabel = stringResource(R.string.action_create_workspace)
+    val defaultWorkspaceNameFormat = stringResource(R.string.local_workspace_default_name)
+    val createWorkspaceLabel = stringResource(R.string.local_action_create_workspace)
 
     var workspaceNameTarget by remember { mutableStateOf<WorkspaceNameTarget?>(null) }
     var workspaceDeleteTarget by remember { mutableStateOf<ConversationWorkspaceUi?>(null) }
@@ -520,7 +520,7 @@ internal fun ConversationPanePanel(
                                 item(key = "section-workspaces") {
                                     Column {
                                         PaneSectionHeader(
-                                            label = stringResource(R.string.workspace_section_title),
+                                            label = stringResource(R.string.local_workspace_section_title),
                                             topPadding = ConversationPanelMetrics.FirstSectionTopPadding,
                                             largeTitle = true,
                                             trailing = {
@@ -767,8 +767,8 @@ internal fun ConversationPanePanel(
     // ── 工作区三个弹窗：新建/重命名、删除确认、移入工作区 ─────────────────────
     workspaceNameTarget?.let { target ->
         val title = when (target) {
-            is WorkspaceNameTarget.Create -> stringResource(R.string.workspace_create_title)
-            is WorkspaceNameTarget.Rename -> stringResource(R.string.action_rename_workspace)
+            is WorkspaceNameTarget.Create -> stringResource(R.string.local_workspace_create_title)
+            is WorkspaceNameTarget.Rename -> stringResource(R.string.local_action_rename_workspace)
         }
         val initialName = when (target) {
             is WorkspaceNameTarget.Create -> target.defaultName
@@ -893,7 +893,7 @@ private fun ConversationPaneWorkspaceChips(
     // COUI 必须拿到背景采样；MIUIX 由 Miuix 组件自绘，不再依赖 COUI 材质。
     if (isCoui && couiBackdrop == null) return
     val dark = CouiTheme.isDark
-    val allLabel = stringResource(R.string.inbox_all)
+    val allLabel = stringResource(R.string.local_inbox_all)
     val chipsScroll = rememberScrollState()
     val density = LocalDensity.current
     val fadePx = with(density) { WorkspaceChipEdgeFade.toPx() }
@@ -912,8 +912,8 @@ private fun ConversationPaneWorkspaceChips(
     // 长按菜单的目标工作区 + 锚点：菜单统一渲染在 chip 行外面（原因见下方注释）。
     var menuWorkspace by remember { mutableStateOf<ConversationWorkspaceUi?>(null) }
     var menuAnchor by remember { mutableStateOf<CouiMenuAnchor?>(null) }
-    val renameLabel = stringResource(R.string.action_rename_workspace)
-    val deleteLabel = stringResource(R.string.action_delete_workspace)
+    val renameLabel = stringResource(R.string.local_action_rename_workspace)
+    val deleteLabel = stringResource(R.string.local_action_delete_workspace)
     val destructiveColor = CouiDialogDefaults.themeColors().destructive
     val menuItems = remember(renameLabel, deleteLabel, destructiveColor) {
         listOf(
@@ -1497,7 +1497,7 @@ private fun PaneHeaderDivider() {
 @Composable
 private fun WorkspaceEmptyHint() {
     Text(
-        text = stringResource(R.string.workspace_empty_hint),
+        text = stringResource(R.string.local_workspace_empty_hint),
         color = MiuixTheme.colorScheme.onSurfaceVariantActions,
         style = MiuixTheme.textStyles.footnote1,
         modifier = Modifier.padding(
@@ -1597,8 +1597,8 @@ private fun WorkspaceRow(
 
         when (uiStyle) {
             AppearanceUiStyle.COUI -> {
-                val renameText = stringResource(R.string.action_rename_workspace)
-                val deleteText = stringResource(R.string.action_delete_workspace)
+                val renameText = stringResource(R.string.local_action_rename_workspace)
+                val deleteText = stringResource(R.string.local_action_delete_workspace)
                 val items = remember(renameText, deleteText) {
                     listOf(
                         CouiMenuItem(value = 0, text = renameText, icon = Icons.Rounded.Edit),
@@ -1625,8 +1625,8 @@ private fun WorkspaceRow(
             }
 
             AppearanceUiStyle.MIUIX -> {
-                val renameText = stringResource(R.string.action_rename_workspace)
-                val deleteText = stringResource(R.string.action_delete_workspace)
+                val renameText = stringResource(R.string.local_action_rename_workspace)
+                val deleteText = stringResource(R.string.local_action_delete_workspace)
                 EtaTopLayer {
                     GlassPopup(
                         show = showActionMenu,
@@ -1857,7 +1857,7 @@ private fun ConversationHistoryRow(
         )
         val renameText = stringResource(R.string.action_rename)
         val exportText = stringResource(R.string.action_export)
-        val moveText = stringResource(R.string.action_move_to_workspace)
+        val moveText = stringResource(R.string.local_action_move_to_workspace)
         val deleteText = stringResource(R.string.action_delete)
         when (LocalUiStyle.current) {
             AppearanceUiStyle.COUI -> {
@@ -2096,7 +2096,7 @@ private fun WorkspaceNameDialog(
 ) {
     val inputState = remember(initialName) { TextFieldState(initialName) }
     val input = inputState.text.toString()
-    val hint = stringResource(R.string.workspace_name_hint)
+    val hint = stringResource(R.string.local_workspace_name_hint)
     val saveText = stringResource(R.string.action_save)
     val canSave = input.isNotBlank()
     when (LocalUiStyle.current) {
@@ -2142,8 +2142,8 @@ private fun WorkspaceDeleteDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val title = stringResource(R.string.workspace_delete_title)
-    val message = stringResource(R.string.workspace_delete_message, workspace.name)
+    val title = stringResource(R.string.local_workspace_delete_title)
+    val message = stringResource(R.string.local_workspace_delete_message, workspace.name)
     val deleteText = stringResource(R.string.action_delete)
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> CouiConfirmDialog(
@@ -2180,9 +2180,9 @@ private fun WorkspaceMoveDialog(
     onMove: (String?) -> Unit,
     onReorder: (List<String>) -> Unit,
 ) {
-    val title = stringResource(R.string.workspace_move_title)
-    val emptyText = stringResource(R.string.workspace_move_empty)
-    val removeText = stringResource(R.string.action_remove_from_workspace)
+    val title = stringResource(R.string.local_workspace_move_title)
+    val emptyText = stringResource(R.string.local_workspace_move_empty)
+    val removeText = stringResource(R.string.local_action_remove_from_workspace)
     val cancelText = stringResource(R.string.action_cancel)
     // 保留全部分类，当前所在的那个也用右侧圆点标出来（与设置页模型提供商的单选一致）。
     // 这里的顺序就是侧栏顶部 chip 行的顺序：长按拖动改完立即落库，两处同步。

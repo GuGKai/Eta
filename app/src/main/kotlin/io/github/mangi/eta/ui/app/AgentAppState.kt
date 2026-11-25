@@ -1196,7 +1196,7 @@ internal class AgentAppState(
                 AndroidAgentLogger.warn("Agent conversation search failed: type=${failure.safeLogType()}")
                 Toast.makeText(
                     appContext,
-                    appContext.getString(R.string.conversation_search_failed),
+                    appContext.getString(R.string.local_conversation_search_failed),
                     Toast.LENGTH_SHORT,
                 ).show()
                 resetImmediately = true
@@ -1778,7 +1778,7 @@ internal class AgentAppState(
     fun createWorkspace(name: String? = null): String {
         val id = UUID.randomUUID().toString()
         val resolved = name?.trim().orEmpty().ifBlank {
-            appContext.getString(R.string.workspace_default_name, workspaceRecords.size + 1)
+            appContext.getString(R.string.local_workspace_default_name, workspaceRecords.size + 1)
         }
         workspaceRecords = workspaceRecords + ConversationWorkspaceRecord(id = id, name = resolved)
         persistWorkspaces()
@@ -2275,7 +2275,7 @@ internal class AgentAppState(
     private fun restoreInterjectionDraft(conversationId: String, text: String) {
         val current = conversationsById[conversationId] ?: return
         if (current.input.isBlank()) updateConversation(conversationId, current.copy(input = text))
-        Toast.makeText(appContext, appContext.getString(R.string.chat_interject_unavailable), Toast.LENGTH_SHORT).show()
+        Toast.makeText(appContext, appContext.getString(R.string.local_chat_interject_unavailable), Toast.LENGTH_SHORT).show()
     }
 
     fun beginMessageEdit(messageId: String) {

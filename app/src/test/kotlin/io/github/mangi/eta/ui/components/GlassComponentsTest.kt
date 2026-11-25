@@ -311,11 +311,11 @@ class GlassComponentsTest {
             pumpFrames(activity, frameClock)
 
             // 点击界面缩放打开 GlassDialog
-            clickByText(activity, activity.getString(R.string.appearance_interface_scale))
+            clickByText(activity, activity.getString(R.string.local_appearance_interface_scale))
             pumpFrames(activity, frameClock)
             assertTrue(
                 "Expected scale GlassDialog title",
-                collectAllTexts(activity).any { it == activity.getString(R.string.appearance_interface_scale_dialog_title) },
+                collectAllTexts(activity).any { it == activity.getString(R.string.local_appearance_interface_scale_dialog_title) },
             )
         } finally {
             recomposer.cancel()
@@ -369,9 +369,9 @@ class GlassComponentsTest {
             pumpFrames(activity, frameClock)
 
             // 打开界面样式下拉并点击 COUI
-            clickByText(activity, activity.getString(R.string.appearance_ui_style))
+            clickByText(activity, activity.getString(R.string.local_appearance_ui_style))
             pumpFrames(activity, frameClock)
-            clickByText(activity, activity.getString(R.string.appearance_ui_style_coui))
+            clickByText(activity, activity.getString(R.string.local_appearance_ui_style_coui))
             appearance = appearance.copy(uiStyle = AppearanceUiStyle.COUI)
             pumpFrames(activity, frameClock)
             assertTrue(collectAllTexts(activity).any { it == activity.getString(R.string.appearance_title) })

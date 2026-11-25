@@ -46,12 +46,12 @@ internal fun SpeechSystemTtsSection(store: SpeechSettingsStore) {
 
     val engineIndex = engines.indexOfFirst { it.packageName == engine }.let { if (it < 0) 0 else it + 1 }
     val voiceIndex = voices.indexOf(voice).let { if (it < 0) 0 else it + 1 }
-    val engineItems = listOf(stringResource(R.string.speech_system_engine_default)) +
+    val engineItems = listOf(stringResource(R.string.local_speech_system_engine_default)) +
         engines.map { if (it.label == it.packageName) it.label else it.label + "（" + it.packageName + "）" }
-    val voiceItems = listOf(stringResource(R.string.speech_system_voice_default)) + voices
-    val engineTitle = stringResource(R.string.speech_system_engine)
-    val voiceTitle = stringResource(R.string.speech_system_voice)
-    val voiceSummary = if (loading) stringResource(R.string.speech_system_voice_loading) else null
+    val voiceItems = listOf(stringResource(R.string.local_speech_system_voice_default)) + voices
+    val engineTitle = stringResource(R.string.local_speech_system_engine)
+    val voiceTitle = stringResource(R.string.local_speech_system_voice)
+    val voiceSummary = if (loading) stringResource(R.string.local_speech_system_voice_loading) else null
     val onEngineChange: (Int) -> Unit = { index ->
         store.edit(settings.copy(systemTtsEngine = engines.getOrNull(index - 1)?.packageName.orEmpty(), systemTtsVoice = ""))
     }
@@ -60,7 +60,7 @@ internal fun SpeechSystemTtsSection(store: SpeechSettingsStore) {
     }
 
     Column {
-        SpeechGroupCard(title = stringResource(R.string.speech_group_system_tts)) {
+        SpeechGroupCard(title = stringResource(R.string.local_speech_group_system_tts)) {
             when (LocalUiStyle.current) {
                 AppearanceUiStyle.COUI -> {
                     CouiDropdownPreference(
@@ -95,6 +95,6 @@ internal fun SpeechSystemTtsSection(store: SpeechSettingsStore) {
                 }
             }
         }
-        SpeechNote(stringResource(R.string.speech_system_tts_note))
+        SpeechNote(stringResource(R.string.local_speech_system_tts_note))
     }
 }

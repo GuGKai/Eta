@@ -35,10 +35,10 @@ internal object AskNotificationManager {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ASK,
-                context.getString(R.string.ask_notification_channel),
+                context.getString(R.string.local_ask_notification_channel),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = context.getString(R.string.ask_notification_channel_desc)
+                description = context.getString(R.string.local_ask_notification_channel_desc)
             },
         )
     }
@@ -56,17 +56,17 @@ internal object AskNotificationManager {
 
         val firstQuestion = card.questions.firstOrNull()?.question.orEmpty().trim()
         val preview = firstQuestion.take(MAX_QUESTION_PREVIEW_CHARS).ifBlank {
-            context.getString(R.string.ask_notification_fallback)
+            context.getString(R.string.local_ask_notification_fallback)
         }
         val text = if (card.questions.size > 1) {
-            context.getString(R.string.ask_notification_text_multi, preview, card.questions.size)
+            context.getString(R.string.local_ask_notification_text_multi, preview, card.questions.size)
         } else {
-            context.getString(R.string.ask_notification_text, preview)
+            context.getString(R.string.local_ask_notification_text, preview)
         }
         val notification = Notification.Builder(context, CHANNEL_ASK)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(BRAND_COLOR)
-            .setContentTitle(context.getString(R.string.ask_notification_title))
+            .setContentTitle(context.getString(R.string.local_ask_notification_title))
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(openConversationIntent(context, key))
