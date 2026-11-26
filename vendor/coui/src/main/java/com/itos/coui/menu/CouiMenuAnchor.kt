@@ -21,9 +21,14 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntRect
 
-/** 设置行与其菜单共用的触点锚点, 定位时再转换坐标以跟随滚动和布局变化。 */
+/** 菜单与宿主共用的锚点。设置行跟随触点，编辑工具栏跟随按钮边界。 */
 @Stable
-class CouiMenuAnchor internal constructor(private val view: View) {
+class CouiMenuAnchor internal constructor(
+    private val view: View,
+    internal val editorButtonMarginPx: Int?,
+) {
+    internal constructor(view: View) : this(view, null)
+
     internal var coordinates: LayoutCoordinates? by mutableStateOf(null, neverEqualPolicy())
     internal var pendingTouchPosition: Offset? = null
     private var clickPosition: Offset? by mutableStateOf(null)
@@ -49,7 +54,16 @@ class CouiMenuAnchor internal constructor(private val view: View) {
             view.getLocationInWindow(windowLocation)
             // 可见区域包含系统栏和 IME 避让, 必须与触点使用相同的窗口坐标。
             frame.offset(windowLocation[0] - screenLocation[0], windowLocation[1] - screenLocation[1])
-            return IntRect(frame.left, frame.top, frame.right, frame.bottom)
+            val margin = editorButtonMarginPx ?: return IntRect(frame.left, frame.top, frame.right, frame.bottom)
+            val root = view.rootView
+            val cutout = root.rootWindowInsets?.displayCutout
+            val density = view.resources.displayMetrics.density
+            return IntRect(
+                maxOf(frame.left, margin, cutout?.safeInsetLeft ?: 0),
+                maxOf(frame.top + (16 * density).toInt(), cutout?.safeInsetTop ?: 0),
+                minOf(frame.right, root.width - maxOf(margin, cutout?.safeInsetRight ?: 0)),
+                minOf(frame.bottom - (32 * density).toInt(), root.height - (cutout?.safeInsetBottom ?: 0)),
+            )
         }
 
     /** 从原有 onClick 调用; 键盘和无障碍点击没有触点, 使用菜单原有锚点。 */

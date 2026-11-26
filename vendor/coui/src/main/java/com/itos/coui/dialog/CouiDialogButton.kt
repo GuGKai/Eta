@@ -31,6 +31,7 @@ import com.itos.coui.effect.LocalCouiContourGlowEnabled
 import com.itos.coui.effect.SpotlightPreset
 import com.itos.coui.effect.couiButtonFeedback
 import com.itos.coui.effect.rememberCouiSpotlight
+import com.itos.coui.effect.resolveCouiThemeTint
 import com.itos.coui.motion.couiPressMotion
 import com.itos.coui.motion.couiTouchMotion
 import com.itos.coui.motion.rememberCouiPressMotion
@@ -50,10 +51,16 @@ internal object DialogButtonDefaults {
         override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density) =
             (if (size.width == size.height) circle else CouiCapsuleShape).createOutline(size, layoutDirection, density)
     }
-    /** 关闭弹窗材质时使用中性底色，材质分支使用半透明白色。 */
-    fun secondaryColors(dark: Boolean, material: Boolean = false) = CouiDialogActionColors(
-        Color(if (material) { if (dark) 0x33FFFFFF else 0xA6FFFFFF } else { if (dark) 0xFF353535 else 0xFFEBEBEB }), Color(if (dark) 0xE6FFFFFF else 0xE6000000),
-        Color(if (dark) 0x1AFFFFFF else 0x14000000), Color(if (dark) 0x28FFFFFF else 0x42000000))
+    fun secondaryColors(colors: CouiDialogColors, dark: Boolean, material: Boolean, themeTint: Color): CouiDialogActionColors {
+        val neutralLayer = if (dark) Color(0x1AFFFFFF) else Color(0x14000000)
+        val surface = when {
+            // 纯色和已染色的模糊面板都透过按钮，只调整明暗；原生模糊使用半透明白底。
+            !material || resolveCouiThemeTint(themeTint).alpha > 0f -> neutralLayer
+            dark -> Color(0x33FFFFFF)
+            else -> Color(0xA6FFFFFF)
+        }
+        return CouiDialogActionColors(surface, colors.action, neutralLayer, colors.disabledAction)
+    }
     /** accent 由宿主主题提供；主按钮填色与文字色不读取宿主的 Typography。 */
     fun primaryColors(accent: Color) = CouiDialogActionColors(accent, Color.White,
         accent.copy(alpha = 77f / 255f), Color(0x4DFFFFFF))
@@ -66,15 +73,13 @@ internal fun DialogButton(
     text: String,
     onClick: () -> Unit,
     dark: Boolean,
+    colors: CouiDialogActionColors,
     enabled: Boolean = true,
     style: CouiDialogActionStyle = CouiDialogActionStyle.Secondary,
     material: Boolean = false,
-    colors: CouiDialogActionColors? = null,
     interactionSource: MutableInteractionSource? = null,
 ) {
     check(!material || Build.VERSION.SDK_INT >= 33) { "按钮材质表面要求 Android 13 或更高版本" }
-    val resolvedColors = colors ?: if (style == CouiDialogActionStyle.Secondary) DialogButtonDefaults.secondaryColors(dark, material)
-        else error("主操作必须由宿主显式提供配色")
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val motion = rememberCouiTouchMotion(enabled)
     val density = LocalDensity.current.density
@@ -92,11 +97,11 @@ internal fun DialogButton(
         .clip(DialogButtonDefaults.shape).drawWithContent {
             drawContent()
             drawLight?.invoke(this)
-        }.dialogButtonSurface(dark, enabled, if (enabled) resolvedColors.surface else resolvedColors.disabledSurface, style)
+        }.dialogButtonSurface(dark, enabled, if (enabled) colors.surface else colors.disabledSurface, style)
         .couiButtonFeedback(dark, source, enabled, pressFeedback = !material)
         .clickable(source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .padding(horizontal = CouiDialogDefaults.buttonHorizontalPadding, vertical = 4.dp), contentAlignment = Alignment.Center) {
-        DialogText(text = text, kind = DialogTextKind.Button, color = if (enabled) resolvedColors.content else resolvedColors.disabledContent)
+        DialogText(text = text, kind = DialogTextKind.Button, color = if (enabled) colors.content else colors.disabledContent)
     }
 }
 

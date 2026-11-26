@@ -67,7 +67,7 @@ fun Slider(
     enabled: Boolean = true,
     onValueChangeFinished: () -> Unit = {},
 ) {
-    val resolvedColors = colors ?: CouiSliderDefaults.colors(CouiTheme.colorSchemeFor(dark).accent, dark, enabled)
+    val resolvedColors = colors ?: CouiSliderDefaults.colors(CouiTheme.colorSchemeFor(dark).controlAccent, dark, enabled)
     require(steps >= 0 && steps < Int.MAX_VALUE)
     require(value.isFinite() && valueRange.start.isFinite() && valueRange.endInclusive.isFinite())
     require(valueRange.endInclusive >= valueRange.start && (valueRange.endInclusive - valueRange.start).isFinite())

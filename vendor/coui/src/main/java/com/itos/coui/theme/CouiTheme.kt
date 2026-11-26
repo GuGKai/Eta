@@ -31,7 +31,11 @@ data class CouiColorScheme(
     val background: Color = surface,
     /** 列表卡片使用 couiColorCardBackground；与菜单等顶层容器分开。 */
     val card: Color = container,
-)
+    private val controlAccentOverride: Color = Color.Unspecified,
+) {
+    /** 与白色文字、图标或标记搭配的强调填色，未提供专用填色时沿用 [accent]。 */
+    val controlAccent: Color get() = controlAccentOverride.takeOrElse { accent }
+}
 
 /** Theme.COUI 的蓝色强调色与中性表面；不读取壁纸动态色。 */
 object CouiPresets {

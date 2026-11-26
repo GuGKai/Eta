@@ -25,6 +25,7 @@ data class CouiMenuColors(
 )
 
 object CouiMenuDefaults {
+    internal const val disabledContentAlpha = 0.38f
     const val spotlightDiffuse: Float = 0.5f
     val radius = 28.dp
     val shape = CouiShape(radius)

@@ -64,6 +64,7 @@ import com.itos.coui.effect.CouiFloatingRenderer
 import com.itos.coui.effect.CouiFloatingSurface
 import com.itos.coui.effect.LocalCouiContourGlowEnabled
 import com.itos.coui.effect.couiFloatingSurface
+import com.itos.coui.effect.rememberCouiMaterialSettings
 import com.itos.coui.layout.ConfigureCouiImeWindow
 import com.itos.coui.shape.CouiShape
 import com.itos.coui.theme.CouiIcon
@@ -122,7 +123,7 @@ fun MessageInputBar(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
-    val materialSettings = rememberMessageInputMaterialSettings()
+    val materialSettings = rememberCouiMaterialSettings()
     val contour = contourGlowEnabled && materialSettings.stroke
     val shadow = CouiMessageInputBarDefaults.shadow(dark, density.density, contour)
     val resolvedMaterial = if (materialSettings.blur) {

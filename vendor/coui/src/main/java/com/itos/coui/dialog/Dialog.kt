@@ -35,17 +35,17 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import com.itos.coui.backdrop.CouiBackdrop
 
-/** 受控操作。确认后的关闭、状态变更及业务提交由 onClick 的宿主处理。 */
+/** 受控操作。主操作省略 [colors] 时使用主题填色。关闭、状态变更及业务提交由宿主处理。 */
 data class CouiDialogAction(val text: String, val onClick: () -> Unit, val enabled: Boolean = true,
     val style: CouiDialogActionStyle = CouiDialogActionStyle.Secondary, val colors: CouiDialogActionColors? = null) {
     init {
         require(text.isNotBlank()) { "操作文案不能为空" }
-        require(style != CouiDialogActionStyle.Primary || colors != null) { "主操作必须由宿主提供主题配色" }
     }
 }
 
 /**
  * 普通警告弹窗。两短按钮横排，单个、三个或放不下的按钮竖排。
+ * 标题与底部操作区独立于正文滚动区，message 和 content 一起滚动。
  * content 可装配列表、输入和选择器；不提供推荐/AI Payment 专用按钮及原厂高内容标题合并协议。
  * CouiShape 自动提供轮廓半径；其他 Shape 使用材质时须显式提供 cornerRadius。
  * visible 非空时由库保留退场窗口，调用须留在组合中；null 使用外层条件和系统窗口动画。
@@ -83,7 +83,7 @@ fun Dialog(
 
 /**
  * 按行排列底部操作。每行等分可用宽度，文案放不下的行会按声明顺序拆成竖排。
- * 操作区独立于可滚动的正文，关闭弹窗由各操作的回调决定。
+ * 标题与操作区独立于正文滚动区，关闭弹窗由各操作的回调决定。
  * themeTint 为模糊材质染色基准色（强度由库统一控制，Color.Transparent 关闭染色，仅 material != null 时生效）。
  *
  * @param actionRows 从上到下声明 1 至 4 行，行内从布局起始侧到末端排列，每行至少一个操作。
@@ -140,9 +140,8 @@ private fun DialogWithActions(
         var multipleRows by remember(actionRows.size) { mutableStateOf(actionRows.size > 1) }
         val tall = messageLines > 1 || multipleRows
         Column(Modifier.fillMaxWidth()) {
-            // 对应正文/标题的滚动区与独立 buttonPanel；操作不随长文滚出窗口。
+            if (!title.isNullOrEmpty()) DialogTitle(title, colors.title)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-                if (!title.isNullOrEmpty()) DialogTitle(title, colors.title)
                 if (!message.isNullOrEmpty()) DialogText(text = message, kind = DialogTextKind.Message, color = colors.message, modifier =
                     Modifier.fillMaxWidth().padding(horizontal = CouiDialogDefaults.contentPadding)
                         .padding(top = if (title.isNullOrEmpty() && !tall) CouiDialogDefaults.messageTopWithoutTitle else 0.dp,
@@ -151,7 +150,7 @@ private fun DialogWithActions(
                     onLineCount = { if (messageLines != it) messageLines = it })
                 content()
             }
-            DialogActions(actionRows, overflowOrder, destructiveAction, colors, dark, material != null) { multipleRows = it }
+            DialogActions(actionRows, overflowOrder, destructiveAction, colors, dark, material != null, themeTint) { multipleRows = it }
         }
     }
 }
@@ -181,6 +180,7 @@ internal fun DialogActions(
     colors: CouiDialogColors,
     dark: Boolean,
     material: Boolean,
+    themeTint: Color,
     interactive: Boolean = true,
     onMultipleRows: (Boolean) -> Unit = {},
 ) {
@@ -188,6 +188,7 @@ internal fun DialogActions(
     val textStyle = rememberDialogTextStyle(DialogTextKind.Button)
     val measurer = rememberTextMeasurer()
     val scroll = rememberScrollState()
+    val secondaryColors = DialogButtonDefaults.secondaryColors(colors, dark, material, themeTint)
     // 文字视口只裁剪自己的内容；按钮运动绘制在文字之上。
     BoxWithConstraints(Modifier.fillMaxWidth().zIndex(1f)) {
         val edge = CouiDialogDefaults.buttonEdgePadding
@@ -217,6 +218,7 @@ internal fun DialogActions(
             } else listOf(row)
         }
         SideEffect { onMultipleRows(rows.size > 1) }
+        val primaryColors = DialogButtonDefaults.primaryColors(CouiTheme.colorSchemeFor(dark).controlAccent)
         fun buttonHeight(action: CouiDialogAction, width: Int, multiline: Boolean): Int {
             val textHeight = measurer.measure(action.text, textStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 constraints = Constraints(maxWidth = width)).size.height
@@ -244,8 +246,13 @@ internal fun DialogActions(
                         horizontalArrangement = Arrangement.spacedBy(gap),
                     ) {
                         row.forEach { action ->
+                            val actionColors = action.colors ?: when {
+                                action === destructiveAction -> secondaryColors.copy(content = colors.destructive)
+                                action.style == CouiDialogActionStyle.Primary -> primaryColors
+                                else -> secondaryColors
+                            }
                             DialogActionButton(
-                                action, if (action === destructiveAction) colors.copy(action = colors.destructive) else colors,
+                                action, actionColors,
                                 dark, material, Modifier.weight(1f), row.size == 1 && textWidths.getValue(action) > available,
                                 interactive,
                             )
@@ -258,12 +265,11 @@ internal fun DialogActions(
 }
 
 @Composable
-private fun DialogActionButton(action: CouiDialogAction, colors: CouiDialogColors, dark: Boolean, material: Boolean,
+private fun DialogActionButton(action: CouiDialogAction, colors: CouiDialogActionColors, dark: Boolean, material: Boolean,
     modifier: Modifier, multiline: Boolean, interactive: Boolean) {
     DialogButton(modifier = modifier.heightIn(min = if (multiline) CouiDialogDefaults.multilineButtonHeight
         else CouiDialogDefaults.buttonHeight), text = action.text,
         onClick = { if (interactive && action.enabled) action.onClick() },
         dark = dark, enabled = action.enabled, style = action.style, material = material,
-        colors = action.colors ?: DialogButtonDefaults.secondaryColors(dark, material).copy(
-            content = colors.action, disabledContent = colors.disabledAction))
+        colors = colors)
 }

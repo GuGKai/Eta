@@ -1,4 +1,4 @@
-package com.itos.coui.messageinput
+package com.itos.coui.effect
 
 import android.database.ContentObserver
 import android.os.Handler
@@ -12,16 +12,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 
-internal data class CouiMessageInputMaterialSettings(val blur: Boolean, val stroke: Boolean)
+internal data class CouiMaterialSettings(val blur: Boolean, val stroke: Boolean)
 
 @Composable
-internal fun rememberMessageInputMaterialSettings(): CouiMessageInputMaterialSettings {
+internal fun rememberCouiMaterialSettings(): CouiMaterialSettings {
     val resolver = LocalContext.current.contentResolver
-    fun read(): CouiMessageInputMaterialSettings {
+    fun read(): CouiMaterialSettings {
         val powerSave = Settings.Global.getInt(resolver, "low_power", 0) == 1 ||
             Settings.System.getInt(resolver, "super_powersave_mode_state", 0) == 1
         // 没有 Oplus 材质设置的系统继续使用本库公开渲染后端；不按厂商能力表禁用。
-        return CouiMessageInputMaterialSettings(
+        return CouiMaterialSettings(
             blur = !powerSave && Settings.System.getInt(resolver, "system_material_blur_enable", 1) == 1,
             stroke = !powerSave && Settings.System.getInt(resolver, "system_material_stroke_enable", 1) == 1,
         )

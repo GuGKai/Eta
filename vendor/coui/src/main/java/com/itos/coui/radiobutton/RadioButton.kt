@@ -30,7 +30,7 @@ fun RadioButton(
     modifier: Modifier = Modifier,
     selected: Boolean,
     enabled: Boolean = true,
-    colors: CouiRadioButtonColors = CouiRadioButtonDefaults.colors(CouiTheme.colorScheme.accent, CouiTheme.isDark),
+    colors: CouiRadioButtonColors = CouiRadioButtonDefaults.colors(CouiTheme.colorScheme.controlAccent, CouiTheme.isDark),
 ) {
     val timeline = remember { Animatable(300f) }
     var previousSelected by remember { mutableStateOf(selected) }

@@ -489,14 +489,22 @@ internal fun CouiMenuPopup(
     val density = LocalDensity.current
     val hostView = LocalView.current
     val boundary = LocalCouiMenuVisibleBounds.current
-    val contentBounds: (() -> IntRect?)? = remember(boundary, hostView) {
-        boundary?.let { { it.boundsInWindow(hostView) } }
+    val editorButton = anchor?.editorButtonMarginPx != null
+    val contentBounds: (() -> IntRect?)? = remember(boundary, hostView, anchor) {
+        if (editorButton) {
+            {
+                val host = boundary?.boundsInWindow(hostView)
+                val editor = anchor?.visibleWindowBounds
+                if (host != null && editor != null) editor.intersect(host) else editor ?: host
+            }
+        } else boundary?.let { { it.boundsInWindow(hostView) } }
     }
     val contentSizeLimit = if (contentBounds != null) Modifier.layout { measurable, constraints ->
         val bounds = contentBounds()
+        val verticalMargin = if (editorButton) 0 else 48.dp.roundToPx()
         val menuConstraints = if (bounds == null) constraints else constraints.copy(
             maxWidth = constraints.constrainWidth(bounds.width.coerceAtLeast(0)),
-            maxHeight = constraints.constrainHeight((bounds.height - 48.dp.roundToPx()).coerceAtLeast(0)),
+            maxHeight = constraints.constrainHeight((bounds.height - verticalMargin).coerceAtLeast(0)),
         )
         val placeable = measurable.measure(menuConstraints)
         layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
@@ -508,17 +516,18 @@ internal fun CouiMenuPopup(
         CouiMenuMotionPositionProvider(
             materialPositionProvider, motion,
             anchorPosition = { anchor?.positionInWindow },
-            visibleWindowBounds = { contentBounds?.invoke() ?: anchor?.visibleWindowBounds },
+            visibleWindowBounds = { anchor?.visibleWindowBounds },
             touchOffsetY = touchOffsetY,
             avoidAnchorGap = avoidAnchorGap,
             contentBounds = contentBounds,
+            editorButton = editorButton,
         )
     }
     val currentOnOutsideRequest by rememberUpdatedState(onOutsideRequest)
     Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismissRequest,
-        properties = properties.withMenuInput(expanded),
+        properties = properties.withMenuInput(expanded, editorButton),
     ) {
         Box(
             modifier = Modifier.fillMaxSize().onGloballyPositioned { coordinates ->
@@ -637,8 +646,12 @@ private fun CouiMenuPressedIndicator(
 }
 
 /** 展开时保留调用方的输入配置; 收起动画保留窗口, 但立即释放触摸和焦点。 */
-private fun PopupProperties.withMenuInput(expanded: Boolean): PopupProperties {
+private fun PopupProperties.withMenuInput(expanded: Boolean, editorButton: Boolean): PopupProperties {
     var flags = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+    if (expanded && editorButton && focusable) {
+        // 便签的更多菜单使用 INPUT_METHOD_NOT_NEEDED，并允许窗口外的事件继续分发。
+        flags = flags or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+    }
     if (!expanded || !focusable) {
         flags = flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
     }
@@ -677,7 +690,7 @@ private fun <T> CouiMenuRow(
     val selectedColor = LocalCouiMenuStyle.current.colors.primary
     val onSurfaceColor = LocalCouiMenuStyle.current.colors.onSurface
     val textColor = when {
-        !item.enabled -> onSurfaceColor.copy(alpha = 0.38f)
+        !item.enabled -> onSurfaceColor.copy(alpha = CouiMenuDefaults.disabledContentAlpha)
         item.selected -> selectedColor
         else -> onSurfaceColor
     }

@@ -94,7 +94,7 @@ fun Switch(
     checked: Boolean,
     onCheckedChange: ((Boolean) -> Unit)?,
     dark: Boolean = CouiTheme.isDark,
-    colors: CouiSwitchColors = CouiSwitchDefaults.colors(CouiTheme.colorSchemeFor(dark).accent, dark),
+    colors: CouiSwitchColors = CouiSwitchDefaults.colors(CouiTheme.colorSchemeFor(dark).controlAccent, dark),
     enabled: Boolean = true,
     interactionSource: MutableInteractionSource? = null,
     onDragCheckedChange: ((Boolean) -> Unit)? = onCheckedChange,

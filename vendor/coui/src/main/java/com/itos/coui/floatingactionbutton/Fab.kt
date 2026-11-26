@@ -73,7 +73,7 @@ fun Fab(
     val density = LocalDensity.current.density
     val couiShape = shape as? CouiShape
     val colors = CouiTheme.colorSchemeFor(dark)
-    val resolvedMaterial = material ?: CouiFabDefaults.themeMaterial(colors.accent, dark)
+    val resolvedMaterial = material ?: CouiFabDefaults.themeMaterial(colors.controlAccent, dark)
     val resolvedShadow = shadow ?: CouiFabDefaults.shadow(resolvedMaterial.firstColor, density, contour)
     val contentLayer = rememberGraphicsLayer()
     val motion = rememberCouiTouchMotion(true)

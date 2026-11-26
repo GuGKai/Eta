@@ -16,6 +16,7 @@ internal class CouiMenuPositionProvider(offset: DpOffset, density: Density) : Po
     private val offsetY = with(density) { offset.y.roundToPx() }
     private val horizontalMargin = with(density) { 8.dp.roundToPx() }
     private val verticalMargin = with(density) { 48.dp.roundToPx() }
+    private val editorAnchorGap = with(density) { 8.dp.toPx().toInt() }
 
     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize,
         layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
@@ -52,6 +53,19 @@ internal class CouiMenuPositionProvider(offset: DpOffset, density: Density) : Po
 
         val horizontalOffset = if (layoutDirection == LayoutDirection.Rtl) -offsetX else offsetX
         return (touchX - menuWidth / 2 + horizontalOffset).coerceIn(minLeft, maxLeft)
+    }
+
+    fun calculateEditorButtonPosition(anchor: IntRect, frame: IntRect, menu: IntSize): IntOffset {
+        val x = if (menu.width > frame.width) frame.center.x - menu.width / 2
+            else (anchor.center.x - menu.width / 2).coerceIn(frame.left, frame.right - menu.width)
+        val below = maxOf(frame.top, anchor.bottom + editorAnchorGap)
+        val above = minOf(frame.bottom, anchor.top - editorAnchorGap) - menu.height
+        val y = when {
+            below + menu.height <= frame.bottom -> below
+            above >= frame.top -> above
+            else -> frame.top
+        }
+        return IntOffset(x, y)
     }
 
     private fun position(candidates: IntArray, offset: Int, size: Int, window: Int, margin: Int): Int {

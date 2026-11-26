@@ -1,13 +1,22 @@
 package com.itos.coui.effect
 
 import android.animation.ArgbEvaluator
+import android.content.res.ColorStateList
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
@@ -21,6 +30,7 @@ import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.geometry.CornerRadius
@@ -30,15 +40,19 @@ import androidx.compose.ui.graphics.Color
 import android.view.ViewTreeObserver
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.geometry.toRect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.toSize
 import com.itos.coui.input.isCouiTouchCancelled
 import com.itos.coui.theme.CouiTheme
+import kotlinx.coroutines.flow.collect
+import kotlin.math.roundToInt
 
 /** 导航项过滤 state_pressed, COUIMaskRippleDrawable 实际只绘 hover -> focus。 */
 @Composable
@@ -70,22 +84,141 @@ fun Modifier.couiFabFeedback(dark: Boolean, interactionSource: MutableInteractio
     }
 }
 
-/** 原厂顶栏材质过滤 pressed 通知, 仅保留 hover/focus 蒙层; 按压形变独立处理。 */
+/** 原厂顶栏材质过滤 pressed 通知, 仅保留 hover/focus 蒙层; 按压反馈可选复用单项 RippleDrawable。 */
 @Composable
 fun Modifier.couiToolbarFeedback(
     dark: Boolean,
     interactionSource: MutableInteractionSource,
     enabled: Boolean,
+    pressFeedback: Boolean = false,
+    maskInset: Dp = 0.dp,
 ): Modifier {
     val hovered by interactionSource.collectIsHoveredAsState()
     val focused by interactionSource.collectIsFocusedAsState()
     val hover = rememberMaskProgress(enabled && hovered)
     val focus = rememberMaskProgress(enabled && focused)
-    return hoverable(interactionSource, enabled).drawBehind {
-        val radius = CornerRadius(size.minDimension * 0.5f)
-        drawRoundRect(maskColor(hover.value, if (dark) 0x26FFFFFF else 0x14000000), cornerRadius = radius)
-        drawRoundRect(maskColor(focus.value, if (dark) 0x331A8CFF else 0x1F0080FF), cornerRadius = radius)
+    val feedback = hoverable(interactionSource, enabled).drawBehind {
+        // hover/focus 蒙版与 press RippleDrawable 共用矩形边界，圆角按项高一半。
+        // 负值表示向两侧外扩（工具栏多项时外扩一个项间距）。
+        val side = maskInset.toPx()
+        val topLeft = Offset(side, 0f)
+        val maskSize = Size((size.width - side * 2f).coerceAtLeast(0f), size.height)
+        val radius = CornerRadius(size.height * 0.5f)
+        drawRoundRect(maskColor(hover.value, if (dark) 0x26FFFFFF else 0x14000000), topLeft = topLeft,
+            size = maskSize, cornerRadius = radius)
+        drawRoundRect(maskColor(focus.value, if (dark) 0x331A8CFF else 0x1F0080FF), topLeft = topLeft,
+            size = maskSize, cornerRadius = radius)
     }
+    return if (pressFeedback && enabled) feedback.toolbarRipple(dark, interactionSource, maskInset) else feedback
+}
+
+@Composable
+private fun Modifier.toolbarRipple(
+    dark: Boolean,
+    interactionSource: MutableInteractionSource,
+    maskInset: Dp,
+): Modifier {
+    // 浅/深色按压 alpha 与已核对的原厂 item press 蒙版一致。
+    val pressTint = if (dark) 0x33FFFFFF else 0x1F000000
+    val mask = remember(pressTint) {
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(android.graphics.Color.WHITE)
+        }
+    }
+    val ripple = remember(pressTint, mask) {
+        RippleDrawable(ColorStateList.valueOf(pressTint), null, mask)
+    }
+    val drawableInvalidation = remember(ripple) { mutableIntStateOf(0) }
+    val latestHotspot = remember(ripple) { arrayOfNulls<Offset>(1) }
+
+    DisposableEffect(ripple) {
+        val handler = Handler(Looper.getMainLooper())
+        val callback = object : Drawable.Callback {
+            override fun invalidateDrawable(who: Drawable) {
+                drawableInvalidation.intValue++
+            }
+
+            override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) {
+                handler.removeCallbacks(what, ripple)
+                handler.postAtTime(what, ripple, `when`)
+            }
+
+            override fun unscheduleDrawable(who: Drawable, what: Runnable) {
+                handler.removeCallbacks(what, ripple)
+            }
+        }
+        ripple.callback = callback
+        ripple.setVisible(true, true)
+        onDispose {
+            ripple.setState(intArrayOf())
+            ripple.jumpToCurrentState()
+            ripple.setVisible(false, false)
+            handler.removeCallbacksAndMessages(ripple)
+            ripple.callback = null
+        }
+    }
+
+    LaunchedEffect(interactionSource, ripple) {
+        val activePresses = linkedMapOf<PressInteraction.Press, Offset>()
+        try {
+            interactionSource.interactions.collect { interaction ->
+                when (interaction) {
+                    is PressInteraction.Press -> activePresses[interaction] = interaction.pressPosition
+                    is PressInteraction.Release -> activePresses.remove(interaction.press)
+                    is PressInteraction.Cancel -> activePresses.remove(interaction.press)
+                    else -> return@collect
+                }
+                val activePosition = activePresses.values.lastOrNull()
+                if (activePosition == null) {
+                    ripple.setState(intArrayOf())
+                } else {
+                    val hotspot = latestHotspot[0] ?: activePosition
+                    ripple.setHotspot(hotspot.x, hotspot.y)
+                    ripple.setState(intArrayOf(android.R.attr.state_enabled, android.R.attr.state_pressed))
+                }
+            }
+        } finally {
+            activePresses.clear()
+            ripple.setState(intArrayOf())
+        }
+    }
+
+    val hotspotObserver = Modifier.pointerInput(ripple) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            var activePointer = down.id
+            latestHotspot[0] = down.position
+            ripple.setHotspot(down.position.x, down.position.y)
+            try {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.isCouiTouchCancelled()) break
+                    val tracked = event.changes.firstOrNull { it.id == activePointer }
+                    val change = event.changes.firstOrNull { it.pressed && !it.previousPressed }
+                        ?: tracked?.takeIf { it.pressed }
+                        ?: event.changes.firstOrNull { it.pressed }
+                        ?: break
+                    activePointer = change.id
+                    latestHotspot[0] = change.position
+                    ripple.setHotspot(change.position.x, change.position.y)
+                }
+            } finally {
+                latestHotspot[0] = null
+            }
+        }
+    }
+
+    return this.then(hotspotObserver)
+        .onSizeChanged { size -> mask.setCornerRadius(size.height * 0.5f) }
+        .drawBehind {
+            drawableInvalidation.intValue
+            val side = maskInset.toPx()
+            val left = side.roundToInt()
+            val right = (size.width - side).roundToInt().coerceAtLeast(left)
+            ripple.setBounds(left, 0, right, size.height.roundToInt())
+            ripple.draw(drawContext.canvas.nativeCanvas)
+        }
 }
 
 @Composable
