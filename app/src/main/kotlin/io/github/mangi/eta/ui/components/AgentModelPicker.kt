@@ -322,62 +322,22 @@ internal fun AgentTopBarChatHeader(
             }
 
             else -> {
-                // MIUIX：空白新会话页顶部不再显示模型选择胶囊。
+                // MIUIX：空白新会话页顶部不再显示模型选择胶囊；此分支因此只服务 COUI。
                 if (!isCoui) return@Box
                 val pillFill = ink.copy(alpha = if (isDark) 0.08f else 0.042f)
                 val pillBorder = ink.copy(alpha = if (isDark) 0.12f else 0.07f)
-                val miuixCapsuleModifier = if (isCoui) {
-                    Modifier
-                        .heightIn(min = 34.dp)
-                        .clip(CircleShape)
-                        .background(pillFill, CircleShape)
-                        .border(0.5.dp, pillBorder, CircleShape)
-                        .couiButtonFeedback(isDark, interactionSource, enabled = enabled)
-                        .padding(start = 11.dp, end = if (enabled) 8.dp else 12.dp, top = 6.dp, bottom = 6.dp)
-                } else {
-                    val pillShape = GlassShape(20.dp)
-                    Modifier
-                        .heightIn(min = 40.dp)
-                        .glassPress(interactionSource, enabled = enabled)
-                        .glassPanel(
-                            backdrop = pageBackdrop,
-                            shape = pillShape,
-                            style = GlassDefaults.style(isDark),
-                            material = GlassMaterials.puredThinGlass(isDark),
-                            stroke = GlassEdgeStrokes.forTheme(
-                                isDark = isDark,
-                                light = GlassEdgeStrokes.SmallLight,
-                                dark = GlassEdgeStrokes.SmallDark,
-                            ),
-                            shadow = GlassShadows.Float,
-                            shading = false,
-                            fallback = Modifier
-                                .clip(CircleShape)
-                                .background(GlassTopAppBarDefaults.buttonFill()),
-                        )
-                        .padding(start = 13.dp, end = if (enabled) 10.dp else 14.dp, top = 8.dp, bottom = 8.dp)
-                }
+                val capsuleModifier = Modifier
+                    .heightIn(min = 34.dp)
+                    .clip(CircleShape)
+                    .background(pillFill, CircleShape)
+                    .border(0.5.dp, pillBorder, CircleShape)
+                    .couiButtonFeedback(isDark, interactionSource, enabled = enabled)
+                    .padding(start = 11.dp, end = if (enabled) 8.dp else 12.dp, top = 6.dp, bottom = 6.dp)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .then(
-                            if (isCoui) {
-                                Modifier.couiMenuAnchor(anchor)
-                            } else {
-                                Modifier.glassPopupAnchor(
-                                    anchor = popupAnchor,
-                                    cornerRadius = 20.dp,
-                                    floating = true,
-                                )
-                            },
-                        )
-                        .then(
-                            if (isCoui) {
-                                miuixCapsuleModifier
-                            } else {
-                                Modifier
-                            },
-                        )
+                        .couiMenuAnchor(anchor)
+                        .then(capsuleModifier)
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null,
@@ -385,8 +345,7 @@ internal fun AgentTopBarChatHeader(
                             role = Role.Button,
                             onClick = triggerModelPicker,
                         )
-                        .semantics { contentDescription = switchModelDescription }
-                        .then(if (isCoui) Modifier else miuixCapsuleModifier),
+                        .semantics { contentDescription = switchModelDescription },
                 ) {
                     ModelBrandMark(
                         modelId = selected?.modelId,

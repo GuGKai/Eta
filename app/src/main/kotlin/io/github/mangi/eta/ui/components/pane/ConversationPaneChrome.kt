@@ -934,7 +934,6 @@ internal fun ConversationPaneBottomDock(
                 }
             } else if (isCoui) {
                 val effectiveCouiBackdrop = activeCouiBackdrop
-                val settingsIcon = if (isCoui) ConversationPaneIcons.Settings else MiuixIcons.Glass.SettingsFill
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -946,11 +945,10 @@ internal fun ConversationPaneBottomDock(
                         onSubmitSearch = onSubmitConversationSearch,
                         couiBackdrop = effectiveCouiBackdrop,
                         cancelText = cancelText,
-                        miuixBackdrop = activeMiuixBackdrop,
                         modifier = Modifier.weight(1f),
                     )
                     PaneDockCircleButton(
-                        icon = settingsIcon,
+                        icon = ConversationPaneIcons.Settings,
                         contentDescription = settingsDesc,
                         showBadge = false,
                         // 按 COUI-Kit 的标准用法：浮层组件都吃同一份 backdrop，不做裁剪。
@@ -1215,7 +1213,6 @@ private fun PaneSearchCapsule(
     onSubmitSearch: (String) -> Unit = {},
     couiBackdrop: CouiBackdrop?,
     cancelText: String,
-    miuixBackdrop: Backdrop?,
     modifier: Modifier = Modifier,
 ) {
     val placeholder = stringResource(R.string.conversation_search_hint)
@@ -1247,31 +1244,17 @@ private fun PaneSearchCapsule(
             }
     }
 
-    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    // 仅 COUI dock 使用（Miuix 已换上游展开式 SearchBar），样式取值全部收敛到 COUI。
     val couiDark = CouiTheme.isDark
-    val miuixColors = MiuixTheme.colorScheme
-    val miuixDark = miuixColors.surface.luminance() < 0.5f
 
-    val textColor = if (isCoui) {
-        CouiPageDefaults.themeColors(couiDark).title
-    } else {
-        LocalContentColor.current
-    }
+    val textColor = CouiPageDefaults.themeColors(couiDark).title
     var activeTextColor by remember { mutableStateOf(textColor) }
     LaunchedEffect(textColor) {
         activeTextColor = textColor
     }
-    val accentColor = if (isCoui) CouiTheme.colorSchemeFor(couiDark).accent else miuixColors.primary
-    val hintColor = if (isCoui) {
-        if (couiDark) Color(0x70FFFFFF) else Color(0x66000000)
-    } else {
-        miuixColors.onSurfaceVariantSummary
-    }
-    val clearBgColor = if (isCoui) {
-        if (couiDark) Color(0x4DFFFFFF) else Color(0x42000000)
-    } else {
-        miuixColors.onSurfaceVariantActions.copy(alpha = 0.65f)
-    }
+    val accentColor = CouiTheme.colorSchemeFor(couiDark).accent
+    val hintColor = if (couiDark) Color(0x70FFFFFF) else Color(0x66000000)
+    val clearBgColor = if (couiDark) Color(0x4DFFFFFF) else Color(0x42000000)
     // 延迟一帧到节点附着完成后再切换 TextStyle 颜色，规避 Compose 1.12 BasicTextField 在
     // AgentAppTheme movableContentOf 跨容器迁移节点时于未附着状态触发 TextFieldSizeConstrainerNode.update。
     val textStyle = TextStyle(
@@ -1299,9 +1282,9 @@ private fun PaneSearchCapsule(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = if (isCoui) ConversationPaneIcons.Search else MiuixIcons.Glass.Search,
+                imageVector = ConversationPaneIcons.Search,
                 contentDescription = null,
-                modifier = Modifier.size(if (isCoui) 18.dp else 20.dp),
+                modifier = Modifier.size(18.dp),
                 tint = if (isFocused) accentColor else hintColor,
             )
             Spacer(Modifier.width(9.dp))
@@ -1318,30 +1301,28 @@ private fun PaneSearchCapsule(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                key(isCoui) {
-                    BasicTextField(
-                        state = textFieldState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                            .onFocusChanged {
-                                isFocused = it.isFocused
-                                if (!it.isFocused) dockEditing = false
-                            },
-                        lineLimits = TextFieldLineLimits.SingleLine,
-                        textStyle = textStyle,
-                        cursorBrush = SolidColor(accentColor),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        onKeyboardAction = {
-                            // 打字一律不搜；只有这一下（键盘搜索键）才开始搜。
-                            val typed = textFieldState.text.toString()
-                            syncState.lastSynced = typed
-                            currentOnSubmitSearch(typed)
-                            keyboard?.hide()
-                            focusManager.clearFocus()
+                BasicTextField(
+                    state = textFieldState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        .onFocusChanged {
+                            isFocused = it.isFocused
+                            if (!it.isFocused) dockEditing = false
                         },
-                    )
-                }
+                    lineLimits = TextFieldLineLimits.SingleLine,
+                    textStyle = textStyle,
+                    cursorBrush = SolidColor(accentColor),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    onKeyboardAction = {
+                        // 打字一律不搜；只有这一下（键盘搜索键）才开始搜。
+                        val typed = textFieldState.text.toString()
+                        syncState.lastSynced = typed
+                        currentOnSubmitSearch(typed)
+                        keyboard?.hide()
+                        focusManager.clearFocus()
+                    },
+                )
             }
             AnimatedVisibility(
                 visible = textFieldState.text.isNotEmpty(),
@@ -1392,47 +1373,16 @@ private fun PaneSearchCapsule(
         }
     }
 
-    if (isCoui) {
-        CouiPaneFloatingSurface(
-            modifier = modifier.height(ConversationPanelMetrics.BottomDockHeight),
-            shape = CouiCapsuleShape,
-            capsule = true,
-            couiBackdrop = couiBackdrop,
-            focused = isFocused,
-            accentColor = accentColor,
-            onClick = null,
-        ) {
-            searchContent()
-        }
-    } else {
-        val pillShape = remember { GlassShape(ConversationPanelMetrics.BottomDockHeight / 2) }
-        val fallbackBg = GlassTopAppBarDefaults.buttonFill()
-        Box(
-            modifier = modifier
-                .height(ConversationPanelMetrics.BottomDockHeight)
-                .glassPanel(
-                    backdrop = miuixBackdrop,
-                    shape = pillShape,
-                    style = GlassDefaults.style(miuixDark),
-                    material = GlassTopAppBarDefaults.buttonMaterial(),
-                    stroke = GlassTopAppBarDefaults.buttonStroke(),
-                    shadow = GlassShadows.Regular,
-                    shading = false,
-                    fallback = Modifier
-                        .clip(CircleShape)
-                        .background(fallbackBg),
-                )
-                .then(
-                    if (isFocused) {
-                        Modifier.border(1.2.dp, accentColor.copy(alpha = 0.65f), CircleShape)
-                    } else {
-                        Modifier
-                    },
-                ),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            searchContent()
-        }
+    CouiPaneFloatingSurface(
+        modifier = modifier.height(ConversationPanelMetrics.BottomDockHeight),
+        shape = CouiCapsuleShape,
+        capsule = true,
+        couiBackdrop = couiBackdrop,
+        focused = isFocused,
+        accentColor = accentColor,
+        onClick = null,
+    ) {
+        searchContent()
     }
 }
 
