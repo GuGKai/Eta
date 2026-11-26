@@ -193,6 +193,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import io.github.mangi.eta.ui.components.chat.ChatActionIcons
 import io.github.mangi.eta.ui.components.StatusWarning
 import io.github.mangi.eta.ui.components.CouiSearchBarStateBridge
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.ui.util.fastRoundToInt
+import top.yukonga.miuix.kmp.basic.InputField as MiuixInputField
+import top.yukonga.miuix.kmp.basic.SearchBar as MiuixSearchBar
+import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
+import top.yukonga.miuix.kmp.icon.glass.Close
 
 internal object ConversationPanelMetrics {
     val PaneHorizontalPadding = 16.dp
@@ -923,7 +932,7 @@ internal fun ConversationPaneBottomDock(
                         }
                     }
                 }
-            } else {
+            } else if (isCoui) {
                 val effectiveCouiBackdrop = activeCouiBackdrop
                 val settingsIcon = if (isCoui) ConversationPaneIcons.Settings else MiuixIcons.Glass.SettingsFill
                 Row(
@@ -949,6 +958,248 @@ internal fun ConversationPaneBottomDock(
                         miuixBackdrop = activeMiuixBackdrop,
                         onClick = onOpenSettings,
                     )
+                }
+            } else {
+                // MIUIX：上游 v4.0.0 的展开式 dock —— 原生 SearchBar 与右侧设置圆钮并排，
+                // 展开后搜索柱拉满整宽、设置钮按弹簧缩放滑出、右端换成取消圆钮。
+                // 权限圆钮按用户要求下线：这里只有设置入口，不保留任何权限通道。
+                val miuixColors = MiuixTheme.colorScheme
+                val miuixDark = miuixColors.surface.luminance() < 0.5f
+                val pillShape = remember { GlassShape(ConversationPanelMetrics.BottomDockHeight / 2) }
+                val fallbackBg = GlassTopAppBarDefaults.buttonFill()
+                val buttonsProgress by animateFloatAsState(
+                    targetValue = if (searchExpanded) 0f else 1f,
+                    animationSpec = spring(dampingRatio = 0.88f, stiffness = 360f),
+                    label = "PaneDockButtonsProgress",
+                )
+                val focusManager = LocalFocusManager.current
+                // 展开时叫出键盘；收起时清草稿并把空串交给上层（= 放弃这次搜索、延迟复位标题）。
+                val setSearchExpanded: (Boolean) -> Unit = { expanded ->
+                    if (searchExpanded != expanded) {
+                        searchExpanded = expanded
+                        if (expanded) {
+                            keyboard?.show()
+                        } else {
+                            searchDraft = ""
+                            dockSyncedQuery = ""
+                            onSearchChange("")
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                        }
+                    }
+                }
+                // 侧栏收起时同步退出搜索态，避免后台残留焦点或抢占返回键（上游行为）。
+                LaunchedEffect(isRevealed) {
+                    if (!isRevealed && searchExpanded) {
+                        searchExpanded = false
+                        focusManager.clearFocus()
+                        keyboard?.hide()
+                    }
+                }
+                CoordinatedDockSearchLayout(
+                    searchExpanded = searchExpanded,
+                    buttonsProgress = { buttonsProgress },
+                    // 外层容器已经按 PaneHorizontalPadding 缩进过，这里不再重复留边距。
+                    horizontalMargin = 0.dp,
+                    buttonGap = ConversationPanelMetrics.BottomDockGap,
+                    searchBar = {
+                        MiuixSearchBar(
+                            modifier = Modifier.fillMaxWidth(),
+                            insideMargin = DpSize(0.dp, 0.dp),
+                            expanded = searchExpanded,
+                            onExpandedChange = setSearchExpanded,
+                            inputField = {
+                                MiuixInputField(
+                                    // 受控值用草稿：打字只落在这里，不动上层 state。
+                                    query = searchDraft,
+                                    onQueryChange = { next ->
+                                        searchDraft = next
+                                        // 非空时上层 updateSearchQuery 按设计忽略（打字不搜索）；
+                                        // 空串是取消搜索的触发器，立刻清列表并延迟复位标题。
+                                        onSearchChange(next)
+                                    },
+                                    onSearch = {
+                                        // 键盘搜索键是唯一提交入口：先收键盘，
+                                        // 真正的提交排到下一拍等输入法落字（与 COUI 分支同一套约定）。
+                                        keyboard?.hide()
+                                        pendingSearchSubmit += 1
+                                    },
+                                    expanded = searchExpanded,
+                                    onExpandedChange = setSearchExpanded,
+                                    label = searchPlaceholder,
+                                    color = Color.Transparent,
+                                    textStyle = MiuixTheme.textStyles.body1.copy(fontSize = 15.sp),
+                                    modifier = Modifier
+                                        .height(ConversationPanelMetrics.BottomDockHeight)
+                                        .glassPanel(
+                                            backdrop = activeMiuixBackdrop,
+                                            shape = pillShape,
+                                            style = GlassDefaults.style(miuixDark),
+                                            material = GlassTopAppBarDefaults.buttonMaterial(),
+                                            stroke = GlassTopAppBarDefaults.buttonStroke(),
+                                            shadow = GlassShadows.Regular,
+                                            shading = false,
+                                            fallback = Modifier
+                                                .clip(CircleShape)
+                                                .background(fallbackBg),
+                                        ),
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = MiuixIcons.Glass.Search,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .padding(start = 14.dp, end = 8.dp)
+                                                .size(20.dp),
+                                            tint = if (searchExpanded) {
+                                                miuixColors.primary
+                                            } else {
+                                                miuixColors.onSurfaceVariantSummary
+                                            },
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        AnimatedVisibility(
+                                            visible = searchDraft.isNotEmpty(),
+                                            enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                                            exit = fadeOut() + scaleOut(targetScale = 0.8f),
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .padding(end = 8.dp)
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .semantics { contentDescription = clearDescription }
+                                                    .clickable(role = Role.Button) {
+                                                        dockSyncedQuery = ""
+                                                        searchDraft = ""
+                                                        onSearchChange("")
+                                                    },
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.Basic.SearchCleanup,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                    tint = miuixColors.onSurfaceVariantActions,
+                                                )
+                                            }
+                                        }
+                                    },
+                                )
+                            },
+                            outsideEndAction = {
+                                Box(
+                                    modifier = Modifier.padding(
+                                        start = ConversationPanelMetrics.BottomDockGap,
+                                        top = 16.dp,
+                                        bottom = 16.dp,
+                                    ),
+                                ) {
+                                    GlassIconButton(
+                                        onClick = { setSearchExpanded(false) },
+                                        backdrop = activeMiuixBackdrop,
+                                        size = ConversationPanelMetrics.DockButtonSize,
+                                    ) {
+                                        Icon(
+                                            imageVector = MiuixIcons.Glass.Close,
+                                            contentDescription = cancelText,
+                                            modifier = Modifier.size(24.dp),
+                                            tint = miuixColors.onSurface,
+                                        )
+                                    }
+                                }
+                            },
+                            content = {},
+                        )
+                    },
+                    trailingButtons = {
+                        PaneDockCircleButton(
+                            icon = MiuixIcons.Glass.SettingsFill,
+                            contentDescription = settingsDesc,
+                            showBadge = false,
+                            couiBackdrop = null,
+                            miuixBackdrop = activeMiuixBackdrop,
+                            onClick = { if (!searchExpanded) onOpenSettings() },
+                        )
+                    },
+                )
+                // 等输入法落字后再读草稿提交：中文最后一段常常和搜索动作同一批送达。
+                // 放在 dock 作用域（而不是 SearchBar 的插槽里），避免插槽重组把这次提交取消。
+                LaunchedEffect(pendingSearchSubmit) {
+                    if (pendingSearchSubmit == 0) return@LaunchedEffect
+                    delay(60)
+                    currentOnSubmitSearch(searchDraft)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 协调原生 SearchBar 与右侧设置圆钮的同步过渡：
+ * 展开时圆钮立即禁用点击、焦点和语义，并随弹簧同步缩放滑出，搜索栏平滑扩展至全宽；
+ * 收起时按反向弹簧回归，避免与取消按钮争抢位置或点击范围。
+ */
+@Composable
+private fun CoordinatedDockSearchLayout(
+    searchExpanded: Boolean,
+    buttonsProgress: () -> Float,
+    horizontalMargin: Dp,
+    buttonGap: Dp,
+    searchBar: @Composable () -> Unit,
+    trailingButtons: @Composable () -> Unit,
+) {
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Box { searchBar() }
+            Box(
+                modifier = Modifier
+                    .focusProperties { canFocus = !searchExpanded }
+                    .then(if (searchExpanded) Modifier.clearAndSetSemantics {} else Modifier),
+            ) {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    trailingButtons()
+                }
+            }
+        },
+    ) { measurables, constraints ->
+        val marginPx = horizontalMargin.roundToPx()
+        val gapPx = buttonGap.roundToPx()
+        val progress = buttonsProgress().fastCoerceIn(0f, 1f)
+        val shadowPadPx = 16.dp.roundToPx()
+        val buttonsPlaceable = measurables[1].measure(
+            constraints.copy(minWidth = 0, minHeight = 0),
+        )
+        val buttonsWidth = (buttonsPlaceable.width - 2 * shadowPadPx).coerceAtLeast(0)
+        val buttonsHeight = (buttonsPlaceable.height - 2 * shadowPadPx).coerceAtLeast(0)
+        val reservedEndPx = ((buttonsWidth + gapPx) * progress).fastRoundToInt().coerceAtLeast(0)
+        val searchWidth = (constraints.maxWidth - 2 * marginPx - reservedEndPx).coerceAtLeast(1)
+        val searchPlaceable = measurables[0].measure(
+            Constraints.fixedWidth(searchWidth).copy(
+                minHeight = 0,
+                maxHeight = Constraints.Infinity,
+            ),
+        )
+        val layoutHeight = buttonsHeight.coerceAtLeast(ConversationPanelMetrics.BottomDockHeight.roundToPx())
+        layout(constraints.maxWidth, layoutHeight) {
+            searchPlaceable.placeRelative(
+                x = marginPx,
+                y = (layoutHeight - searchPlaceable.height) / 2,
+            )
+            if (progress > 0.01f) {
+                val slideOutPx = ((1f - progress) * (buttonsWidth + marginPx) * 0.35f).fastRoundToInt()
+                val x = constraints.maxWidth - marginPx - buttonsWidth - shadowPadPx + slideOutPx
+                val y = (layoutHeight - buttonsPlaceable.height) / 2
+                if (progress >= 0.999f) {
+                    buttonsPlaceable.placeRelative(x = x, y = y)
+                } else {
+                    buttonsPlaceable.placeRelativeWithLayer(x = x, y = y) {
+                        alpha = progress
+                        val scale = 0.8f + 0.2f * progress
+                        scaleX = scale
+                        scaleY = scale
+                    }
                 }
             }
         }
