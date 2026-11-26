@@ -37,3 +37,7 @@ Follow the history's `type(scope): summary` convention, such as `fix(voice): smo
 ## Security & Configuration
 
 Keep API keys, keystores, passwords, and local SDK paths out of Git. Release signing uses `ETA_RELEASE_*` environment variables; see `.github/RELEASING.md`. Use `AgentLogger`/`ModuleLogger` and exclude sensitive payloads from logs.
+
+## Fork 改动规范（本地 fork）
+
+本仓库是 Eta 的个人 fork，改动前必读 `docs/FORK_RULES.md`（文案、`*Local.kt` 挂载点、数据库迁移、COUI vendor、双主题联动、上游同步与出包规则）。提交前可运行 `sh scripts/check-fork-spec.sh` 自检，或执行 `sh scripts/install-fork-hooks.sh` 装一次 pre-commit 钩子。
