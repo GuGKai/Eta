@@ -32,10 +32,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.stringResource
@@ -46,11 +50,8 @@ import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.roleplay.CharacterMacros
 import io.github.mangi.eta.agent.roleplay.CharacterProfile
-import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.CharacterAvatar
-import io.github.mangi.eta.ui.components.coui.CouiButton
-import io.github.mangi.eta.ui.components.coui.CouiButtonRole
+import io.github.mangi.eta.ui.components.monogramGradient
 import io.github.mangi.eta.ui.components.rememberCharacterImage
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -83,8 +84,39 @@ internal fun CharacterHero(
     val card = profile.card
     val description = remember(card, userName) { CharacterMacros.expand(card.description, card, userName) }
     val colors = MiuixTheme.colorScheme
+    val isDark = colors.surface.luminance() < 0.5f
     val image = rememberCharacterImage(profile.avatarPath, HeroAvatarHeight)
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val glowColor = remember(card.name) { monogramGradient(card.name).first() }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clipToBounds()
+            .then(
+                if (image == null) {
+                    Modifier.drawBehind {
+                        val centerY = 12.dp.toPx() + HeroAvatarHeight.toPx() * 0.5f
+                        val radius = minOf(size.width * 0.52f, (size.height - centerY).coerceAtLeast(1f))
+                        drawRect(
+                            brush = Brush.radialGradient(
+                                0f to glowColor.copy(alpha = if (isDark) 0.20f else 0.13f),
+                                0.55f to glowColor.copy(alpha = if (isDark) 0.06f else 0.04f),
+                                1f to Color.Transparent,
+                                center = Offset(size.width * 0.5f, centerY),
+                                radius = radius,
+                            ),
+                        )
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to colors.surface,
+                                0.22f to Color.Transparent,
+                            ),
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
         if (image != null) {
             CharacterAvatar(
                 name = card.name,
@@ -95,22 +127,22 @@ internal fun CharacterHero(
                 modifier = Modifier
                     .matchParentSize()
                     .blur(56.dp)
-                    .alpha(0.4f),
+                    .alpha(0.36f),
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        // 上下两端都融回页面底色：顶部不在顶栏下切出硬边，底部自然接到下方分组。
+                        Brush.verticalGradient(
+                            0f to colors.surface,
+                            0.20f to colors.surface.copy(alpha = 0f),
+                            0.68f to colors.surface.copy(alpha = 0.25f),
+                            1f to colors.surface,
+                        ),
+                    ),
             )
         }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    // 上下两端都融回页面底色：顶部不在顶栏下切出硬边，底部自然接到下方分组。
-                    Brush.verticalGradient(
-                        0f to colors.background,
-                        0.18f to colors.background.copy(alpha = 0f),
-                        0.6f to colors.background.copy(alpha = 0.2f),
-                        1f to colors.background,
-                    ),
-                ),
-        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -223,24 +255,13 @@ internal fun CharacterHero(
                 )
             }
             Spacer(Modifier.height(20.dp))
-            val startChatText = stringResource(R.string.character_action_start_chat)
-            if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
-                CouiButton(
-                    text = startChatText,
-                    enabled = !busy,
-                    onClick = onStart,
-                    role = CouiButtonRole.Primary,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                TextButton(
-                    text = startChatText,
-                    enabled = !busy,
-                    onClick = onStart,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
-            }
+            TextButton(
+                text = stringResource(R.string.character_action_start_chat),
+                enabled = !busy,
+                onClick = onStart,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
         }
     }
 }

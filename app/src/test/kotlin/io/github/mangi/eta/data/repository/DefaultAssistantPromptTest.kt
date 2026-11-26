@@ -2,7 +2,7 @@ package io.github.mangi.eta.data.repository
 
 import android.app.Application
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
-import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentPromptBuilder
 import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext

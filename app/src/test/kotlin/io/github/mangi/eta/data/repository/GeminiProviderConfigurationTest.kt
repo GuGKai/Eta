@@ -1,9 +1,9 @@
 package io.github.mangi.eta.data.repository
 
-import io.github.mangi.eta.agent.model.GeminiInteractionsProvider
-import io.github.mangi.eta.agent.model.ProviderClientFactory
-import io.github.mangi.eta.agent.model.VertexGenerateContentProvider
-import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.agent.model.provider.gemini.GeminiInteractionsProvider
+import io.github.mangi.eta.agent.model.provider.ProviderClientFactory
+import io.github.mangi.eta.agent.model.provider.gemini.VertexGenerateContentProvider
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.model.CustomBody
@@ -19,10 +19,10 @@ import io.github.mangi.eta.data.model.ProviderSourceTypes
 import io.github.mangi.eta.data.model.ProviderTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.provider.BuiltinProviders
-import io.github.mangi.eta.ui.pages.providers.ProviderConfigDraft
-import io.github.mangi.eta.ui.pages.providers.providerAccountAuthMode
-import io.github.mangi.eta.ui.pages.providers.toProvider
-import io.github.mangi.eta.ui.pages.providers.withGeminiEndpointMode
+import io.github.mangi.eta.ui.screens.providers.ProviderConfigDraft
+import io.github.mangi.eta.ui.screens.providers.providerAccountAuthMode
+import io.github.mangi.eta.ui.screens.providers.toProvider
+import io.github.mangi.eta.ui.screens.providers.withGeminiEndpointMode
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.runBlocking
@@ -39,6 +39,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import io.github.mangi.eta.data.repository.backup.EtaBackupDocument
+import io.github.mangi.eta.data.repository.backup.EtaBackupRepository
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])

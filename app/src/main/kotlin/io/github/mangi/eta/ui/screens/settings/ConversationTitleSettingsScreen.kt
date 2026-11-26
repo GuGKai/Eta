@@ -3,7 +3,7 @@ package io.github.mangi.eta.ui.screens.settings
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,8 +29,9 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.components.FooterHint
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.OptionalModelPickerContent
 import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
@@ -56,11 +57,11 @@ internal fun ConversationTitleSettingsScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
-    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsState(initial = null)
-    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
+    val providers by ProviderRepository.providersFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsStateWithLifecycle(initialValue = null)
     val titleSettings by RuntimeConfigRepository.conversationTitleSettingsFlow()
-        .collectAsState(initial = ConversationTitleSettings())
+        .collectAsStateWithLifecycle(initialValue = ConversationTitleSettings())
 
     LaunchedEffect(Unit) {
         RuntimeConfigRepository.ensureDefaults(EtaApp.serviceInstance)
@@ -227,17 +228,18 @@ internal fun ConversationTitleSettingsScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = pageTitle,
                 onBack = onBack,
                 overlay = {
                     GlassBottomSheet(
                         show = showModelSheet,
                         backdrop = currentGlassOverlayBackdrop(),
+                        progressiveBlur = false,
                         title = modelTitle,
                         onDismissRequest = { showModelSheet = false },
                         insideMargin = DpSize(0.dp, 0.dp),
-                    ) {
+                    ) { _ ->
                         OptionalModelPickerContent(
                             pickerState = pickerState,
                             selectedSecondaryModelId = resolvedCustom?.model?.id,
@@ -283,14 +285,7 @@ internal fun ConversationTitleSettingsScreen(
                             )
                         }
                     }
-                    Text(
-                        text = noteText,
-                        style = MiuixTheme.textStyles.footnote2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier
-                            .padding(horizontal = 28.dp)
-                            .padding(bottom = 12.dp),
-                    )
+                    FooterHint(text = noteText)
                 }
             }
         }

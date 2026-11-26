@@ -58,7 +58,7 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ItemDescriptionDialog
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiIcon
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -198,20 +198,20 @@ private fun CouiTasksPage(
 ) {
     val dark = CouiTheme.isDark
     CouiScaffoldPage(
-        title = stringResource(R.string.automation_title),
+        title = stringResource(R.string.local_automation_title),
         onBack = onBack,
         // 任务列表/触发器目录会很长，标题固定成紧凑顶栏，上滑时不再跟着折叠移动。
         compactTitle = true,
     ) {
         Group {
             CouiPreference(
-                title = stringResource(R.string.automation_create_hint),
-                summary = stringResource(R.string.automation_create_summary),
+                title = stringResource(R.string.local_automation_create_hint),
+                summary = stringResource(R.string.local_automation_create_summary),
                 showChevron = false,
             )
         }
         if (tasks.isNotEmpty()) {
-            Group(title = stringResource(R.string.automation_tasks_section)) {
+            Group(title = stringResource(R.string.local_automation_tasks_section)) {
                 tasks.forEachIndexed { index, task ->
                     val rule = remember(task.triggerJson) { JSONObject(task.triggerJson) }
                     CouiTaskRow(
@@ -230,7 +230,7 @@ private fun CouiTasksPage(
             }
         }
         if (triggers.isNotEmpty()) {
-            Group(title = stringResource(R.string.automation_triggers_title)) {
+            Group(title = stringResource(R.string.local_automation_triggers_title)) {
                 TriggerCatalogHeading(triggers)
                 TaskTriggerGroup.entries.forEach { group ->
                     val groupTriggers = triggers.filter { it.group == group }
@@ -271,9 +271,9 @@ private fun CouiTaskRow(
     val anchor = rememberCouiMenuAnchor()
     val moreSource = remember { MutableInteractionSource() }
     val viewDescText = stringResource(R.string.ui_view_description)
-    val runText = stringResource(R.string.automation_run)
-    val cancelText = stringResource(R.string.automation_cancel)
-    val deleteText = stringResource(R.string.automation_delete)
+    val runText = stringResource(R.string.local_automation_run)
+    val cancelText = stringResource(R.string.local_automation_cancel)
+    val deleteText = stringResource(R.string.local_automation_delete)
     val menuItems = remember(viewDescText, runText, cancelText, deleteText, destructiveColor) {
         listOf(
             CouiMenuItem(value = 0, text = viewDescText),
@@ -284,7 +284,7 @@ private fun CouiTaskRow(
     }
     val statusColor = couiStatusColor(task.lastStatus, colors.accent, colors.summary, destructiveColor)
     val statusLine = statusLabel(context, task.lastStatus) + " · " +
-        context.getString(R.string.automation_run_count, task.runCount, task.maxRuns)
+        context.getString(R.string.local_automation_run_count, task.runCount, task.maxRuns)
 
     Item(
         // 与 Skills 页一致：点整行就是切开关，完整说明只从三点菜单的「查看说明」进入。
@@ -333,7 +333,7 @@ private fun CouiTaskRow(
                 ) {
                     CouiIcon(
                         imageVector = CouiIcons.Outlined.More,
-                        contentDescription = stringResource(R.string.automation_tasks_more_named, task.name),
+                        contentDescription = stringResource(R.string.local_automation_tasks_more_named, task.name),
                         modifier = Modifier.size(20.dp),
                         tint = colors.summary,
                     )
@@ -380,8 +380,8 @@ private fun MiuixTasksPage(
     onDescribe: (AgentTaskEntity) -> Unit,
     onSelectTrigger: (TaskTriggerUi) -> Unit,
 ) {
-    MiuixScaffoldPage(
-        title = stringResource(R.string.automation_title),
+    ScaffoldPage(
+        title = stringResource(R.string.local_automation_title),
         onBack = onBack,
         compactTitle = true,
     ) {
@@ -392,14 +392,14 @@ private fun MiuixTasksPage(
                     .padding(bottom = 12.dp),
             ) {
                 BasicComponent(
-                    title = stringResource(R.string.automation_create_hint),
-                    summary = stringResource(R.string.automation_create_summary),
+                    title = stringResource(R.string.local_automation_create_hint),
+                    summary = stringResource(R.string.local_automation_create_summary),
                 )
             }
         }
         if (tasks.isNotEmpty()) {
             item(key = "tasks") {
-                SmallTitle(stringResource(R.string.automation_tasks_section))
+                SmallTitle(stringResource(R.string.local_automation_tasks_section))
                 Card(
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
@@ -456,7 +456,7 @@ private fun MiuixTaskRow(
     val colors = MiuixTheme.colorScheme
     val viewDescText = stringResource(R.string.ui_view_description)
     val statusLine = statusLabel(context, task.lastStatus) + " · " +
-        context.getString(R.string.automation_run_count, task.runCount, task.maxRuns)
+        context.getString(R.string.local_automation_run_count, task.runCount, task.maxRuns)
     val statusColor = when (task.lastStatus) {
         "completed" -> TaskStatusSuccess
         "failed", "interrupted" -> colors.error
@@ -472,15 +472,15 @@ private fun MiuixTaskRow(
                 entry = DropdownEntry(
                     items = listOf(
                         DropdownItem(text = viewDescText, onClick = onDescribe),
-                        DropdownItem(text = stringResource(R.string.automation_run), onClick = onRun),
-                        DropdownItem(text = stringResource(R.string.automation_cancel), onClick = onCancel),
-                        DropdownItem(text = stringResource(R.string.automation_delete), onClick = onDelete),
+                        DropdownItem(text = stringResource(R.string.local_automation_run), onClick = onRun),
+                        DropdownItem(text = stringResource(R.string.local_automation_cancel), onClick = onCancel),
+                        DropdownItem(text = stringResource(R.string.local_automation_delete), onClick = onDelete),
                     ),
                 ),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.MoreHoriz,
-                    contentDescription = stringResource(R.string.automation_tasks_more_named, task.name),
+                    contentDescription = stringResource(R.string.local_automation_tasks_more_named, task.name),
                     modifier = Modifier.size(20.dp),
                     tint = colors.onSurfaceVariantActions,
                 )
@@ -533,20 +533,20 @@ private fun describeTask(context: Context, task: AgentTaskEntity, runs: List<Age
     val lines = buildList {
         add(task.prompt)
         add("")
-        add(context.getString(R.string.automation_trigger_label) + ": " + triggerSummary(context, rule))
+        add(context.getString(R.string.local_automation_trigger_label) + ": " + triggerSummary(context, rule))
         triggerFilters(context, rule).takeIf { it.isNotBlank() }?.let {
-            add(context.getString(R.string.automation_filters_label) + ": " + it)
+            add(context.getString(R.string.local_automation_filters_label) + ": " + it)
         }
         triggerConditions(context, rule).takeIf { it.isNotBlank() }?.let {
-            add(context.getString(R.string.automation_conditions_label) + ": " + it)
+            add(context.getString(R.string.local_automation_conditions_label) + ": " + it)
         }
         task.nextRunAt?.let {
-            add(context.getString(R.string.automation_next_run_label) + ": " + formatTime(context, it))
+            add(context.getString(R.string.local_automation_next_run_label) + ": " + formatTime(context, it))
         }
-        add(context.getString(R.string.automation_run_count, task.runCount, task.maxRuns))
+        add(context.getString(R.string.local_automation_run_count, task.runCount, task.maxRuns))
         if (runs.isNotEmpty()) {
             add("")
-            add(context.getString(R.string.automation_recent_runs_label) + ":")
+            add(context.getString(R.string.local_automation_recent_runs_label) + ":")
             runs.take(3).forEach { run ->
                 val time = formatTime(context, run.startedAt ?: run.queuedAt)
                 add("· " + statusLabel(context, run.status) + " · " + time)
@@ -573,36 +573,36 @@ private fun triggerSummary(context: Context, rule: JSONObject): String =
                     }
                 }
             }
-            context.getString(R.string.automation_daily, rule.optString("time"), rule.optString("timeZone")) +
+            context.getString(R.string.local_automation_daily, rule.optString("time"), rule.optString("timeZone")) +
                 if (days.isEmpty()) "" else " · ${days.joinToString(", ")}"
         }
-        "interval" -> context.getString(R.string.automation_interval, rule.optLong("seconds") / 60)
+        "interval" -> context.getString(R.string.local_automation_interval, rule.optLong("seconds") / 60)
         else -> eventLabel(context, rule.optString("type"))
     }
 
 internal fun eventLabel(context: Context, type: String): String {
     val label = when (type) {
-        "notification_posted" -> R.string.automation_event_notification_posted
-        "notification_removed" -> R.string.automation_event_notification_removed
-        "app_foreground" -> R.string.automation_event_app_foreground
-        "device_unlocked" -> R.string.automation_event_device_unlocked
-        "screen_on" -> R.string.automation_event_screen_on
-        "screen_off" -> R.string.automation_event_screen_off
-        "charging_connected" -> R.string.automation_event_charging_connected
-        "charging_disconnected" -> R.string.automation_event_charging_disconnected
-        "battery_low" -> R.string.automation_event_battery_low
-        "battery_okay" -> R.string.automation_event_battery_okay
-        "network_connected" -> R.string.automation_event_network_connected
-        "network_disconnected" -> R.string.automation_event_network_disconnected
-        "bluetooth_connected" -> R.string.automation_event_bluetooth_connected
-        "bluetooth_disconnected" -> R.string.automation_event_bluetooth_disconnected
-        "headset_connected" -> R.string.automation_event_headset_connected
-        "headset_disconnected" -> R.string.automation_event_headset_disconnected
-        "device_boot" -> R.string.automation_event_device_boot
-        "memory_updated" -> R.string.automation_event_memory_updated
-        "task_completed" -> R.string.automation_event_task_completed
-        "task_failed" -> R.string.automation_event_task_failed
-        else -> return context.getString(R.string.automation_event, type)
+        "notification_posted" -> R.string.local_automation_event_notification_posted
+        "notification_removed" -> R.string.local_automation_event_notification_removed
+        "app_foreground" -> R.string.local_automation_event_app_foreground
+        "device_unlocked" -> R.string.local_automation_event_device_unlocked
+        "screen_on" -> R.string.local_automation_event_screen_on
+        "screen_off" -> R.string.local_automation_event_screen_off
+        "charging_connected" -> R.string.local_automation_event_charging_connected
+        "charging_disconnected" -> R.string.local_automation_event_charging_disconnected
+        "battery_low" -> R.string.local_automation_event_battery_low
+        "battery_okay" -> R.string.local_automation_event_battery_okay
+        "network_connected" -> R.string.local_automation_event_network_connected
+        "network_disconnected" -> R.string.local_automation_event_network_disconnected
+        "bluetooth_connected" -> R.string.local_automation_event_bluetooth_connected
+        "bluetooth_disconnected" -> R.string.local_automation_event_bluetooth_disconnected
+        "headset_connected" -> R.string.local_automation_event_headset_connected
+        "headset_disconnected" -> R.string.local_automation_event_headset_disconnected
+        "device_boot" -> R.string.local_automation_event_device_boot
+        "memory_updated" -> R.string.local_automation_event_memory_updated
+        "task_completed" -> R.string.local_automation_event_task_completed
+        "task_failed" -> R.string.local_automation_event_task_failed
+        else -> return context.getString(R.string.local_automation_event, type)
     }
     return context.getString(label)
 }
@@ -610,11 +610,11 @@ internal fun eventLabel(context: Context, type: String): String {
 private fun triggerFilters(context: Context, rule: JSONObject): String {
     val filters = rule.optJSONObject("filters") ?: return ""
     return listOf(
-        "packageName" to R.string.automation_filter_app,
-        "titleContains" to R.string.automation_filter_title,
-        "textContains" to R.string.automation_filter_text,
-        "taskId" to R.string.automation_filter_task,
-        "transport" to R.string.automation_filter_transport,
+        "packageName" to R.string.local_automation_filter_app,
+        "titleContains" to R.string.local_automation_filter_title,
+        "textContains" to R.string.local_automation_filter_text,
+        "taskId" to R.string.local_automation_filter_task,
+        "transport" to R.string.local_automation_filter_transport,
     ).mapNotNull { (key, label) ->
         filters.optString(key).takeIf { it.isNotBlank() }?.let { context.getString(label, it) }
     }.joinToString("\n")
@@ -623,9 +623,9 @@ private fun triggerFilters(context: Context, rule: JSONObject): String {
 private fun triggerConditions(context: Context, rule: JSONObject): String {
     val conditions = rule.optJSONObject("conditions") ?: return ""
     return listOf(
-        Triple("charging", R.string.automation_condition_charging, R.string.automation_condition_not_charging),
-        Triple("unlocked", R.string.automation_condition_unlocked, R.string.automation_condition_locked),
-        Triple("networkConnected", R.string.automation_condition_online, R.string.automation_condition_offline),
+        Triple("charging", R.string.local_automation_condition_charging, R.string.local_automation_condition_not_charging),
+        Triple("unlocked", R.string.local_automation_condition_unlocked, R.string.local_automation_condition_locked),
+        Triple("networkConnected", R.string.local_automation_condition_online, R.string.local_automation_condition_offline),
     ).mapNotNull { (key, yes, no) ->
         if (conditions.has(key)) context.getString(if (conditions.optBoolean(key)) yes else no) else null
     }.joinToString(" · ")
@@ -639,14 +639,14 @@ private fun formatTime(context: Context, time: Long): String =
 private fun statusLabel(context: Context, status: String): String =
     context.getString(
         when (status) {
-            "ready" -> R.string.automation_ready
-            "queued" -> R.string.automation_queued
-            "running" -> R.string.automation_running
-            "completed" -> R.string.automation_completed
-            "failed" -> R.string.automation_failed
-            "cancelled" -> R.string.automation_cancelled
-            "interrupted" -> R.string.automation_interrupted
-            "configuration_required" -> R.string.automation_config_required
-            else -> R.string.automation_ready
+            "ready" -> R.string.local_automation_ready
+            "queued" -> R.string.local_automation_queued
+            "running" -> R.string.local_automation_running
+            "completed" -> R.string.local_automation_completed
+            "failed" -> R.string.local_automation_failed
+            "cancelled" -> R.string.local_automation_cancelled
+            "interrupted" -> R.string.local_automation_interrupted
+            "configuration_required" -> R.string.local_automation_config_required
+            else -> R.string.local_automation_ready
         }
     )

@@ -4,7 +4,7 @@ import io.github.mangi.eta.agent.model.AskQuestionCard
 
 import androidx.compose.runtime.Immutable
 import io.github.mangi.eta.agent.model.AgentFileReference
-import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
 import io.github.mangi.eta.data.model.ReasoningEffort
@@ -42,6 +42,7 @@ internal data class AgentChatUiState(
     val hasEarlierMessages: Boolean = false,
     /** 打开会话先只加载展示窗口；false 表示后台存档（history/journal）尚未补全。 */
     val checkpointLoaded: Boolean = true,
+    val conversationCharacterId: String? = null,
     val conversationCharacterName: String? = null,
     val conversationCharacterAvatarPath: String? = null,
     /** 最近一次模型请求的用量与输出速度，用于顶栏胶囊。 */

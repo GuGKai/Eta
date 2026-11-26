@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.app.DeepSeekBalanceStore
+import io.github.mangi.eta.ui.state.DeepSeekBalanceStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import java.math.BigDecimal
@@ -68,20 +68,20 @@ internal fun AccountBalanceCapsules(
     val description = buildString {
         append(
             if (state.total == null) {
-                stringResource(R.string.deepseek_capsule_unavailable)
+                stringResource(R.string.local_deepseek_capsule_unavailable)
             } else {
-                stringResource(R.string.deepseek_capsule_description, balanceValue, spentValue)
+                stringResource(R.string.local_deepseek_capsule_description, balanceValue, spentValue)
             },
         )
         fetchedAt?.let { append(" · ").append(it) }
-        append(" · ").append(stringResource(R.string.deepseek_capsule_reseed_hint))
+        append(" · ").append(stringResource(R.string.local_deepseek_capsule_reseed_hint))
     }
 
     Row(
         modifier = Modifier.widthIn(max = maxWidth).padding(horizontal = 4.dp),
     ) {
         AccountCapsule(
-            text = stringResource(R.string.deepseek_capsule_pair, balanceValue, spentValue),
+            text = stringResource(R.string.local_deepseek_capsule_pair, balanceValue, spentValue),
             modifier = Modifier,
             description = description,
             onClick = onRefresh,
@@ -96,7 +96,7 @@ internal fun AccountBalanceCapsules(
         if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
             CouiConfirmDialog(
                 visible = true,
-                title = stringResource(R.string.deepseek_seed_title),
+                title = stringResource(R.string.local_deepseek_seed_title),
                 message = null,
                 confirmText = stringResource(R.string.action_confirm),
                 confirmEnabled = parsed != null,
@@ -109,7 +109,7 @@ internal fun AccountBalanceCapsules(
                 TextField(
                     value = input,
                     onValueChange = { input = it },
-                    label = stringResource(R.string.deepseek_seed_hint),
+                    label = stringResource(R.string.local_deepseek_seed_hint),
                     useLabelAsPlaceholder = true,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -120,7 +120,7 @@ internal fun AccountBalanceCapsules(
             WindowDialog(
             show = true,
             cornerRadius = DialogDefaults.CornerRadius,
-            title = stringResource(R.string.deepseek_seed_title),
+            title = stringResource(R.string.local_deepseek_seed_title),
             // 标题下面的说明文字按设计删掉：只留标题 + 输入框。
             onDismissRequest = { editing = false },
         ) {
@@ -128,7 +128,7 @@ internal fun AccountBalanceCapsules(
                 TextField(
                     value = input,
                     onValueChange = { input = it },
-                    label = stringResource(R.string.deepseek_seed_hint),
+                    label = stringResource(R.string.local_deepseek_seed_hint),
                     useLabelAsPlaceholder = true,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -138,7 +138,7 @@ internal fun AccountBalanceCapsules(
                 // 输入框与下面两个按钮之间留出间距，原来两者是贴在一起的。
                 Spacer(modifier = Modifier.height(12.dp))
 
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.action_confirm),
                     confirmEnabled = parsed != null,
                     onCancel = { editing = false },

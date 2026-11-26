@@ -13,7 +13,7 @@ import android.net.ConnectivityManager
 import android.os.BatteryManager
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.AgentNotificationHistoryService
-import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeClient
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.db.AgentTaskEntity
 import io.github.mangi.eta.data.db.AgentTaskRunEntity

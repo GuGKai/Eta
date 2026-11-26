@@ -18,7 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -65,8 +65,8 @@ import io.github.mangi.eta.data.model.ScheduledTaskPreset
 import io.github.mangi.eta.data.model.ScheduledTaskPresets
 import io.github.mangi.eta.data.repository.ScheduledTaskRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
@@ -107,7 +107,7 @@ internal fun ScheduledTasksScreen(
     ) {
         taskFlow.collect { value = it }
     }
-    val activeTaskIds by ScheduledTaskRunner.activeTaskIds.collectAsState()
+    val activeTaskIds by ScheduledTaskRunner.activeTaskIds.collectAsStateWithLifecycle()
     var health by remember(context) { mutableStateOf(ScheduledTaskHealthChecker.inspect(context)) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -214,11 +214,11 @@ internal fun ScheduledTasksScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = title,
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Add,
                         contentDescription = createLabel,
                         onClick = { onNavigate(AppRoute.ScheduledTaskEditor()) },
@@ -241,20 +241,12 @@ internal fun ScheduledTasksScreen(
                     item(key = "empty_intro") {
                         SmallTitle(text = stringResource(R.string.scheduled_section_quick_start))
                     }
-                    item(key = "empty_hint") {
-                        Text(
-                            text = stringResource(R.string.scheduled_empty_hint),
-                            fontSize = 13.sp,
-                            lineHeight = 19.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                        )
-                    }
                     item(key = "presets_card") {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .padding(horizontal = 12.dp)
+                                .padding(bottom = 12.dp),
                         ) {
                             ScheduledTaskPresets.all.forEach { preset ->
                                 ArrowPreference(
@@ -264,6 +256,15 @@ internal fun ScheduledTasksScreen(
                                 )
                             }
                         }
+                    }
+                    item(key = "empty_hint") {
+                        Text(
+                            text = stringResource(R.string.scheduled_empty_hint),
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp),
+                        )
                     }
                 } else {
                     item(key = "tasks_header") {

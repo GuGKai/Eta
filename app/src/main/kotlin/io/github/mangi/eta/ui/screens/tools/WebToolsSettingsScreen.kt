@@ -36,8 +36,9 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.WebHttpMethod
 import io.github.mangi.eta.data.model.WebToolBackend
 import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.components.FooterHint
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.SettingsTextField
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.StatusSuccess
@@ -127,14 +128,14 @@ internal fun WebToolsSettingsScreen(onBack: () -> Unit) {
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.web_tools_settings_title),
                 onBack = onBack,
                 modifier = Modifier.imePadding(),
             ) {
                 if (!store.loaded) {
                     item(key = "loading") { WebToolsLoadingState(store.message) }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
                 item(key = "service") {
                     Column {
@@ -168,12 +169,9 @@ internal fun WebToolsSettingsScreen(onBack: () -> Unit) {
                                 },
                             )
                         }
-                        WebToolsNote(
-                            stringResource(
-                                if (usesRemote) R.string.web_tools_overview_remote_note
-                                else R.string.web_tools_overview_builtin_note,
-                            ),
-                        )
+                        if (usesRemote) {
+                            WebToolsNote(stringResource(R.string.web_tools_overview_remote_note))
+                        }
                     }
                 }
                 if (usesDeepSeek) {
@@ -553,12 +551,7 @@ private fun WebToolsNote(text: String, modifier: Modifier = Modifier) {
             Footer(text = text, modifier = modifier)
         }
         AppearanceUiStyle.MIUIX -> {
-            Text(
-                text = text,
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = modifier.padding(horizontal = 28.dp).padding(bottom = 12.dp),
-            )
+            FooterHint(text = text, modifier = modifier)
         }
     }
 }

@@ -24,10 +24,10 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.core.safeStackTrace
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.data.repository.EtaBackupSummary
+import io.github.mangi.eta.data.repository.backup.EtaBackupSummary
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -203,7 +203,7 @@ internal fun DataBackupScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.data_backup_title),
                 onBack = onBack,
                 overlay = {
@@ -214,7 +214,7 @@ internal fun DataBackupScreen(
                         summary = stringResource(R.string.data_backup_import_confirm_summary),
                         onDismissRequest = onDismissImport,
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = confirmImportText,
                             destructive = true,
                             cancelEnabled = !busy,
@@ -246,11 +246,7 @@ internal fun DataBackupScreen(
                     ) {
                         ArrowPreference(
                             title = stringResource(R.string.data_backup_export),
-                            summary = if (busy) {
-                                stringResource(R.string.data_backup_working)
-                            } else {
-                                stringResource(R.string.data_backup_export_summary)
-                            },
+                            summary = if (busy) stringResource(R.string.data_backup_working) else null,
                             enabled = !busy,
                             endActions = {
                                 if (busy) {
@@ -263,7 +259,6 @@ internal fun DataBackupScreen(
                         )
                         ArrowPreference(
                             title = stringResource(R.string.data_backup_import),
-                            summary = stringResource(R.string.data_backup_import_summary),
                             enabled = !busy,
                             onClick = {
                                 importLauncher.launch(arrayOf("application/json", "text/plain"))

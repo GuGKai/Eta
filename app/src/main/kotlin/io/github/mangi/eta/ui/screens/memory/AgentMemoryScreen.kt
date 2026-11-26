@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,7 +38,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,9 +58,9 @@ import com.itos.coui.scroll.rememberCouiOverscrollEffect
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffold
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.PageScaffold
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -85,6 +85,8 @@ import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.glass.GlassDialog
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.glass.GlassSegmentedTabRow
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -172,11 +174,11 @@ internal fun AgentMemoryScreen(
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffold(
+            PageScaffold(
                 title = stringResource(R.string.ui_memory_b55ff5),
                 onBack = { onAction(AgentMemoryAction.NavigateBack) },
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Delete,
                         contentDescription = stringResource(R.string.ui_clear_all_memory_a43bd3),
                         enabled = canClear,
@@ -192,7 +194,7 @@ internal fun AgentMemoryScreen(
                         summary = stringResource(R.string.ui_the_entire_contents_of_memory_md_will_be_deleted_and_83a8ac),
                         onDismissRequest = { showClearDialog = false },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.memory_clear),
                             destructive = true,
                             confirmEnabled = !state.isSaving,
@@ -517,6 +519,32 @@ private fun MemoryModeSwitch(
     enabled: Boolean,
     onModeChange: (MemoryViewMode) -> Unit,
 ) {
+    if (LocalUiStyle.current == AppearanceUiStyle.MIUIX) {
+        val backdrop = rememberLayerBackdrop()
+        val colors = MiuixTheme.colorScheme
+        val previewLabel = stringResource(R.string.memory_mode_preview)
+        val editLabel = stringResource(R.string.memory_mode_edit)
+        val tabs = remember(previewLabel, editLabel) { listOf(previewLabel, editLabel) }
+        GlassSegmentedTabRow(
+            tabs = tabs,
+            selectedIndex = mode.ordinal,
+            onSelect = { index ->
+                if (enabled) {
+                    onModeChange(MemoryViewMode.entries[index])
+                }
+            },
+            backdrop = backdrop,
+            modifier = Modifier.width(156.dp),
+            surfaceAlpha = 0f,
+            shadow = null,
+            height = 34.dp,
+            trackColor = colors.surfaceContainerHigh,
+            indicatorColor = colors.surface,
+            selectedContentColor = colors.onSurface,
+            contentColor = colors.onSurfaceVariantSummary,
+        )
+        return
+    }
     val colors = MiuixTheme.colorScheme
     Row(
         modifier = Modifier

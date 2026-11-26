@@ -22,12 +22,10 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,8 +57,8 @@ import io.github.mangi.eta.data.model.SpeechRegion
 import io.github.mangi.eta.data.model.XaiImageConfig
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixSecureTextField
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.SecureTextField
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.StatusSuccess
 import io.github.mangi.eta.ui.components.StatusWarning
@@ -75,7 +73,7 @@ import io.github.mangi.eta.ui.components.coui.CouiSettingsIcon
 import io.github.mangi.eta.ui.components.coui.CouiSwitchPreference
 import io.github.mangi.eta.ui.components.coui.CouiTextField
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
-import io.github.mangi.eta.ui.components.rememberChatImageBitmap
+import io.github.mangi.eta.ui.components.chat.rememberChatImageBitmap
 import io.github.mangi.eta.ui.components.rememberDraftTextFieldState
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -90,6 +88,8 @@ import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 internal fun ImageGenSettingsScreen(
@@ -627,7 +627,7 @@ internal fun ImageGenSettingsScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.image_gen_settings_title),
                 onBack = onBack,
                 modifier = Modifier.imePadding(),
@@ -643,7 +643,7 @@ internal fun ImageGenSettingsScreen(
                             InfiniteProgressIndicator()
                         }
                     }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
 
                 item(key = "enable_card") {
@@ -655,7 +655,6 @@ internal fun ImageGenSettingsScreen(
                     ) {
                         SwitchPreference(
                             title = stringResource(R.string.imagegen_enable_title),
-                            summary = stringResource(R.string.imagegen_enable_summary),
                             checked = settings.enabled,
                             onCheckedChange = { store.edit(settings.copy(enabled = it)) },
                         )
@@ -866,7 +865,7 @@ internal fun ImageGenSettingsScreen(
                                     }
                                 }
 
-                                MiuixSecureTextField(
+                                SecureTextField(
                                     state = apiKeyField,
                                     label = stringResource(R.string.imagegen_field_api_key),
                                     visible = apiKeyVisible,
@@ -939,7 +938,6 @@ internal fun ImageGenSettingsScreen(
                             )
                             SwitchPreference(
                                 title = stringResource(R.string.imagegen_qwen_watermark_title),
-                                summary = stringResource(R.string.imagegen_default_off),
                                 checked = settings.qwen.watermark,
                                 onCheckedChange = {
                                     store.edit(settings.copy(qwen = settings.qwen.copy(watermark = it)))
@@ -959,7 +957,7 @@ internal fun ImageGenSettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
-                            .padding(top = 4.dp, bottom = 12.dp),
+                            .padding(bottom = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         TextButton(

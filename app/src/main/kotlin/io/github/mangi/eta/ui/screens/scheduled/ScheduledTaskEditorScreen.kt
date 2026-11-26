@@ -25,7 +25,7 @@ import androidx.compose.foundation.text.input.maxLengthTrim
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -79,9 +79,9 @@ import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.repository.ScheduledTaskRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.OptionalModelPickerContent
 import io.github.mangi.eta.ui.components.coui.CouiChipTabs
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -127,9 +127,9 @@ internal fun ScheduledTaskEditorScreen(
     val isEditing = !taskId.isNullOrBlank()
     val preset = remember(presetId) { ScheduledTaskPresets.find(presetId) }
 
-    val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
-    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsState(initial = null)
-    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
+    val providers by ProviderRepository.providersFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsStateWithLifecycle(initialValue = null)
 
     var loadedExisting by remember(taskId) { mutableStateOf<ScheduledTask?>(null) }
     var initialized by remember(taskId, presetId) { mutableStateOf(false) }
@@ -222,14 +222,11 @@ internal fun ScheduledTaskEditorScreen(
             )
         }
     }
-    val nextRunPreview = if (scheduleError != null) {
-        scheduleError
-    } else {
-        stringResource(
+    val nextRunPreview = scheduleError
+        ?: stringResource(
             R.string.scheduled_next_run_prefix,
             ScheduledTaskScheduleCalculator.formatNextRunLabel(nextRunTimestamp, previewNowMs),
         )
-    }
 
     val pickerState = remember(providers, primaryProviderId, primaryModelId) {
         AgentModelPickerProjector.project(providers, primaryProviderId, primaryModelId)
@@ -714,12 +711,12 @@ internal fun ScheduledTaskEditorScreen(
             var pickerDaysOfWeek by remember { mutableStateOf(daysOfWeek) }
             var pickerHour by remember { mutableIntStateOf(hour) }
             var pickerMinute by remember { mutableIntStateOf(minute) }
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = pageTitle,
                 onBack = onBack,
                 modifier = Modifier.imePadding(),
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Ok,
                         contentDescription = stringResource(R.string.action_save),
                         enabled = canSave,
@@ -730,10 +727,11 @@ internal fun ScheduledTaskEditorScreen(
                     GlassBottomSheet(
                         show = showModelSheet,
                         backdrop = currentGlassOverlayBackdrop(),
+                        progressiveBlur = false,
                         title = stringResource(R.string.scheduled_field_model),
                         onDismissRequest = { showModelSheet = false },
                         insideMargin = DpSize(0.dp, 0.dp),
-                    ) {
+                    ) { _ ->
                         OptionalModelPickerContent(
                             pickerState = pickerState,
                             selectedSecondaryModelId = resolvedCustom?.model?.id,
@@ -795,7 +793,7 @@ internal fun ScheduledTaskEditorScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.action_confirm),
                             onCancel = { showTimePicker = false },
                             onConfirm = {

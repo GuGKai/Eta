@@ -1,6 +1,6 @@
 package io.github.mangi.eta.ui.markdown
 
-import io.github.mangi.eta.agent.voice.SpeechText
+import io.github.mangi.eta.agent.voice.tts.SpeechText
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

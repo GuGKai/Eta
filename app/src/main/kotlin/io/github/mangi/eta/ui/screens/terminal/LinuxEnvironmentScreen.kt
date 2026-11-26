@@ -6,7 +6,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -16,28 +16,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
-import io.github.mangi.eta.agent.terminal.AlpineEnvironmentInstaller
-import io.github.mangi.eta.agent.terminal.AlpineEnvironmentState
-import io.github.mangi.eta.agent.terminal.AlpineInstallProgress
-import io.github.mangi.eta.agent.terminal.AlpineInstallResult
-import io.github.mangi.eta.agent.terminal.AlpineInstallStage
-import io.github.mangi.eta.agent.terminal.ApkAnalysisInstallProgress
-import io.github.mangi.eta.agent.terminal.ApkAnalysisInstallResult
-import io.github.mangi.eta.agent.terminal.ApkAnalysisInstallStage
-import io.github.mangi.eta.agent.terminal.DebianEnvironmentInstaller
-import io.github.mangi.eta.agent.terminal.DebianEnvironmentState
-import io.github.mangi.eta.agent.terminal.DebianInstallProgress
-import io.github.mangi.eta.agent.terminal.DebianInstallResult
-import io.github.mangi.eta.agent.terminal.DebianInstallStage
-import io.github.mangi.eta.agent.terminal.LinuxApkAnalysisInstaller
+import io.github.mangi.eta.agent.terminal.linux.AlpineEnvironmentInstaller
+import io.github.mangi.eta.agent.terminal.linux.AlpineEnvironmentState
+import io.github.mangi.eta.agent.terminal.linux.AlpineInstallProgress
+import io.github.mangi.eta.agent.terminal.linux.AlpineInstallResult
+import io.github.mangi.eta.agent.terminal.linux.AlpineInstallStage
+import io.github.mangi.eta.agent.terminal.linux.ApkAnalysisInstallProgress
+import io.github.mangi.eta.agent.terminal.linux.ApkAnalysisInstallResult
+import io.github.mangi.eta.agent.terminal.linux.ApkAnalysisInstallStage
+import io.github.mangi.eta.agent.terminal.linux.DebianEnvironmentInstaller
+import io.github.mangi.eta.agent.terminal.linux.DebianEnvironmentState
+import io.github.mangi.eta.agent.terminal.linux.DebianInstallProgress
+import io.github.mangi.eta.agent.terminal.linux.DebianInstallResult
+import io.github.mangi.eta.agent.terminal.linux.DebianInstallStage
+import io.github.mangi.eta.agent.terminal.linux.LinuxApkAnalysisInstaller
 import io.github.mangi.eta.agent.terminal.LinuxDistribution
 import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
-import io.github.mangi.eta.agent.terminal.LinuxPackageProfile
-import io.github.mangi.eta.agent.terminal.LinuxPackageProfileInstaller
-import io.github.mangi.eta.agent.terminal.LinuxPackageProfiles
-import io.github.mangi.eta.agent.terminal.PackageProfileInstallProgress
-import io.github.mangi.eta.agent.terminal.PackageProfileInstallResult
-import io.github.mangi.eta.agent.terminal.PackageProfileInstallStage
+import io.github.mangi.eta.agent.terminal.linux.LinuxPackageProfile
+import io.github.mangi.eta.agent.terminal.linux.LinuxPackageProfileInstaller
+import io.github.mangi.eta.agent.terminal.linux.LinuxPackageProfiles
+import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallProgress
+import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallResult
+import io.github.mangi.eta.agent.terminal.linux.PackageProfileInstallStage
 import com.itos.coui.layout.CouiPageDefaults
 import com.itos.coui.layout.Divider
 import com.itos.coui.layout.Group
@@ -47,9 +47,9 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.app.launchForegroundExecution
-import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
+import io.github.mangi.eta.ui.state.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.app.rememberExecutionNotificationRequest
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiPreference
@@ -121,14 +121,12 @@ internal fun LinuxEnvironmentScreen(
     val selectionFlow = remember(appContext) {
         LinuxEnvironmentSettingsRepository.selectedFlow(appContext)
     }
-    val selectedDistribution by selectionFlow.collectAsState(
-        initial = LinuxEnvironmentSettingsRepository.current(appContext),
+    val selectedDistribution by selectionFlow.collectAsStateWithLifecycle(initialValue = LinuxEnvironmentSettingsRepository.current(appContext),
     )
     val backendFlow = remember(appContext, selectedDistribution, capabilities.root.isGranted) {
         LinuxEnvironmentSettingsRepository.backendFlow(appContext, selectedDistribution)
     }
-    val backend by backendFlow.collectAsState(
-        initial = LinuxEnvironmentSettingsRepository.backend(appContext, selectedDistribution),
+    val backend by backendFlow.collectAsStateWithLifecycle(initialValue = LinuxEnvironmentSettingsRepository.backend(appContext, selectedDistribution),
     )
     val requiresRoot = backend == LinuxExecutionBackend.CHROOT && !capabilities.root.isGranted
     val installer = remember(appContext, backend) { AlpineEnvironmentInstaller(appContext) }
@@ -551,7 +549,7 @@ internal fun LinuxEnvironmentScreen(
             )
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.ui_linux_tool_environment_314d22),
                 onBack = onBack,
                 content = listContent,

@@ -23,22 +23,19 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,24 +48,23 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
-import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AskPresence
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
 import io.github.mangi.eta.agent.device.RootAccess
-import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTaskDetailScreen
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTaskEditorScreen
 import io.github.mangi.eta.ui.screens.scheduled.ScheduledTasksScreen
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
-import io.github.mangi.eta.ui.AppearanceSettingsScreen
+import io.github.mangi.eta.ui.screens.settings.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.IncomingShareRequest
-import io.github.mangi.eta.ui.SettingsScreen
+import io.github.mangi.eta.ui.screens.settings.SettingsScreen
 import io.github.mangi.eta.ui.components.ChatImagePreviewHost
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
-import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import io.github.mangi.eta.ui.components.coui.CouiInputDialog
@@ -85,10 +81,10 @@ import io.github.mangi.eta.ui.model.PermissionStatusUi
 import io.github.mangi.eta.ui.model.roleplayChatUi
 import io.github.mangi.eta.ui.navigation.AgentNavigator
 import io.github.mangi.eta.ui.navigation.AppRoute
-import io.github.mangi.eta.ui.pages.providers.CommunityCatalogProviderScreen
-import io.github.mangi.eta.ui.pages.providers.CommunityCatalogScreen
-import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
-import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
+import io.github.mangi.eta.ui.screens.providers.CommunityCatalogProviderScreen
+import io.github.mangi.eta.ui.screens.providers.CommunityCatalogScreen
+import io.github.mangi.eta.ui.screens.providers.ModelProviderDetailScreen
+import io.github.mangi.eta.ui.screens.providers.ModelProviderListScreen
 import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
 import io.github.mangi.eta.ui.screens.settings.AssistantOverlaySettingsScreen
 import io.github.mangi.eta.ui.screens.settings.ConversationTitleSettingsScreen
@@ -119,10 +115,10 @@ import io.github.mangi.eta.ui.screens.imagegen.ImageGenGalleryScreen
 import io.github.mangi.eta.ui.screens.imagegen.ImageGenSettingsScreen
 import io.github.mangi.eta.ui.screens.tools.AgentToolsScreen
 import io.github.mangi.eta.ui.screens.tools.WebToolsSettingsScreen
-import io.github.mangi.eta.ui.voice.SpeechOssScreen
-import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
-import io.github.mangi.eta.ui.voice.SpeechSettingsScreen
-import io.github.mangi.eta.ui.voice.SpeechSynthesisScreen
+import io.github.mangi.eta.ui.screens.voice.SpeechOssScreen
+import io.github.mangi.eta.ui.screens.voice.SpeechRecognitionScreen
+import io.github.mangi.eta.ui.screens.voice.SpeechSettingsScreen
+import io.github.mangi.eta.ui.screens.voice.SpeechSynthesisScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -138,6 +134,14 @@ import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import io.github.mangi.eta.ui.state.AgentAppState
+import io.github.mangi.eta.ui.state.ArchivedConversationRequest
+import io.github.mangi.eta.ui.state.CharacterLibraryViewModel
+import io.github.mangi.eta.ui.state.CommunityCatalogViewModel
+import io.github.mangi.eta.ui.state.ConversationMarkdownExporter
+import io.github.mangi.eta.ui.state.buildToolsState
 
 /**
  * Agent App 根组件：持有本地导航栈，并把 Screen actions 交给 [AgentAppState]。
@@ -192,12 +196,6 @@ fun AgentAppRoot(
         } else {
             AskPresence.leave(visibleConversationId)
         }
-    }
-    val keepScreenOn by AgentRuntimeService.keepScreenOn.collectAsState()
-    val view = LocalView.current
-    DisposableEffect(view, keepScreenOn) {
-        view.keepScreenOn = keepScreenOn
-        onDispose { view.keepScreenOn = false }
     }
     val skills = appViewModel.skills
     val memory = appViewModel.memory
@@ -481,10 +479,11 @@ fun AgentAppRoot(
     }
     ChatImagePreviewHost {
         val previewer = LocalChatImagePreviewer.current
-        val activeRoute = backStack.lastOrNull()
-        LaunchedEffect(activeRoute, navigationResetKey) {
-            if (previewer?.request != null) {
-                previewer.closeImmediately()
+        LaunchedEffect(previewer, navigationResetKey) {
+            snapshotFlow { backStack.lastOrNull() }.collect {
+                if (previewer?.request != null) {
+                    previewer.closeImmediately()
+                }
             }
         }
         key(navigationResetKey) {
@@ -648,14 +647,14 @@ fun AgentAppRoot(
                         )
                     }
                     entry<AppRoute.Characters>(swipeDismiss = activeSwipeDismiss) {
-                        LaunchedEffect(backStack.lastOrNull() == AppRoute.Characters) {
-                            if (backStack.lastOrNull() == AppRoute.Characters) characterStore.loadLibrary()
+                        LaunchedEffect(Unit) {
+                            characterStore.loadLibrary()
                         }
                         CharacterLibraryScreen(characterStore, { if (navigator.current() == AppRoute.Characters) pushRoute(it) }, ::popRoute)
                     }
                     entry<AppRoute.CharacterDetail>(swipeDismiss = activeSwipeDismiss) { route ->
-                        LaunchedEffect(route.characterId, backStack.lastOrNull() == route) {
-                            if (backStack.lastOrNull() == route) characterStore.loadDetail(route.characterId)
+                        LaunchedEffect(route.characterId) {
+                            characterStore.loadDetail(route.characterId)
                         }
                         CharacterDetailScreen(route.characterId, characterStore, { if (navigator.current() == route) pushRoute(it) }, ::popRoute) { binding, greeting ->
                             if (navigator.current() == route) {
@@ -668,16 +667,16 @@ fun AgentAppRoot(
                         }
                     }
                     entry<AppRoute.CharacterEditor>(swipeDismiss = activeSwipeDismiss) { route ->
-                        LaunchedEffect(route.characterId, backStack.lastOrNull() == route) {
-                            if (backStack.lastOrNull() == route) characterStore.loadEditor(route.characterId)
+                        LaunchedEffect(route.characterId) {
+                            characterStore.loadEditor(route.characterId)
                         }
                         CharacterEditorScreen(route.characterId, characterStore, ::popRoute) { id ->
                             if (navigator.current() == route) navigator.replace(AppRoute.CharacterDetail(id))
                         }
                     }
                     entry<AppRoute.CharacterPersona>(swipeDismiss = activeSwipeDismiss) {
-                        LaunchedEffect(backStack.lastOrNull() == AppRoute.CharacterPersona) {
-                            if (backStack.lastOrNull() == AppRoute.CharacterPersona) characterStore.loadPersona()
+                        LaunchedEffect(Unit) {
+                            characterStore.loadPersona()
                         }
                         CharacterPersonaScreen(characterStore) {
                             if (navigator.current() == AppRoute.CharacterPersona) popRoute()
@@ -692,8 +691,8 @@ fun AgentAppRoot(
                         }
                     }
                     entry<AppRoute.CharacterMemory>(swipeDismiss = activeSwipeDismiss) { route ->
-                        LaunchedEffect(route.characterId, backStack.lastOrNull() == route) {
-                            if (backStack.lastOrNull() == route) characterStore.loadMemory(route.characterId)
+                        LaunchedEffect(route.characterId) {
+                            characterStore.loadMemory(route.characterId)
                         }
                         CharacterMemoryScreen(route.characterId, characterStore, ::popRoute)
                     }
@@ -1147,7 +1146,7 @@ fun AgentAppRoot(
                         label = stringResource(R.string.conversation_rename_hint),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    MiuixDialogActions(
+                    DialogActions(
                         confirmText = stringResource(R.string.action_save),
                         confirmEnabled = renameInputState.text.isNotBlank() && retainedRename != null,
                         onCancel = { conversationRenameTarget = null },
@@ -1186,7 +1185,7 @@ fun AgentAppRoot(
                 onDismissRequest = { conversationDeleteTarget = null },
                 onDismissFinished = { if (conversationDeleteTarget == null) retainedDelete = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = deleteConfirmText,
                     destructive = true,
                     onCancel = { conversationDeleteTarget = null },
@@ -1223,7 +1222,7 @@ fun AgentAppRoot(
                 onDismissRequest = { messageDeleteTarget = null },
                 onDismissFinished = { if (messageDeleteTarget == null) retainedDeleteMessage = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.action_delete),
                     destructive = true,
                     onCancel = { messageDeleteTarget = null },
@@ -1257,7 +1256,7 @@ fun AgentAppRoot(
                 onDismissRequest = { messageRegenerateTarget = null },
                 onDismissFinished = { if (messageRegenerateTarget == null) retainedRegenerate = null },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.action_regenerate),
                     destructive = true,
                     onCancel = { messageRegenerateTarget = null },

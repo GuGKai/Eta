@@ -25,8 +25,8 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -194,7 +194,7 @@ fun AgentSkillsScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.route_skills),
                 onBack = { onAction(AgentSkillsAction.NavigateBack) },
                 modifier = modifier,
@@ -211,7 +211,7 @@ fun AgentSkillsScreen(
                         onDismissRequest = { onAction(AgentSkillsAction.CancelZipReplacement) },
                         onDismissFinished = { if (state.replacement == null) retainedReplacement = null },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.skills_replace),
                             confirmEnabled = !operationPending && activeReplacement != null,
                             onCancel = { onAction(AgentSkillsAction.CancelZipReplacement) },
@@ -230,7 +230,7 @@ fun AgentSkillsScreen(
                         onDismissRequest = { deleteTarget = null },
                         onDismissFinished = { if (deleteTarget == null) retainedDeleteTarget = null },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.ui_delete_3755f5),
                             destructive = true,
                             confirmEnabled = !operationPending && activeDeleteSkill != null,

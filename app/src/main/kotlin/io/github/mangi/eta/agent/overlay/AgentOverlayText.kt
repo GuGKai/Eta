@@ -29,7 +29,7 @@ internal fun AgentOverlayStatus.localizedText(): String = localizedText(LocalRes
 /** 通知等非 Compose 表面与浮层共用同一套状态文案。 */
 internal fun AgentOverlayStatus.localizedText(resources: Resources): String = when (this) {
     AgentOverlayStatus.Reasoning -> resources.getString(R.string.overlay_reasoning)
-    AgentOverlayStatus.SupplementReceived -> resources.getString(R.string.overlay_supplement_received)
+    AgentOverlayStatus.SupplementReceived -> resources.getString(R.string.local_overlay_supplement_received)
     // 工具名本身就是动作（点击元素、读取文件），不再加"执行："前缀。
     is AgentOverlayStatus.RunningTool -> toolDisplayName(resources, name)
     is AgentOverlayStatus.HostedToolRunning -> resources.getString(R.string.overlay_hosted_tool_running, name)
@@ -48,18 +48,18 @@ internal fun AgentOverlayStatus.localizedText(resources: Resources): String = wh
 internal fun toolDisplayName(name: String): String = toolDisplayName(LocalResources.current, name)
 
 internal fun toolDisplayName(resources: Resources, name: String): String {
-    val resource = toolDisplayNameResource(name) ?: return io.github.mangi.eta.agent.model.AgentPhoneToolCatalog.entries.firstOrNull { it.name == name }?.title
+    val resource = toolDisplayNameResource(name) ?: return io.github.mangi.eta.agent.model.catalog.AgentPhoneToolCatalog.entries.firstOrNull { it.name == name }?.title
         ?: io.github.mangi.eta.agent.context.PersonalSearchTools.searches.firstOrNull { it.name == name }?.title ?: name
     return resources.getString(resource)
 }
 
 @StringRes
 internal fun toolDisplayNameResource(name: String): Int? = when (name) {
-    "batch" -> R.string.tool_batch
+    "batch" -> R.string.local_tool_batch
     "observe_screen" -> R.string.tool_observe_screen
     "release_gui" -> R.string.tool_release_gui
     "present_to_user" -> R.string.tool_present_to_user
-    "ask_user_question" -> R.string.tool_ask_user_question
+    "ask_user_question" -> R.string.local_tool_ask_user_question
     "tap" -> R.string.tool_tap
     "tap_element" -> R.string.tool_tap_element
     "tap_area" -> R.string.tool_tap_area
@@ -94,7 +94,7 @@ internal fun toolDisplayNameResource(name: String): Int? = when (name) {
     "inspect_app" -> R.string.tool_inspect_app
     "edit_file" -> R.string.tool_edit_file
     "stat_file" -> R.string.tool_stat_file
-    "glob_files" -> R.string.tool_glob_files
+    "glob_files" -> R.string.local_tool_glob_files
     "grep_files" -> R.string.tool_grep_files
     "read_file" -> R.string.tool_read_file
     "write_file" -> R.string.tool_write_file

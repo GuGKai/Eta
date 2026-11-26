@@ -10,6 +10,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import org.json.JSONObject
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
 
 /**
  * 定时任务传递给 Runtime 的受控运行上下文（嵌入在 `AgentExternalArchivePayload.adapterPayload` 中）。

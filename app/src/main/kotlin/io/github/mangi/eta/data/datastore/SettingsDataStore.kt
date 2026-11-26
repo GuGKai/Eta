@@ -1,7 +1,6 @@
 package io.github.mangi.eta.data.datastore
 
 import android.content.Context
-import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -9,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -16,16 +16,14 @@ import io.github.mangi.eta.data.model.AppearanceAccentColor
 import io.github.mangi.eta.data.model.DEFAULT_CHAT_TEXT_SCALE
 import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
-import io.github.mangi.eta.data.model.AppearanceThemeMode
-import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
 import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AssistantOverlaySettings
 import io.github.mangi.eta.data.model.ConversationTitleSettings
 import io.github.mangi.eta.data.model.ImageGenSettings
 import io.github.mangi.eta.data.model.SpeechSettings
 import io.github.mangi.eta.data.model.SubagentSettings
 import io.github.mangi.eta.data.model.WebToolsSettings
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
 import java.io.IOException
@@ -39,25 +37,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-/**
- * 一个工作区（会话文件夹）的持久化记录。
- *
- * 侧栏里工作区就是文件夹：可重命名、可删除，可展开/折叠；折叠状态一并持久化，
- * 重启后保持用户上次的展开状态。
- */
-@Serializable
-data class ConversationWorkspaceRecord(
-    val id: String,
-    val name: String,
-    val collapsed: Boolean = false,
-)
-
-/** 工作区列表与「会话 → 工作区」归属；一条会话最多属于一个工作区。 */
-@Serializable
-data class ConversationWorkspaceState(
-    val workspaces: List<ConversationWorkspaceRecord> = emptyList(),
-    val assignments: Map<String, String> = emptyMap(),
-)
+// fork 本地新增的持久化项（工作区、DeepSeek 余额快照）与读写逻辑见 SettingsDataStoreLocal.kt。
 
 internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
@@ -147,25 +127,17 @@ internal object SettingsDataStore {
         dataStore.edit { it[SUBAGENT_SETTINGS] = speechJson.encodeToString(settings) }
     }
 
-    private val CONVERSATION_WORKSPACES = stringPreferencesKey("conversation_workspaces_v1")
-
-    private val workspaceJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
-    /** 侧栏工作区（会话文件夹）与「会话 → 工作区」归属。 */
+    /** 侧栏工作区（会话文件夹）与「会话 → 工作区」归属；实现见 SettingsDataStoreLocal.kt。 */
     fun conversationWorkspacesFlow(): Flow<ConversationWorkspaceState> {
         ensureInitialized()
-        return dataStore.data.map { prefs ->
-            prefs[CONVERSATION_WORKSPACES]?.let { raw ->
-                runCatching { workspaceJson.decodeFromString<ConversationWorkspaceState>(raw) }.getOrNull()
-            } ?: ConversationWorkspaceState()
-        }
+        return dataStore.conversationWorkspacesFlow()
     }
 
     suspend fun conversationWorkspaces(): ConversationWorkspaceState = conversationWorkspacesFlow().first()
 
     suspend fun setConversationWorkspaces(state: ConversationWorkspaceState) {
         ensureInitialized()
-        dataStore.edit { it[CONVERSATION_WORKSPACES] = workspaceJson.encodeToString(state) }
+        dataStore.writeConversationWorkspaces(state)
     }
 
     fun conversationTitleSettingsFlow(): Flow<ConversationTitleSettings> {
@@ -212,7 +184,6 @@ internal object SettingsDataStore {
 
     private val SELECTED_PROVIDER_ID = stringPreferencesKey("selected_provider_id")
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
-    private val DEEPSEEK_BALANCE = stringPreferencesKey("deepseek_balance_snapshot_v1")
     private val DEFAULT_ASSISTANT_SYSTEM_PROMPT = stringPreferencesKey("default_assistant_system_prompt")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
@@ -225,10 +196,8 @@ internal object SettingsDataStore {
     private val APPEARANCE_PALETTE_STYLE = stringPreferencesKey("appearance_palette_style")
     private val APPEARANCE_ACCENT_COLOR = stringPreferencesKey("appearance_accent_color")
     private val APPEARANCE_PURE_BLACK_ENABLED = booleanPreferencesKey("appearance_pure_black_enabled")
-    private val APPEARANCE_BLUR_ENABLED = booleanPreferencesKey("appearance_blur_enabled")
     private val APPEARANCE_PROGRESSIVE_BLUR_ENABLED =
         booleanPreferencesKey("appearance_progressive_blur_enabled")
-    private val APPEARANCE_TOP_BAR_BLUR_STYLE = stringPreferencesKey("appearance_top_bar_blur_style")
     private val APPEARANCE_SWIPE_DISMISS_ENABLED =
         booleanPreferencesKey("appearance_swipe_dismiss_enabled")
     private val APPEARANCE_PREDICTIVE_BACK_ENABLED =
@@ -315,17 +284,15 @@ internal object SettingsDataStore {
         }
     }
 
-    /** 顶栏 DeepSeek 余额胶囊的快照（余额 + 基线 + 抓取时间）。 */
+    /** 顶栏 DeepSeek 余额胶囊的快照（余额 + 基线 + 抓取时间）；实现见 SettingsDataStoreLocal.kt。 */
     suspend fun deepSeekBalanceJson(): String? {
         ensureInitialized()
-        return dataStore.data.first()[DEEPSEEK_BALANCE]
+        return dataStore.readDeepSeekBalanceJson()
     }
 
     suspend fun setDeepSeekBalanceJson(value: String) {
         ensureInitialized()
-        dataStore.edit { preferences ->
-            preferences[DEEPSEEK_BALANCE] = value
-        }
+        dataStore.writeDeepSeekBalanceJson(value)
     }
 
     suspend fun updateSettings(transform: (Settings) -> Settings) {
@@ -493,11 +460,7 @@ internal object SettingsDataStore {
             paletteStyle = AppearancePaletteStyle.fromPersistedValue(this[APPEARANCE_PALETTE_STYLE]),
             accentColor = AppearanceAccentColor.fromPersistedValue(this[APPEARANCE_ACCENT_COLOR]),
             pureBlackEnabled = this[APPEARANCE_PURE_BLACK_ENABLED] ?: false,
-            blurEnabled = this[APPEARANCE_BLUR_ENABLED] ?: true,
             progressiveBlurEnabled = this[APPEARANCE_PROGRESSIVE_BLUR_ENABLED] ?: true,
-            topBarBlurStyle = AppearanceTopBarBlurStyle.fromPersistedValue(
-                this[APPEARANCE_TOP_BAR_BLUR_STYLE],
-            ),
             swipeDismissEnabled = this[APPEARANCE_SWIPE_DISMISS_ENABLED] ?: true,
             predictiveBackEnabled = this[APPEARANCE_PREDICTIVE_BACK_ENABLED] ?: true,
             interfaceScale = this[APPEARANCE_INTERFACE_SCALE] ?: 1f,
@@ -515,9 +478,7 @@ internal object SettingsDataStore {
         this[APPEARANCE_PALETTE_STYLE] = settings.paletteStyle.persistedValue
         this[APPEARANCE_ACCENT_COLOR] = settings.accentColor.persistedValue
         this[APPEARANCE_PURE_BLACK_ENABLED] = settings.pureBlackEnabled
-        this[APPEARANCE_BLUR_ENABLED] = settings.blurEnabled
         this[APPEARANCE_PROGRESSIVE_BLUR_ENABLED] = settings.progressiveBlurEnabled
-        this[APPEARANCE_TOP_BAR_BLUR_STYLE] = settings.topBarBlurStyle.persistedValue
         this[APPEARANCE_SWIPE_DISMISS_ENABLED] = settings.swipeDismissEnabled
         this[APPEARANCE_PREDICTIVE_BACK_ENABLED] = settings.predictiveBackEnabled
         this[APPEARANCE_INTERFACE_SCALE] = settings.interfaceScale

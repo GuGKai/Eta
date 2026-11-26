@@ -47,9 +47,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 internal enum class TaskTriggerGroup(val label: Int) {
-    TIME(R.string.automation_triggers_time), DEVICE(R.string.automation_triggers_device),
-    CONNECTION(R.string.automation_triggers_connection), APPS(R.string.automation_triggers_apps),
-    ETA(R.string.automation_triggers_eta),
+    TIME(R.string.local_automation_triggers_time), DEVICE(R.string.local_automation_triggers_device),
+    CONNECTION(R.string.local_automation_triggers_connection), APPS(R.string.local_automation_triggers_apps),
+    ETA(R.string.local_automation_triggers_eta),
 }
 
 internal data class TaskTriggerUi(val type: String, val available: Boolean) {
@@ -99,7 +99,7 @@ internal fun TriggerCatalogHeading(triggers: List<TaskTriggerUi>) {
             val colors = CouiPageDefaults.themeColors(CouiTheme.isDark)
             CouiText(
                 text = stringResource(
-                    R.string.automation_triggers_count,
+                    R.string.local_automation_triggers_count,
                     triggers.count { it.available },
                     triggers.size,
                 ),
@@ -114,12 +114,12 @@ internal fun TriggerCatalogHeading(triggers: List<TaskTriggerUi>) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    stringResource(R.string.automation_triggers_title),
+                    stringResource(R.string.local_automation_triggers_title),
                     style = MiuixTheme.textStyles.body1,
                     color = MiuixTheme.colorScheme.onBackground,
                 )
                 Text(
-                    stringResource(R.string.automation_triggers_count, triggers.count { it.available }, triggers.size),
+                    stringResource(R.string.local_automation_triggers_count, triggers.count { it.available }, triggers.size),
                     style = MiuixTheme.textStyles.footnote1,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
@@ -179,8 +179,8 @@ private fun CouiTriggerChips(
                     CouiIcon(
                         imageVector = if (trigger.available) Icons.Rounded.CheckCircle else Icons.Rounded.Lock,
                         contentDescription = stringResource(
-                            if (trigger.available) R.string.automation_trigger_available
-                            else R.string.automation_trigger_permission,
+                            if (trigger.available) R.string.local_automation_trigger_available
+                            else R.string.local_automation_trigger_permission,
                         ),
                         modifier = Modifier.size(14.dp),
                         tint = tint,
@@ -214,7 +214,7 @@ private fun MiuixTriggerChips(
                         .clickable(onClickLabel = title, onClick = { onClick(trigger) }).padding(horizontal = 10.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(if (trigger.available) Icons.Rounded.CheckCircle else Icons.Rounded.Lock, modifier = Modifier.size(14.dp),
-                            tint = color, contentDescription = stringResource(if (trigger.available) R.string.automation_trigger_available else R.string.automation_trigger_permission))
+                            tint = color, contentDescription = stringResource(if (trigger.available) R.string.local_automation_trigger_available else R.string.local_automation_trigger_permission))
                         Text(title, style = MiuixTheme.textStyles.footnote1, color = color)
                     }
                 }
@@ -228,7 +228,7 @@ internal fun TriggerDetails(trigger: TaskTriggerUi, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val description = stringResource(triggerDescriptionRes(trigger.type))
     val stateText = stringResource(
-        if (trigger.available) R.string.automation_trigger_available else R.string.automation_trigger_permission,
+        if (trigger.available) R.string.local_automation_trigger_available else R.string.local_automation_trigger_permission,
     )
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
@@ -262,18 +262,18 @@ internal fun TriggerDetails(trigger: TaskTriggerUi, onDismiss: () -> Unit) {
 }
 
 private fun triggerDescriptionRes(type: String): Int = when (type) {
-    "notification_posted", "notification_removed" -> R.string.automation_trigger_scope_notification
-    "app_foreground" -> R.string.automation_trigger_scope_accessibility
-    "bluetooth_connected", "bluetooth_disconnected" -> R.string.automation_trigger_scope_bluetooth
-    "task_completed", "task_failed" -> R.string.automation_trigger_scope_task
-    "memory_updated" -> R.string.automation_trigger_scope_memory
-    "device_boot" -> R.string.automation_trigger_scope_boot
-    else -> R.string.automation_trigger_scope_monitor
+    "notification_posted", "notification_removed" -> R.string.local_automation_trigger_scope_notification
+    "app_foreground" -> R.string.local_automation_trigger_scope_accessibility
+    "bluetooth_connected", "bluetooth_disconnected" -> R.string.local_automation_trigger_scope_bluetooth
+    "task_completed", "task_failed" -> R.string.local_automation_trigger_scope_task
+    "memory_updated" -> R.string.local_automation_trigger_scope_memory
+    "device_boot" -> R.string.local_automation_trigger_scope_boot
+    else -> R.string.local_automation_trigger_scope_monitor
 }
 
 private fun triggerTitle(context: Context, type: String): String = when (type) {
-    "once" -> context.getString(R.string.automation_trigger_once)
-    "daily" -> context.getString(R.string.automation_trigger_daily)
-    "interval" -> context.getString(R.string.automation_trigger_interval)
+    "once" -> context.getString(R.string.local_automation_trigger_once)
+    "daily" -> context.getString(R.string.local_automation_trigger_daily)
+    "interval" -> context.getString(R.string.local_automation_trigger_interval)
     else -> eventLabel(context, type)
 }

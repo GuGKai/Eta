@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,7 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.JoinLeft
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,11 +55,12 @@ import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.app.LocalAppearanceSettings
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.OptionalModelPickerContent
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.coui.CouiButton
@@ -122,10 +124,10 @@ internal fun SubagentSettingsScreen(
         mutableStateOf(agentPrefs?.getBoolean(Prefs.Keys.AGENT_SUBAGENT_ENABLED, defaultEnabled) ?: defaultEnabled)
     }
 
-    val providers by ProviderRepository.providersFlow().collectAsState(initial = emptyList())
-    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsState(initial = null)
-    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
-    val subagentSettings by RuntimeConfigRepository.subagentSettingsFlow().collectAsState(initial = SubagentSettings())
+    val providers by ProviderRepository.providersFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val subagentSettings by RuntimeConfigRepository.subagentSettingsFlow().collectAsStateWithLifecycle(initialValue = SubagentSettings())
 
     var customProfiles by remember { mutableStateOf<List<SubagentProfile>>(emptyList()) }
     fun reloadCustomProfiles() {
@@ -381,6 +383,7 @@ internal fun SubagentSettingsScreen(
                         if (currentProfile != null) {
                             SubagentProfileDetailContent(
                                 profile = currentProfile,
+                                contentPadding = PaddingValues(0.dp),
                                 onEdit = if (!currentProfile.builtin) {
                                     { onStartEditProfile(currentProfile) }
                                 } else {
@@ -542,11 +545,11 @@ internal fun SubagentSettingsScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.ui_misc_route_subagents),
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Add,
                         contentDescription = stringResource(R.string.subagent_settings_create),
                         onClick = {
@@ -560,10 +563,11 @@ internal fun SubagentSettingsScreen(
                     GlassBottomSheet(
                         show = showModelSheet,
                         backdrop = overlayBackdrop,
+                        progressiveBlur = false,
                         title = stringResource(R.string.subagent_settings_model),
                         onDismissRequest = { showModelSheet = false },
                         insideMargin = DpSize(0.dp, 0.dp),
-                    ) {
+                    ) { _ ->
                         OptionalModelPickerContent(
                             pickerState = pickerState,
                             selectedSecondaryModelId = resolvedSecondary?.model?.id,
@@ -577,13 +581,15 @@ internal fun SubagentSettingsScreen(
                     GlassBottomSheet(
                         show = inspectedProfile != null,
                         backdrop = overlayBackdrop,
+                        progressiveBlur = LocalAppearanceSettings.current.progressiveBlurEnabled,
                         title = currentProfile?.name.orEmpty(),
                         onDismissRequest = { inspectedProfile = null },
                         onDismissFinished = { if (inspectedProfile == null) retainedProfile = null },
-                    ) {
+                    ) { innerPadding ->
                         if (currentProfile != null) {
                             SubagentProfileDetailContent(
                                 profile = currentProfile,
+                                contentPadding = innerPadding,
                                 onEdit = if (!currentProfile.builtin) {
                                     { onStartEditProfile(currentProfile) }
                                 } else {
@@ -660,7 +666,7 @@ internal fun SubagentSettingsScreen(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))
-                                MiuixDialogActions(
+                                DialogActions(
                                     confirmText = stringResource(R.string.action_save),
                                     onCancel = { editorDraft = null },
                                     onConfirm = { editorDraft?.let(onSaveDraft) },
@@ -688,7 +694,7 @@ internal fun SubagentSettingsScreen(
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 )
                                 Spacer(modifier = Modifier.height(20.dp))
-                                MiuixDialogActions(
+                                DialogActions(
                                     confirmText = stringResource(R.string.action_delete),
                                     destructive = true,
                                     onCancel = { deleteTargetProfile = null },
@@ -790,6 +796,7 @@ internal fun SubagentSettingsScreen(
 @Composable
 private fun SubagentProfileDetailContent(
     profile: SubagentProfile,
+    contentPadding: PaddingValues,
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
 ) {

@@ -2,7 +2,7 @@ package io.github.mangi.eta.data.repository
 
 import androidx.room.withTransaction
 import io.github.mangi.eta.agent.model.AgentConversationCodec
-import io.github.mangi.eta.agent.model.AgentModelClient.ConversationMessage
+import io.github.mangi.eta.agent.model.provider.AgentModelClient.ConversationMessage
 import io.github.mangi.eta.agent.roleplay.RoleplayHistoryProjection
 import io.github.mangi.eta.agent.roleplay.RoleplayMessageState
 import io.github.mangi.eta.data.db.ConversationDao
@@ -11,6 +11,7 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.db.openTextStream
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 
 /** 调用方将创建操作纳入会话保存队列，数据库事务保证前缀和上下文一起提交。 */
 internal object ConversationBranchRepository {

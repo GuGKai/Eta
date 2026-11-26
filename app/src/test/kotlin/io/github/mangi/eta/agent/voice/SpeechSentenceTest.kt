@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import io.github.mangi.eta.agent.voice.audio.SpeechPcmOutput
+import io.github.mangi.eta.agent.voice.tts.SpeechText
 
 /** 逐句合成的切分规则：中文句末标点与换行切句，英文句号不参与切分，短碎片并回相邻句。 */
 class SpeechSentenceTest {

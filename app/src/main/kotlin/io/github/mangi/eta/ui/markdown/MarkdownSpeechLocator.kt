@@ -1,6 +1,6 @@
 package io.github.mangi.eta.ui.markdown
 
-import io.github.mangi.eta.agent.voice.SpeechText
+import io.github.mangi.eta.agent.voice.tts.SpeechText
 
 /**
  * 把「正在读第几句」落到 Markdown 渲染块里的字符区间。

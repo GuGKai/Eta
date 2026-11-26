@@ -30,7 +30,7 @@ internal fun ConversationModelPickerSheet(
     onDismissRequest: () -> Unit,
     onSelectModel: (String) -> Unit,
 ) {
-    val title = stringResource(R.string.chat_conversation_model_title)
+    val title = stringResource(R.string.local_chat_conversation_model_title)
     val closeText = stringResource(R.string.action_close)
     val selectedModelId = pickerState.selectedModel?.id
 

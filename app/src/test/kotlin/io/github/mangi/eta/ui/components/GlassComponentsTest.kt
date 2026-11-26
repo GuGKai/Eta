@@ -34,7 +34,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.AppearanceSettingsScreen
+import io.github.mangi.eta.ui.screens.settings.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.app.AgentAppTheme
 import io.github.mangi.eta.ui.components.coui.CouiTextField
 import io.github.mangi.eta.ui.model.AgentToolsUiState
@@ -87,7 +87,7 @@ class GlassComponentsTest {
                     provideGlassHost = true,
                 ) {
                     Column {
-                        EtaGlassSpinnerPreference(
+                        GlassSpinnerPreference(
                             title = "运行方式",
                             items = listOf(
                                 DropdownItem(text = "PRoot", summary = "无需 Root", enabled = true),
@@ -145,7 +145,7 @@ class GlassComponentsTest {
                     applyInterfaceScale = false,
                 ) {
                     Scaffold {
-                        EtaGlassSpinnerPreference(
+                        GlassSpinnerPreference(
                             title = "音色",
                             items = listOf(
                                 DropdownItem(text = "Cherry", summary = "清澈女声"),
@@ -192,7 +192,7 @@ class GlassComponentsTest {
                     appearance = AppearanceUiStyle.MIUIX.let { AppearanceSettings(uiStyle = it) },
                     applyInterfaceScale = false,
                 ) {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Refresh,
                         contentDescription = "刷新",
                         enabled = enabled,
@@ -311,11 +311,11 @@ class GlassComponentsTest {
             pumpFrames(activity, frameClock)
 
             // 点击界面缩放打开 GlassDialog
-            clickByText(activity, activity.getString(R.string.appearance_interface_scale))
+            clickByText(activity, activity.getString(R.string.local_appearance_interface_scale))
             pumpFrames(activity, frameClock)
             assertTrue(
                 "Expected scale GlassDialog title",
-                collectAllTexts(activity).any { it == activity.getString(R.string.appearance_interface_scale_dialog_title) },
+                collectAllTexts(activity).any { it == activity.getString(R.string.local_appearance_interface_scale_dialog_title) },
             )
         } finally {
             recomposer.cancel()
@@ -369,9 +369,9 @@ class GlassComponentsTest {
             pumpFrames(activity, frameClock)
 
             // 打开界面样式下拉并点击 COUI
-            clickByText(activity, activity.getString(R.string.appearance_ui_style))
+            clickByText(activity, activity.getString(R.string.local_appearance_ui_style))
             pumpFrames(activity, frameClock)
-            clickByText(activity, activity.getString(R.string.appearance_ui_style_coui))
+            clickByText(activity, activity.getString(R.string.local_appearance_ui_style_coui))
             appearance = appearance.copy(uiStyle = AppearanceUiStyle.COUI)
             pumpFrames(activity, frameClock)
             assertTrue(collectAllTexts(activity).any { it == activity.getString(R.string.appearance_title) })
@@ -471,7 +471,7 @@ class GlassComponentsTest {
                     if (style == AppearanceUiStyle.COUI) {
                         CouiTextField(state = state, label = "密钥", secretVisible = visible)
                     } else {
-                        MiuixSecureTextField(state = state, label = "密钥", visible = visible)
+                        SecureTextField(state = state, label = "密钥", visible = visible)
                     }
                 }
             }

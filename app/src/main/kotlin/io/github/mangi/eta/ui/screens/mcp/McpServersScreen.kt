@@ -32,7 +32,7 @@ import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,10 +83,10 @@ import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupItem
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixSecureTextField
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.DialogActions
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.SecureTextField
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
@@ -134,7 +134,7 @@ internal fun McpServersScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val servers by McpServerRepository.serversFlow().collectAsState(initial = emptyList())
+    val servers by McpServerRepository.serversFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     var showAdd by remember { mutableStateOf(false) }
     val nameState = remember { TextFieldState() }
     val urlState = remember { TextFieldState() }
@@ -325,11 +325,11 @@ internal fun McpServersScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = stringResource(R.string.route_mcp_servers),
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Add,
                         contentDescription = stringResource(R.string.mcp_add_server),
                         onClick = { showAdd = true },
@@ -365,7 +365,7 @@ internal fun McpServersScreen(
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                                     modifier = Modifier.fillMaxWidth(),
                                 )
-                                MiuixSecureTextField(
+                                SecureTextField(
                                     state = tokenState,
                                     label = stringResource(R.string.mcp_bearer_optional),
                                     colors = glassOverlayTextFieldColors(),
@@ -381,7 +381,7 @@ internal fun McpServersScreen(
                                     )
                                 }
                             }
-                            MiuixDialogActions(
+                            DialogActions(
                                 modifier = Modifier.padding(top = 16.dp),
                                 confirmText = if (working) {
                                     stringResource(R.string.mcp_connecting)
@@ -463,7 +463,7 @@ internal fun McpServerDetailScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val servers by McpServerRepository.serversFlow().collectAsState(initial = emptyList())
+    val servers by McpServerRepository.serversFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val server = servers.firstOrNull { it.id == serverId }
     var working by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -752,11 +752,11 @@ internal fun McpServerDetailScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = server?.name ?: stringResource(R.string.route_mcp_server_detail),
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Refresh,
                         contentDescription = stringResource(R.string.mcp_refresh_tools),
                         enabled = server != null && !working,
@@ -773,14 +773,14 @@ internal fun McpServerDetailScreen(
                         onDismissRequest = { showToken = false },
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            MiuixSecureTextField(
+                            SecureTextField(
                                 state = tokenState,
                                 label = stringResource(R.string.mcp_bearer_token),
                                 colors = glassOverlayTextFieldColors(),
                                 visible = false,
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            MiuixDialogActions(
+                            DialogActions(
                                 confirmText = stringResource(R.string.action_save),
                                 onCancel = { showToken = false },
                                 onConfirm = saveToken,
@@ -795,7 +795,7 @@ internal fun McpServerDetailScreen(
                         summary = stringResource(R.string.mcp_delete_confirm, server?.name.orEmpty()),
                         onDismissRequest = { showDelete = false },
                     ) {
-                        MiuixDialogActions(
+                        DialogActions(
                             confirmText = stringResource(R.string.ui_delete_3755f5),
                             destructive = true,
                             onCancel = { showDelete = false },
@@ -813,7 +813,7 @@ internal fun McpServerDetailScreen(
                     item(key = "missing") {
                         ListEmptyState(title = stringResource(R.string.mcp_server_missing))
                     }
-                    return@MiuixScaffoldPage
+                    return@ScaffoldPage
                 }
                 item(key = "server") {
                     SmallTitle(stringResource(R.string.mcp_server_settings))

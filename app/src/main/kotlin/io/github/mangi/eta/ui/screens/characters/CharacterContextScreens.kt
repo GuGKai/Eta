@@ -12,30 +12,30 @@ import androidx.compose.ui.unit.dp
 import com.itos.coui.layout.CouiPageDefaults
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.app.CharacterLibraryStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
 import io.github.mangi.eta.ui.components.coui.CouiScaffoldPage
+import io.github.mangi.eta.ui.state.CharacterLibraryStore
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
 
 @Composable
 internal fun DefaultAssistantPromptScreen(store: CharacterLibraryStore, onBack: () -> Unit) {
-    MiuixScaffoldPage(title = stringResource(R.string.default_prompt_title), onBack = onBack, modifier = Modifier.imePadding()) {
+    ScaffoldPage(title = stringResource(R.string.local_default_prompt_title), onBack = onBack, modifier = Modifier.imePadding()) {
         store.notice?.let { item { CharacterPageMessage(it) } }
-        item { CharacterPageMessage(stringResource(R.string.default_prompt_description)) }
+        item { CharacterPageMessage(stringResource(R.string.local_default_prompt_description)) }
         item(key = "prompt") {
-            CharacterTextField(stringResource(R.string.default_prompt_field), store.defaultPromptDraft,
+            CharacterTextField(stringResource(R.string.local_default_prompt_field), store.defaultPromptDraft,
                 store::updateDefaultPrompt, !store.busy, minLines = 10)
         }
         item(key = "actions") {
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(stringResource(R.string.default_prompt_reset), onClick = store::resetDefaultPrompt,
+                TextButton(stringResource(R.string.local_default_prompt_reset), onClick = store::resetDefaultPrompt,
                     enabled = !store.busy, modifier = Modifier.weight(1f))
-                TextButton(stringResource(R.string.default_prompt_save), onClick = { store.saveDefaultPrompt(onBack) },
+                TextButton(stringResource(R.string.local_default_prompt_save), onClick = { store.saveDefaultPrompt(onBack) },
                     enabled = !store.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.textButtonColorsPrimary())
             }
         }
@@ -52,9 +52,9 @@ internal fun CharacterPersonaScreen(store: CharacterLibraryStore, onBack: () -> 
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
             CouiScaffoldPage(title = personaTitle, onBack = onBack) {
-                CharacterPageMessage(personaHint)
                 CharacterTextField(nameLabel, store.personaDraft.name, { store.updatePersona(name = it) }, !store.busy, singleLine = true)
                 CharacterTextField(identityLabel, store.personaDraft.description, { store.updatePersona(description = it) }, !store.busy, minLines = 6)
+                CharacterPageMessage(personaHint)
                 CouiButton(
                     text = saveLabel,
                     onClick = { store.savePersona(onBack) },
@@ -68,16 +68,16 @@ internal fun CharacterPersonaScreen(store: CharacterLibraryStore, onBack: () -> 
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(title = personaTitle, onBack = onBack, modifier = Modifier.imePadding()) {
-                item { CharacterPageMessage(personaHint) }
+            ScaffoldPage(title = personaTitle, onBack = onBack, modifier = Modifier.imePadding()) {
                 item(key = "name") { CharacterTextField(nameLabel, store.personaDraft.name, { store.updatePersona(name = it) }, !store.busy, singleLine = true) }
                 item(key = "persona") { CharacterTextField(identityLabel, store.personaDraft.description, { store.updatePersona(description = it) }, !store.busy, minLines = 6) }
+                item(key = "hint") { CharacterPageMessage(personaHint) }
                 item(key = "save") {
                     TextButton(
                         text = saveLabel,
                         onClick = { store.savePersona(onBack) },
                         enabled = !store.busy,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
                 }
@@ -122,14 +122,14 @@ internal fun CharacterMemoryScreen(id: String, store: CharacterLibraryStore, onB
             }
         }
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(title = memoryTitle, onBack = onBack, modifier = Modifier.imePadding()) {
+            ScaffoldPage(title = memoryTitle, onBack = onBack, modifier = Modifier.imePadding()) {
                 item { CharacterPageMessage(memoryHint) }
                 item(key = "memory") {
                     CharacterTextField(contentLabel, store.memoryDraft, store::updateMemory, !store.busy, minLines = 10)
                 }
                 item(key = "actions") {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         TextButton(

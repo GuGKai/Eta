@@ -1,0 +1,254 @@
+package io.github.mangi.eta.ui.components.chat
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import io.github.mangi.eta.ui.components.KEYBOARD_LIFT_RESPONSE_SECONDS
+import io.github.mangi.eta.ui.components.KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND
+
+class AgentChatScrollPolicyTest {
+    @Test
+    fun networkCompletionKeepsFollowingUntilRenderedTailSettles() {
+        assertTrue(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = false,
+                isBottomSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun keyboardLiftStepIsFasterThanStreamingFollow() {
+        val streamingStep = smoothBottomFollowStep(
+            distancePx = 300f,
+            elapsedSeconds = 1f / 60f,
+            density = 3f,
+        )
+        val liftStep = smoothBottomFollowStep(
+            distancePx = 300f,
+            elapsedSeconds = 1f / 60f,
+            density = 3f,
+            responseSeconds = KEYBOARD_LIFT_RESPONSE_SECONDS,
+            maxSpeedDpPerSecond = KEYBOARD_LIFT_MAX_SPEED_DP_PER_SECOND,
+        )
+        assertTrue(liftStep > streamingStep * 1.5f)
+        assertTrue(liftStep <= 300f)
+    }
+
+    @Test
+    fun keyboardLiftFollowsBottomWhileReaderStaysAtBottom() {
+        assertTrue(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = false,
+                keyboardLiftSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun keyboardLiftDoesNotPullReaderBackFromHistory() {
+        assertFalse(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = false,
+                isUserDragging = false,
+                keyboardLiftSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun keyboardLiftStopsWhileDragging() {
+        assertFalse(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = true,
+                keyboardLiftSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun draggingInterruptsCompletionFollowing() {
+        assertFalse(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = true,
+                isBottomSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun completionDoesNotPullReaderBackFromHistory() {
+        assertFalse(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = false,
+                isUserDragging = false,
+                isBottomSettling = true,
+            )
+        )
+    }
+
+    @Test
+    fun completedContentExpansionDoesNotFollowBottom() {
+        assertFalse(
+            resolveBottomFollowEnabled(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = false,
+            )
+        )
+    }
+
+    @Test
+    fun streamingTailGrowthFollowsBottom() {
+        assertTrue(
+            resolveBottomFollowEnabled(
+                isStreaming = true,
+                keepBottomAnchored = true,
+                isUserDragging = false,
+            )
+        )
+    }
+
+    @Test
+    fun completedConversationDoesNotJumpToInitialBottom() {
+        assertFalse(
+            shouldRequestInitialBottom(
+                isStreaming = false,
+                keepBottomAnchored = true,
+                isUserDragging = false,
+            )
+        )
+    }
+
+    @Test
+    fun streamingConversationRequestsInitialBottom() {
+        assertTrue(
+            shouldRequestInitialBottom(
+                isStreaming = true,
+                keepBottomAnchored = true,
+                isUserDragging = false,
+            )
+        )
+    }
+
+    @Test
+    fun contentGrowthDoesNotDisableBottomFollowing() {
+        assertTrue(
+            resolveKeepBottomAnchored(
+                current = true,
+                isUserDragging = false,
+                isAtBottom = false,
+            )
+        )
+    }
+
+    @Test
+    fun draggingAwayFromBottomDisablesFollowing() {
+        assertFalse(
+            resolveKeepBottomAnchored(
+                current = true,
+                isUserDragging = true,
+                isAtBottom = false,
+            )
+        )
+    }
+
+    @Test
+    fun reachingBottomEnablesFollowingAgain() {
+        assertTrue(
+            resolveKeepBottomAnchored(
+                current = false,
+                isUserDragging = false,
+                isAtBottom = true,
+            )
+        )
+    }
+
+    @Test
+    fun expandingContentSuppressesImmediateBottomReanchorUntilAnimationSettles() {
+        assertFalse(
+            resolveKeepBottomAnchored(
+                current = false,
+                isUserDragging = false,
+                isAtBottom = true,
+                suppressAutoReanchor = true,
+            )
+        )
+        assertTrue(
+            resolveKeepBottomAnchored(
+                current = false,
+                isUserDragging = true,
+                isAtBottom = true,
+                suppressAutoReanchor = true,
+            )
+        )
+    }
+
+    @Test
+    fun growingTailOnlyScrollsByTheOverflowDistance() {
+        assertEquals(
+            BottomFollowDecision(scrollByPx = 24),
+            resolveBottomFollowDecision(
+                enabled = true,
+                bottomItemIndex = 8,
+                sentinelBottom = 1024,
+                viewportEnd = 1000,
+                lastVisibleIndex = 8,
+            ),
+        )
+    }
+
+    @Test
+    fun largeAppendRequestsBottomOnlyWhenSentinelLeftTheViewport() {
+        assertEquals(
+            BottomFollowDecision(requestIndex = 8),
+            resolveBottomFollowDecision(
+                enabled = true,
+                bottomItemIndex = 8,
+                sentinelBottom = null,
+                viewportEnd = 1000,
+                lastVisibleIndex = 6,
+            ),
+        )
+    }
+
+    @Test
+    fun streamingAnswerCatchUpUsesSmoothDistanceInsteadOfJumpingToBottom() {
+        assertEquals(
+            BottomFollowDecision(scrollByPx = 1000),
+            resolveBottomFollowDecision(
+                enabled = true,
+                bottomItemIndex = 8,
+                sentinelBottom = null,
+                viewportEnd = 1000,
+                lastVisibleIndex = 6,
+                allowMissingSentinelJump = false,
+            ),
+        )
+    }
+
+    @Test
+    fun disabledFollowingNeverMovesTheList() {
+        assertEquals(
+            BottomFollowDecision(),
+            resolveBottomFollowDecision(
+                enabled = false,
+                bottomItemIndex = 8,
+                sentinelBottom = 1100,
+                viewportEnd = 1000,
+                lastVisibleIndex = 8,
+            ),
+        )
+    }
+}

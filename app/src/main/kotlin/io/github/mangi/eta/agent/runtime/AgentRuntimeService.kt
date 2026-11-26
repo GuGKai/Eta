@@ -56,13 +56,13 @@ import io.github.mangi.eta.agent.model.AgentFileReferencePolicy
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.model.TitleWidth
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
-import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
-import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
-import io.github.mangi.eta.agent.overlay.StageCanvasHeight
-import io.github.mangi.eta.agent.overlay.AgentOverlayCapsuleLens
-import io.github.mangi.eta.agent.overlay.AgentOverlayCapsulePanel
+import io.github.mangi.eta.agent.overlay.ui.AgentOverlayGlow
+import io.github.mangi.eta.agent.overlay.ui.ScreenCornerRadii
+import io.github.mangi.eta.agent.overlay.ui.StageCanvasHeight
+import io.github.mangi.eta.agent.overlay.ui.AgentOverlayCapsuleLens
+import io.github.mangi.eta.agent.overlay.ui.AgentOverlayCapsulePanel
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
-import io.github.mangi.eta.agent.overlay.AgentResultCard
+import io.github.mangi.eta.agent.overlay.ui.AgentResultCard
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
 import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
@@ -98,6 +98,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
+import io.github.mangi.eta.agent.runtime.archive.AgentExternalArchivePayload
+import io.github.mangi.eta.agent.runtime.archive.AgentRunArchiveStore
+import io.github.mangi.eta.agent.runtime.archive.AgentRuntimeResultStore
+import io.github.mangi.eta.agent.runtime.ipc.AgentEvent
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeImageTransfer
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.ipc.AgentUiHandoffPayload
+import io.github.mangi.eta.agent.runtime.ipc.AgentWireText
 
 /**
  * 模块进程内的通用 Agent Runtime。

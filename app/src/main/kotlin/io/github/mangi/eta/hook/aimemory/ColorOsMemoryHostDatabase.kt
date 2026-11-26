@@ -2,9 +2,9 @@ package io.github.mangi.eta.hook.aimemory
 
 import android.content.Context
 import android.database.Cursor
-import io.github.mangi.eta.agent.tool.ColorOsMemoryReadDatabase
-import io.github.mangi.eta.core.DexKitTargets
-import io.github.mangi.eta.core.HookSupport
+import io.github.mangi.eta.agent.tool.personal.ColorOsMemoryReadDatabase
+import io.github.mangi.eta.hook.support.DexKitTargets
+import io.github.mangi.eta.hook.support.HookSupport
 import io.github.mangi.eta.core.ModuleLogger
 import io.github.mangi.eta.core.safeLogType
 import java.io.File

@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -27,11 +29,10 @@ import com.itos.coui.text.Text as CouiText
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.roleplay.CharacterProfile
 import io.github.mangi.eta.data.model.AppearanceUiStyle
-import io.github.mangi.eta.ui.app.CharacterLibraryStore
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.ListEmptyState
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
-import io.github.mangi.eta.ui.components.MiuixTopBarActionButton
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.TopBarActionButton
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.coui.CouiLazyScaffoldPage
@@ -39,6 +40,7 @@ import io.github.mangi.eta.ui.components.coui.CouiPreference
 import io.github.mangi.eta.ui.components.coui.CouiSearchBarBox
 import io.github.mangi.eta.ui.components.coui.CouiTopAppBarIconButton
 import io.github.mangi.eta.ui.navigation.AppRoute
+import io.github.mangi.eta.ui.state.CharacterLibraryStore
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
@@ -69,12 +71,14 @@ internal fun CharacterLibraryScreen(
         importer.launch(arrayOf("image/png", "application/json", "text/plain", "application/octet-stream"))
     }
     val createCharacter = {
-        store.discardEditor()
+        store.prepareEditor(null)
         onNavigate(AppRoute.CharacterEditor())
     }
-    val showAddTile = store.query.isBlank() && store.characters.isNotEmpty()
-    val tiles: List<CharacterProfile?> = store.filteredCharacters + if (showAddTile) listOf(null) else emptyList()
-    val rows = tiles.chunked(2)
+    val rows = remember(store.characters, store.query) {
+        val showAddTile = store.query.isBlank() && store.characters.isNotEmpty()
+        val tiles: List<CharacterProfile?> = store.filteredCharacters + if (showAddTile) listOf(null) else emptyList()
+        tiles.chunked(2)
+    }
 
     val libraryTitle = stringResource(R.string.character_library_title)
     val importCardDesc = stringResource(R.string.character_action_import_card)
@@ -117,7 +121,7 @@ internal fun CharacterLibraryScreen(
                     )
                 }
                 when {
-                    store.busy && store.characters.isEmpty() -> {
+                    (store.isLoadingLibrary || store.busy) && store.characters.isEmpty() -> {
                         item(key = "loading") {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
@@ -201,17 +205,18 @@ internal fun CharacterLibraryScreen(
         }
 
         AppearanceUiStyle.MIUIX -> {
-            MiuixScaffoldPage(
+            ScaffoldPage(
                 title = libraryTitle,
                 onBack = onBack,
                 actions = {
-                    MiuixTopBarActionButton(
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Import,
                         contentDescription = importCardDesc,
                         enabled = !store.busy,
                         onClick = importCard,
                     )
-                    MiuixTopBarActionButton(
+                    Spacer(Modifier.width(8.dp))
+                    TopBarActionButton(
                         icon = MiuixIcons.Glass.Add,
                         contentDescription = createCharacterText,
                         enabled = !store.busy,
@@ -242,7 +247,7 @@ internal fun CharacterLibraryScreen(
                     )
                 }
                 when {
-                    store.busy && store.characters.isEmpty() -> {
+                    (store.isLoadingLibrary || store.busy) && store.characters.isEmpty() -> {
                         item(key = "loading") {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
@@ -342,7 +347,7 @@ internal fun CharacterPageMessage(text: String) {
             Text(
                 text = text,
                 style = MiuixTheme.textStyles.body2,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp),
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
         }

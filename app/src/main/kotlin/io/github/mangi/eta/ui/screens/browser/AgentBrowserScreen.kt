@@ -17,7 +17,7 @@ import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.text.input.setTextAndSelectAll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +36,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.DialogActions
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import io.github.mangi.eta.ui.components.coui.CouiConfirmDialog
 import kotlinx.coroutines.CancellationException
@@ -58,7 +58,7 @@ internal fun AgentBrowserScreen(
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val noExternalAppMessage = stringResource(R.string.browser_no_external_app)
-    val snapshot by session.snapshots.collectAsState()
+    val snapshot by session.snapshots.collectAsStateWithLifecycle()
     val address = remember(session) { TextFieldState() }
     var addressFocused by remember(session) { mutableStateOf(false) }
     var actionPending by remember(session) { mutableStateOf(false) }
@@ -183,7 +183,7 @@ internal fun AgentBrowserScreen(
                 summary = stringResource(R.string.browser_clear_shared_data_message),
                 onDismissRequest = { showClearDataDialog = false },
             ) {
-                MiuixDialogActions(
+                DialogActions(
                     confirmText = stringResource(R.string.browser_clear_shared_data),
                     confirmEnabled = !actionPending,
                     destructive = true,

@@ -66,7 +66,7 @@ class EtaDatabaseMigrationTest {
         )
         try {
             val db = helper.writableDatabase
-            EtaDatabase.MIGRATION_32_33.migrate(db)
+            EtaDatabaseMigrations.MIGRATION_32_33.migrate(db)
             val columns = mutableListOf<String>()
             db.query("PRAGMA table_info(conversations)").use { cursor ->
                 while (cursor.moveToNext()) {
@@ -140,9 +140,9 @@ class EtaDatabaseMigrationTest {
                 EtaDatabase.MIGRATION_24_25, EtaDatabase.MIGRATION_25_26,
                 EtaDatabase.MIGRATION_26_27, EtaDatabase.MIGRATION_27_28,
                 EtaDatabase.MIGRATION_28_29, EtaDatabase.MIGRATION_29_30,
-                EtaDatabase.MIGRATION_30_31, EtaDatabase.MIGRATION_31_32,
-                EtaDatabase.MIGRATION_32_33, EtaDatabase.MIGRATION_33_34,
-                EtaDatabase.MIGRATION_34_35, EtaDatabase.MIGRATION_35_36,
+                EtaDatabaseMigrations.MIGRATION_30_31, EtaDatabaseMigrations.MIGRATION_31_32,
+                EtaDatabaseMigrations.MIGRATION_32_33, EtaDatabaseMigrations.MIGRATION_33_34,
+                EtaDatabaseMigrations.MIGRATION_34_35, EtaDatabaseMigrations.MIGRATION_35_36,
             ).build()
         try {
             runBlocking(Dispatchers.IO) {
@@ -208,16 +208,16 @@ class EtaDatabaseMigrationTest {
                 EtaDatabase.MIGRATION_27_28,
                 EtaDatabase.MIGRATION_28_29,
                 EtaDatabase.MIGRATION_29_30,
-                EtaDatabase.MIGRATION_30_31,
-                EtaDatabase.MIGRATION_31_32,
-                EtaDatabase.MIGRATION_32_33,
-                EtaDatabase.MIGRATION_33_34,
-                EtaDatabase.MIGRATION_34_35,
-                EtaDatabase.MIGRATION_35_36,
-                EtaDatabase.MIGRATION_36_37,
-                EtaDatabase.MIGRATION_37_38,
-                EtaDatabase.MIGRATION_38_39,
-                EtaDatabase.MIGRATION_39_40,
+                EtaDatabaseMigrations.MIGRATION_30_31,
+                EtaDatabaseMigrations.MIGRATION_31_32,
+                EtaDatabaseMigrations.MIGRATION_32_33,
+                EtaDatabaseMigrations.MIGRATION_33_34,
+                EtaDatabaseMigrations.MIGRATION_34_35,
+                EtaDatabaseMigrations.MIGRATION_35_36,
+                EtaDatabaseMigrations.MIGRATION_36_37,
+                EtaDatabaseMigrations.MIGRATION_37_38,
+                EtaDatabaseMigrations.MIGRATION_38_39,
+                EtaDatabaseMigrations.MIGRATION_39_40,
             )
             .build()
         try {

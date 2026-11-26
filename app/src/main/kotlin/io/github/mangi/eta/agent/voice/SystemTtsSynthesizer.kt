@@ -14,6 +14,8 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import io.github.mangi.eta.agent.voice.audio.SpeechErrorCode
+import io.github.mangi.eta.agent.voice.audio.SpeechFailure
 
 /**
  * 系统引擎逐句合成：先把一句话合成到本地 WAV，再读出 PCM 交给播放方播放。

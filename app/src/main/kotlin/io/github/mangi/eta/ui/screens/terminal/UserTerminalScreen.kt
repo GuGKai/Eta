@@ -31,7 +31,7 @@ import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,15 +70,15 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.terminal.isLinux
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.app.TerminalBlockUi
-import io.github.mangi.eta.ui.app.UserTerminalStore
 import io.github.mangi.eta.ui.components.EtaMonospace
-import io.github.mangi.eta.ui.components.EtaTopLayer
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.ansiPlainText
 import io.github.mangi.eta.ui.components.ansiToAnnotatedString
 import io.github.mangi.eta.ui.components.coui.CouiButton
 import io.github.mangi.eta.ui.components.coui.CouiButtonRole
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
+import io.github.mangi.eta.ui.state.TerminalBlockUi
+import io.github.mangi.eta.ui.state.UserTerminalStore
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -105,7 +105,7 @@ internal fun UserTerminalScreen(
     onOpenEnvironment: () -> Unit,
     onOpenConsole: (() -> Unit)? = null,
 ) {
-    val state by store.uiState.collectAsState()
+    val state by store.uiState.collectAsStateWithLifecycle()
     val input = remember { TextFieldState() }
     var showTasks by remember { mutableStateOf(false) }
     var showSessions by remember { mutableStateOf(false) }
@@ -392,7 +392,7 @@ private fun BlockMenu(
         }
         AppearanceUiStyle.MIUIX -> {
             val overlayBackdrop = currentGlassOverlayBackdrop()
-            EtaTopLayer {
+            TopLayer {
                 GlassPopup(
                     show = show,
                     onDismissRequest = onDismiss,

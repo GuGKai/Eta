@@ -1,15 +1,12 @@
 package io.github.mangi.eta.ui.components
 
 import android.os.LocaleList
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -21,13 +18,10 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.repository.LanguageSettingsRepository
 import io.github.mangi.eta.ui.app.LocalUiStyle
 import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
-import io.github.mangi.eta.ui.components.coui.CouiSettingsIcon
 import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 internal fun LanguagePreference(
-    iconTint: Color = MiuixTheme.colorScheme.onBackground,
     startAction: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -76,11 +70,7 @@ internal fun LanguagePreference(
                 title = stringResource(R.string.settings_language),
                 items = labels,
                 selectedIndex = selectedIndex,
-                icon = if (startAction != null) {
-                    { CouiSettingsIcon(icon = Icons.Rounded.Language, tint = iconTint) }
-                } else {
-                    null
-                },
+                icon = startAction,
                 onSelectedIndexChange = onSelect,
             )
         }

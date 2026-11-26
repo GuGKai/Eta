@@ -5,8 +5,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,18 +15,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -40,10 +41,11 @@ import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,20 +55,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.constrainWidth
@@ -88,26 +89,28 @@ import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.data.model.TtsProvider
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
 import io.github.mangi.eta.ui.components.AdaptiveTopAppBar
-import io.github.mangi.eta.ui.components.CharacterAvatar
-import io.github.mangi.eta.ui.components.ChatActionIcons
 import io.github.mangi.eta.ui.components.AgentTopBarChatHeader
+import io.github.mangi.eta.ui.components.CharacterAvatar
 import io.github.mangi.eta.ui.components.ChatImagePreviewHost
-import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
-import io.github.mangi.eta.ui.components.EtaTopLayer
 import io.github.mangi.eta.ui.components.LocalChatImagePreviewer
-import io.github.mangi.eta.ui.components.MiuixBackButton
-import io.github.mangi.eta.ui.components.NonFocusablePopupProperties
 import io.github.mangi.eta.ui.components.RoleplayChatUi
+import io.github.mangi.eta.ui.components.TopBarBackButton
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.captureGlassBackdrop
+import io.github.mangi.eta.ui.components.chat.ChatActionIcons
+import io.github.mangi.eta.ui.components.chat.NonFocusablePopupProperties
 import io.github.mangi.eta.ui.components.coui.CouiBackButton
 import io.github.mangi.eta.ui.components.coui.CouiTopAppBarIconButton
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
+import io.github.mangi.eta.ui.components.pane.ConversationSidePaneScaffold
 import io.github.mangi.eta.ui.components.rememberGlassBackdrop
 import io.github.mangi.eta.ui.layout.rememberIsWideScreen
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import io.github.mangi.eta.ui.navigation.AppRoute
+import io.github.mangi.eta.ui.state.displayName
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -141,7 +144,6 @@ import top.yukonga.miuix.kmp.icon.glass.VolumeOff
 import top.yukonga.miuix.kmp.icon.glass.VolumeUp
 import top.yukonga.miuix.kmp.material.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import kotlin.math.roundToInt
 
 /**
  * Agent App 统一壳层。
@@ -416,7 +418,7 @@ private fun CouiTopBarOverflowMenu(
 
     val newConversationText = stringResource(R.string.action_new_conversation)
     val openBrowserText = stringResource(R.string.action_open_browser)
-    val openTasksText = stringResource(R.string.automation_title)
+    val openTasksText = stringResource(R.string.local_automation_title)
     val openScheduledText = stringResource(R.string.route_scheduled_tasks)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
@@ -538,7 +540,7 @@ private fun AgentTopBar(
         backdrop = backdrop,
         expandable = route !is AppRoute.Terminal && !rememberIsWideScreen(),
         scrollBehavior = scrollBehavior,
-        navigationIcon = { MiuixBackButton(onClick = onBack) },
+        navigationIcon = { TopBarBackButton(onClick = onBack) },
         actions = {},
     )
 }
@@ -673,12 +675,12 @@ private fun TopBarOverflowMenu(
     }
     val moreAnchor = rememberGlassPopupAnchor()
     val scope = rememberCoroutineScope()
-    val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
+    val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsStateWithLifecycle(initialValue = null)
     val hasSpeechPlayback = speechSettings?.let { it.tts != TtsProvider.NONE } == true
     val autoReadEnabled = speechSettings?.chatAutoSpeak == true
     val newConversationText = stringResource(R.string.action_new_conversation)
     val openBrowserText = stringResource(R.string.action_open_browser)
-    val openTasksText = stringResource(R.string.automation_title)
+    val openTasksText = stringResource(R.string.local_automation_title)
     val openScheduledText = stringResource(R.string.route_scheduled_tasks)
     val autoReadText = stringResource(
         if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
@@ -705,7 +707,7 @@ private fun TopBarOverflowMenu(
     }
 
     if (isCurrentRoute) {
-        EtaTopLayer {
+        TopLayer {
             GlassTransformPopup(
                 show = showMenu,
                 onDismissRequest = { showMenu = false },
@@ -772,35 +774,6 @@ private fun TopBarOverflowMenu(
     }
 }
 
-/** 顶栏会话标题的宽度上限：按当前字号实测出的 11 个中文字符宽度。 */
-private const val TOP_BAR_TITLE_CJK_WIDTH = 11
-
-/** 会话标题透明度渐显时长：够看出「淡出来」，又不至于让人等标题。 */
-private const val TOP_BAR_TITLE_FADE_MS = 320
-
-/**
- * 会话标题的透明度渐显。
- *
- * 标题由无到有、或换成新名字时从 0 淡到 1；空标题直接把透明度压到 0，
- * 这样「发完消息、命名还没落地」的那一瞬间不会闪出旧的占位文案。
- */
-@Composable
-private fun rememberConversationTitleFade(title: String?): Float {
-    val alpha = remember { Animatable(0f) }
-    LaunchedEffect(title) {
-        if (title.isNullOrBlank()) {
-            alpha.snapTo(0f)
-        } else {
-            alpha.snapTo(0f)
-            alpha.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = TOP_BAR_TITLE_FADE_MS, easing = LinearOutSlowInEasing),
-            )
-        }
-    }
-    return alpha.value
-}
-
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Home, is AppRoute.Browser -> ""
@@ -822,7 +795,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.CharacterDetail -> stringResource(R.string.ui_misc_route_character_detail)
     is AppRoute.CharacterEditor -> stringResource(R.string.ui_misc_route_character_editor)
     is AppRoute.CharacterPersona -> stringResource(R.string.ui_misc_route_character_persona)
-    is AppRoute.DefaultAssistantPrompt -> stringResource(R.string.default_prompt_title)
+    is AppRoute.DefaultAssistantPrompt -> stringResource(R.string.local_default_prompt_title)
     is AppRoute.CharacterMemory -> stringResource(R.string.ui_misc_route_character_memory)
     is AppRoute.Permissions -> stringResource(R.string.route_permissions)
     is AppRoute.SystemEnhance -> stringResource(R.string.route_system_enhancements)
@@ -834,7 +807,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.AppearanceSettings -> stringResource(R.string.appearance_title)
     is AppRoute.DataBackup -> stringResource(R.string.data_backup_title)
     is AppRoute.Memory -> stringResource(R.string.route_memory)
-    is AppRoute.Tasks -> stringResource(R.string.automation_title)
+    is AppRoute.Tasks -> stringResource(R.string.local_automation_title)
     is AppRoute.LinuxEnvironment -> stringResource(R.string.route_linux_environment)
     is AppRoute.Workspace -> stringResource(R.string.capability_workspace)
     is AppRoute.SharedFolders -> stringResource(R.string.route_shared_folders)
@@ -849,30 +822,3 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     null -> stringResource(R.string.app_name)
 }
 
-@Composable
-private fun CharacterTopBarIdentity(character: RoleplayChatUi, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
-            .padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CharacterAvatar(
-            name = character.characterName,
-            avatarPath = character.avatarPath,
-            size = 32.dp,
-            shape = CircleShape,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = character.characterName,
-            style = MiuixTheme.textStyles.body1,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 180.dp),
-        )
-    }
-}

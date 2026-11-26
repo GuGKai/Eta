@@ -6,8 +6,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Parcel
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
-import io.github.mangi.eta.ui.app.ArchivedConversationRequest
-import io.github.mangi.eta.ui.voice.ACTION_SPEECH_SETTINGS
+import io.github.mangi.eta.ui.state.ArchivedConversationRequest
+import io.github.mangi.eta.ui.components.ACTION_SPEECH_SETTINGS
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

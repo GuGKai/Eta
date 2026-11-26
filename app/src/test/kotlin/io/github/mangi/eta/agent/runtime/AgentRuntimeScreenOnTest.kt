@@ -4,7 +4,7 @@ import android.app.Application
 import android.os.Looper
 import androidx.compose.runtime.MutableState
 import androidx.compose.ui.platform.ComposeView
-import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
 import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import io.github.mangi.eta.agent.overlay.AgentOverlayStatus
@@ -21,6 +21,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowPowerManager
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], application = Application::class)
@@ -33,6 +34,7 @@ class AgentRuntimeScreenOnTest {
             val service = serviceController.get()
             val session = service.registerRun("active-run").session
             val capsule = ComposeView(service)
+            // fork 内联叠层（未采用上游的 AgentRuntimeOverlayHost 拆分）：直接写私有字段
             service.setField("capsuleView", capsule)
 
             service.invoke("updateKeepScreenOn")
@@ -199,7 +201,10 @@ class AgentRuntimeScreenOnTest {
             run.session.controller.cancel()
             shadowOf(Looper.getMainLooper()).idle()
             assertTrue(service.field<GuiControlCoordinator>("guiControl").state.value.userPaused)
-            assertEquals(AgentOverlayPhase.PAUSED, service.field<MutableState<AgentOverlayState>>("state").value.phase)
+            assertEquals(
+                AgentOverlayPhase.PAUSED,
+                service.field<MutableState<AgentOverlayState>>("state").value.phase,
+            )
             service.invoke("requestResume")
             assertFalse(service.field<GuiControlCoordinator>("guiControl").state.value.userPaused)
         } finally {
@@ -225,7 +230,10 @@ class AgentRuntimeScreenOnTest {
             val guiCoordinator = service.field<GuiControlCoordinator>("guiControl")
             assertTrue(guiCoordinator.state.value.userPaused)
             assertNull(guiCoordinator.state.value.ownerRunId)
-            assertEquals(AgentOverlayPhase.PAUSED, service.field<MutableState<AgentOverlayState>>("state").value.phase)
+            assertEquals(
+                AgentOverlayPhase.PAUSED,
+                service.field<MutableState<AgentOverlayState>>("state").value.phase,
+            )
             assertTrue(AgentRuntimeService.keepScreenOn.value)
 
             background.session.complete(AgentRuntimeWire.RunResult(background.runId, true, "完成"))

@@ -1,9 +1,13 @@
 package io.github.mangi.eta.agent.runtime
 
-import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.provider.AgentModelClient
 import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CountDownLatch
+import io.github.mangi.eta.agent.runtime.archive.AgentExternalArchivePayload
+import io.github.mangi.eta.agent.runtime.ipc.AgentEvent
+import io.github.mangi.eta.agent.runtime.ipc.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.ipc.AgentUiHandoffPayload
 
 /** 请求摄取前占位；同一会话直到终态提交完成都只有一个写入者。 */
 internal class RuntimeRunRegistry(private val capacity: Int = MAX_ACTIVE_RUNS) {
@@ -24,6 +28,7 @@ internal class RuntimeRunRegistry(private val capacity: Int = MAX_ACTIVE_RUNS) {
     ) {
         val runId: String get() = session.runId
         val conversationId: String = AgentConversationIdentity.fromHandoff(initialRequest.handoff, initialRequest.runId)
+        val startedAtEpochMs: Long = System.currentTimeMillis()
         @Volatile var request: AgentRuntimeWire.RunRequest = initialRequest
             private set
         /**
