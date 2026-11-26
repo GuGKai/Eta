@@ -142,9 +142,6 @@ import io.github.mangi.eta.ui.state.CharacterLibraryViewModel
 import io.github.mangi.eta.ui.state.CommunityCatalogViewModel
 import io.github.mangi.eta.ui.state.ConversationMarkdownExporter
 import io.github.mangi.eta.ui.state.buildToolsState
-import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.platform.LocalView
-import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 
 /**
  * Agent App 根组件：持有本地导航栈，并把 Screen actions 交给 [AgentAppState]。
@@ -205,13 +202,6 @@ fun AgentAppRoot(
     val permissionHealth = appViewModel.permissionHealth
     val deepSeekBalance = appViewModel.deepSeekBalance
     val configuration = LocalConfiguration.current
-    // fork 保留：主界面窗口按运行状态常亮（未采用上游 4.0.0 的 service-side onStop 方案）。
-    val keepScreenOn by AgentRuntimeService.keepScreenOn.collectAsState()
-    val keepScreenOnView = LocalView.current
-    DisposableEffect(keepScreenOnView, keepScreenOn) {
-        keepScreenOnView.keepScreenOn = keepScreenOn
-        onDispose { keepScreenOnView.keepScreenOn = false }
-    }
     val toolsState = remember(configuration) { buildToolsState(context) }
     val characterStore = viewModel<CharacterLibraryViewModel>().store
     val communityCatalogStore = viewModel<CommunityCatalogViewModel>().store
