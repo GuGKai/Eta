@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Compress
+import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
@@ -532,13 +533,13 @@ private fun SettingsPageContent(
                     }
                 }
 
-                Group(title = stringResource(R.string.settings_context_extensions)) {
+                Group(title = stringResource(R.string.settings_conversation_memory)) {
                     SwitchPref(
                         context = context,
                         prefs = agentPrefs,
                         title = stringResource(R.string.settings_auto_compaction),
                         key = Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
-                        icon = Icons.Rounded.Layers,
+                        icon = Icons.Rounded.Compress,
                         iconTint = SettingsIconColors.Blue,
                     )
                     CouiIconDivider()
@@ -558,19 +559,9 @@ private fun SettingsPageContent(
                         },
                         onClick = { onNavigate(AppRoute.Memory) },
                     )
-                    CouiIconDivider()
-                    CouiPreference(
-                        title = stringResource(R.string.local_automation_title),
-                        icon = { CouiSettingsIcon(Icons.Rounded.FilterAlt, SettingsIconColors.Blue) },
-                        onClick = { onNavigate(AppRoute.Tasks) },
-                    )
-                    CouiIconDivider()
-                    CouiPreference(
-                        title = stringResource(R.string.ui_misc_route_subagents),
-                        icon = { CouiSettingsIcon(Icons.Rounded.JoinLeft, SettingsIconColors.Blue) },
-                        onClick = { onNavigate(AppRoute.Subagents) },
-                    )
-                    CouiIconDivider()
+                }
+
+                Group(title = stringResource(R.string.settings_extensions)) {
                     CouiPreference(
                         title = stringResource(R.string.route_skills),
                         icon = {
@@ -594,14 +585,9 @@ private fun SettingsPageContent(
                     )
                     CouiIconDivider()
                     CouiPreference(
-                        title = stringResource(R.string.route_scheduled_tasks),
-                        icon = {
-                            CouiSettingsIcon(
-                                Icons.Rounded.Schedule,
-                                SettingsIconColors.Blue,
-                            )
-                        },
-                        onClick = { onNavigate(AppRoute.ScheduledTasks) },
+                        title = stringResource(R.string.ui_misc_route_subagents),
+                        icon = { CouiSettingsIcon(Icons.Rounded.JoinLeft, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.Subagents) },
                     )
                     CouiIconDivider()
                     CouiPreference(
@@ -613,6 +599,24 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.Characters) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = stringResource(R.string.route_scheduled_tasks),
+                        icon = {
+                            CouiSettingsIcon(
+                                Icons.Rounded.Schedule,
+                                SettingsIconColors.Blue,
+                            )
+                        },
+                        onClick = { onNavigate(AppRoute.ScheduledTasks) },
+                    )
+                    CouiIconDivider()
+                    // fork 本地功能：自动任务（与 Miuix 分支一致，放在定时任务下方）。
+                    CouiPreference(
+                        title = stringResource(R.string.local_automation_title),
+                        icon = { CouiSettingsIcon(Icons.Rounded.FilterAlt, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.Tasks) },
                     )
                 }
 
@@ -653,7 +657,7 @@ private fun SettingsPageContent(
                         prefs = agentPrefs,
                         title = stringResource(R.string.settings_virtual_display_title),
                         key = Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED,
-                        icon = Icons.Rounded.Layers,
+                        icon = Icons.Rounded.PictureInPictureAlt,
                         iconTint = SettingsIconColors.Blue,
                     )
                     CouiIconDivider()
@@ -669,11 +673,43 @@ private fun SettingsPageContent(
                     )
                 }
 
-                Group {
+                Group(title = stringResource(R.string.settings_general)) {
                     CouiPreference(
-                        title = stringResource(R.string.capability_enhancements),
-                        icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Blue) },
-                        onClick = { onNavigate(AppRoute.SystemEnhance) },
+                        title = stringResource(R.string.appearance_title),
+                        icon = { CouiSettingsIcon(Icons.Rounded.Palette, SettingsIconColors.Orange) },
+                        onClick = { onNavigate(AppRoute.AppearanceSettings) },
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = stringResource(R.string.speech_settings_title),
+                        icon = { CouiSettingsIcon(Icons.Rounded.Mic, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.SpeechSettings) },
+                    )
+                    CouiIconDivider()
+                    LanguagePreference(
+                        startAction = {
+                            CouiSettingsIcon(Icons.Rounded.Language, SettingsIconColors.Blue)
+                        },
+                    )
+                    CouiIconDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_keep_screen_on),
+                        key = Prefs.Keys.AGENT_KEEP_SCREEN_ON_ENABLED,
+                        icon = Icons.Rounded.BrightnessHigh,
+                        iconTint = SettingsIconColors.Orange,
+                    )
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = stringResource(R.string.data_backup_title),
+                        icon = {
+                            CouiSettingsIcon(
+                                Icons.Rounded.Description,
+                                SettingsIconColors.Blue,
+                            )
+                        },
+                        onClick = { onNavigate(AppRoute.DataBackup) },
                     )
                 }
 
@@ -728,7 +764,7 @@ private fun SettingsPageContent(
                 }
 
                 if (prefs != null || hasConnectedFramework) {
-                    Group(title = stringResource(R.string.local_ui_search_in_one_turn_179584)) {
+                    Group(title = stringResource(R.string.ui_search_in_one_turn_179584)) {
                         SwitchPref(
                             context = context,
                             prefs = prefs,
@@ -741,7 +777,7 @@ private fun SettingsPageContent(
                         SwitchPref(
                             context = context,
                             prefs = prefs,
-                            title = stringResource(R.string.local_ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
+                            title = stringResource(R.string.ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
                             key = Prefs.Keys.DOUBLE_FINGER_CIRCLE_TO_SEARCH,
                             icon = Icons.Rounded.TouchApp,
                             iconTint = SettingsIconColors.Blue,
@@ -749,66 +785,11 @@ private fun SettingsPageContent(
                     }
                 }
 
-                Group(title = stringResource(R.string.settings_general)) {
-                    SwitchPref(
-                        context = context,
-                        prefs = agentPrefs,
-                        title = stringResource(R.string.settings_keep_screen_on),
-                        key = Prefs.Keys.AGENT_KEEP_SCREEN_ON_ENABLED,
-                        icon = Icons.Rounded.BrightnessHigh,
-                        iconTint = SettingsIconColors.Orange,
-                    )
-                    CouiIconDivider()
+                Group(title = stringResource(R.string.settings_permissions_enhancements)) {
                     CouiPreference(
-                        title = stringResource(R.string.appearance_title),
-                        icon = { CouiSettingsIcon(Icons.Rounded.Palette, SettingsIconColors.Orange) },
-                        onClick = { onNavigate(AppRoute.AppearanceSettings) },
-                    )
-                    CouiIconDivider()
-                    CouiPreference(
-                        title = stringResource(R.string.speech_settings_title),
-                        icon = { CouiSettingsIcon(Icons.Rounded.Mic, SettingsIconColors.Blue) },
-                        onClick = { onNavigate(AppRoute.SpeechSettings) },
-                    )
-                    CouiIconDivider()
-                    LanguagePreference(
-                        startAction = {
-                            CouiSettingsIcon(Icons.Rounded.Language, SettingsIconColors.Blue)
-                        },
-                    )
-                    CouiIconDivider()
-                    CouiPreference(
-                        title = stringResource(R.string.data_backup_title),
-                        icon = {
-                            CouiSettingsIcon(
-                                Icons.Rounded.Description,
-                                SettingsIconColors.Blue,
-                            )
-                        },
-                        onClick = { onNavigate(AppRoute.DataBackup) },
-                    )
-                }
-
-                Group(title = stringResource(R.string.ui_permissions_560165)) {
-                    CouiPreference(
-                        title = stringResource(R.string.ui_floating_window_permissions_076b77),
-                        value = stringResource(
-                            if (overlayGranted) R.string.status_authorized else R.string.status_unauthorized,
-                        ),
-                        valueColor = if (overlayGranted) pageColors.summary else dialogColors.destructive,
-                        icon = { CouiSettingsIcon(Icons.Rounded.Layers, SettingsIconColors.Blue) },
-                        onClick = {
-                            if (!overlayGranted) {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(
-                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            Uri.parse("package:${context.packageName}"),
-                                        ),
-                                    )
-                                }
-                            }
-                        },
+                        title = stringResource(R.string.ui_permission_health_3048bb),
+                        icon = { CouiSettingsIcon(Icons.Rounded.HealthAndSafety, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.Permissions) },
                     )
                     CouiIconDivider()
                     val accEnabled = accessibilityGranted || AgentAccessibilityService.isAvailable()
@@ -846,6 +827,12 @@ private fun SettingsPageContent(
                             enabled = prefs != null && !accessibilityProtectionPending,
                         )
                     }
+                    CouiIconDivider()
+                    CouiPreference(
+                        title = stringResource(R.string.capability_enhancements),
+                        icon = { CouiSettingsIcon(Icons.Rounded.Security, SettingsIconColors.Blue) },
+                        onClick = { onNavigate(AppRoute.SystemEnhance) },
+                    )
                 }
 
                 Group(title = stringResource(R.string.ui_about_bed172)) {

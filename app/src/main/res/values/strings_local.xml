@@ -217,8 +217,6 @@
     <string name="local_systemizer_grant_magisk">Grant Eta root access in Magisk</string>
     <string name="local_systemizer_root_denied">Root access was not granted</string>
     <string name="local_systemizer_installed">Installation complete. Restart to apply changes</string>
-    <string name="local_ui_search_in_one_turn_179584">Circle to Search</string>
-    <string name="local_ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a">Touch and hold with two fingers to start Circle to Search</string>
     <string name="local_ui_convert_google_apps_to_system_apps_0f6d89">Convert Google Apps to system apps</string>
     <string name="local_ui_maintain_hey_google_detection_after_screen_rest_9d6877">Maintain Hey Google detection after screen rest</string>
     <string name="local_ui_system_applications_have_voice_wake_up_permissions_f_0190f2">System applications have voice wake-up permissions, fewer self-start restrictions, and the experience is close to native. Will be installed via Magisk/KernelSU module and will take effect after reboot.</string>
