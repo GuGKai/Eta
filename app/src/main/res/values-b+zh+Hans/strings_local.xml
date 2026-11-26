@@ -29,8 +29,6 @@
     <string name="local_conversation_section_expand">展开置顶会话</string>
     <string name="local_ui_update_available_toast">已有新版本</string>
     <string name="local_ui_reset_browser_session_791b36">重置浏览器会话</string>
-    <string name="local_settings_default_reasoning_effort">默认思考强度</string>
-    <string name="local_settings_default_reasoning_effort_summary">用于新建会话；模型不支持时回落到它支持的最接近档位。</string>
     <string name="local_tool_ui_coloros_notes_6c324c">系统便签</string>
     <string name="local_chat_conversation_model_title">选择当前会话模型</string>
     <string name="local_permission_bluetooth_title">蓝牙连接权限</string>

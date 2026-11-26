@@ -27,8 +27,6 @@
     <string name="local_conversation_section_expand">展開釘選對話</string>
     <string name="local_ui_update_available_toast">已有新版本</string>
     <string name="local_ui_reset_browser_session_791b36">重設瀏覽器工作階段</string>
-    <string name="local_settings_default_reasoning_effort">預設思考強度</string>
-    <string name="local_settings_default_reasoning_effort_summary">用於新建對話；模型不支援時回落到它支援的最接近檔位。</string>
     <string name="local_tool_ui_coloros_notes_6c324c">系統便簽</string>
     <string name="local_chat_conversation_model_title">選擇目前會話模型</string>
     <string name="local_permission_bluetooth_title">藍牙連線權限</string>

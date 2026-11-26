@@ -29,8 +29,6 @@
     <string name="local_voice_request_failed">Request failed. Please try again.</string>
     <string name="local_ui_update_available_toast">A new version is available</string>
     <string name="local_ui_reset_browser_session_791b36">Reset browser session</string>
-    <string name="local_settings_default_reasoning_effort">Default reasoning effort</string>
-    <string name="local_settings_default_reasoning_effort_summary">Applies to new conversations; unsupported levels fall back to the closest one the model allows.</string>
     <string name="local_tool_ui_coloros_notes_6c324c">System Notes</string>
     <string name="local_chat_conversation_model_title">Choose this conversation’s model</string>
     <string name="local_permission_bluetooth_title">Bluetooth connection</string>

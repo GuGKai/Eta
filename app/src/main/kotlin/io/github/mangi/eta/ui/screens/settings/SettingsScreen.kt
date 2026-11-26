@@ -340,7 +340,7 @@ private fun SettingsPageContent(
             }
         }
     }
-    val defaultEffortTitle = stringResource(R.string.local_settings_default_reasoning_effort)
+    val defaultEffortTitle = stringResource(R.string.settings_default_reasoning_effort)
     val defaultEffortUnsupported = stringResource(R.string.conversation_title_settings_reasoning_unsupported)
     val defaultEffortEnabled = agentPrefs != null && defaultThinkingEnabled && effortOptions.size > 1
     var powerAssistantTarget by remember(prefs) {
@@ -976,17 +976,17 @@ private fun SettingsPageContent(
                     }
                 }
 
-                item(key = "section_context_extensions_title") {
-                    SmallTitle(stringResource(R.string.settings_context_extensions))
+                item(key = "section_conversation_memory_title") {
+                    SmallTitle(stringResource(R.string.settings_conversation_memory))
                 }
-                item(key = "section_context_extensions") {
+                item(key = "section_conversation_memory") {
                     SettingsGroupCard {
                         SwitchPref(
                             context = context,
                             prefs = agentPrefs,
                             title = stringResource(R.string.settings_auto_compaction),
                             key = Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
-                            icon = Icons.Rounded.Layers,
+                            icon = Icons.Rounded.Compress,
                             history = enhancementHistory,
                         )
                         ArrowPreference(
@@ -999,11 +999,14 @@ private fun SettingsPageContent(
                             startAction = { SettingsIcon(Icons.AutoMirrored.Rounded.MenuBook) },
                             onClick = { onNavigate(AppRoute.Memory) },
                         )
-                        ArrowPreference(
-                            title = stringResource(R.string.ui_misc_route_subagents),
-                            startAction = { SettingsIcon(Icons.Rounded.JoinLeft) },
-                            onClick = { onNavigate(AppRoute.Subagents) },
-                        )
+                    }
+                }
+
+                item(key = "section_extensions_title") {
+                    SmallTitle(stringResource(R.string.settings_extensions))
+                }
+                item(key = "section_extensions") {
+                    SettingsGroupCard {
                         ArrowPreference(
                             title = stringResource(R.string.route_skills),
                             startAction = { SettingsIcon(Icons.Rounded.ImportContacts) },
@@ -1015,14 +1018,25 @@ private fun SettingsPageContent(
                             onClick = { onNavigate(AppRoute.McpServers) },
                         )
                         ArrowPreference(
-                            title = stringResource(R.string.route_scheduled_tasks),
-                            startAction = { SettingsIcon(Icons.Rounded.Schedule) },
-                            onClick = { onNavigate(AppRoute.ScheduledTasks) },
+                            title = stringResource(R.string.ui_misc_route_subagents),
+                            startAction = { SettingsIcon(Icons.Rounded.JoinLeft) },
+                            onClick = { onNavigate(AppRoute.Subagents) },
                         )
                         ArrowPreference(
                             title = stringResource(R.string.conversation_dock_characters),
                             startAction = { SettingsIcon(Icons.Rounded.SportsBar) },
                             onClick = { onNavigate(AppRoute.Characters) },
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.route_scheduled_tasks),
+                            startAction = { SettingsIcon(Icons.Rounded.Schedule) },
+                            onClick = { onNavigate(AppRoute.ScheduledTasks) },
+                        )
+                        // fork 本地功能：自动任务（COUI 分支里一直有，Miuix 分支此前漏配，导致设置页看不到入口）。
+                        ArrowPreference(
+                            title = stringResource(R.string.local_automation_title),
+                            startAction = { SettingsIcon(Icons.Rounded.FilterAlt) },
+                            onClick = { onNavigate(AppRoute.Tasks) },
                         )
                     }
                 }
@@ -1059,7 +1073,7 @@ private fun SettingsPageContent(
                             prefs = agentPrefs,
                             title = stringResource(R.string.settings_virtual_display_title),
                             key = Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED,
-                            icon = Icons.Rounded.Layers,
+                            icon = Icons.Rounded.PictureInPictureAlt,
                             history = enhancementHistory,
                         )
                         ArrowPreference(
@@ -1070,12 +1084,36 @@ private fun SettingsPageContent(
                     }
                 }
 
-                item(key = "system_enhancements") {
+                item(key = "section_general_title") {
+                    SmallTitle(stringResource(R.string.settings_general))
+                }
+                item(key = "section_general") {
                     SettingsGroupCard {
                         ArrowPreference(
-                            title = stringResource(R.string.capability_enhancements),
-                            startAction = { SettingsIcon(Icons.Rounded.Security) },
-                            onClick = { onNavigate(AppRoute.SystemEnhance) },
+                            title = stringResource(R.string.appearance_title),
+                            startAction = { SettingsIcon(Icons.Rounded.Palette) },
+                            onClick = { onNavigate(AppRoute.AppearanceSettings) },
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.speech_settings_title),
+                            startAction = { SettingsIcon(Icons.Rounded.Mic) },
+                            onClick = { onNavigate(AppRoute.SpeechSettings) },
+                        )
+                        LanguagePreference(
+                            startAction = { SettingsIcon(Icons.Rounded.Language) },
+                        )
+                        SwitchPref(
+                            context = context,
+                            prefs = agentPrefs,
+                            title = stringResource(R.string.settings_keep_screen_on),
+                            key = Prefs.Keys.AGENT_KEEP_SCREEN_ON_ENABLED,
+                            icon = Icons.Rounded.BrightnessHigh,
+                            history = enhancementHistory,
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.data_backup_title),
+                            startAction = { SettingsIcon(Icons.Rounded.Description) },
+                            onClick = { onNavigate(AppRoute.DataBackup) },
                         )
                     }
                 }
@@ -1123,7 +1161,7 @@ private fun SettingsPageContent(
 
                 if (prefs != null || hasConnectedFramework) {
                     item(key = "section_circle_to_search_title") {
-                        SmallTitle(stringResource(R.string.local_ui_search_in_one_turn_179584))
+                        SmallTitle(stringResource(R.string.ui_search_in_one_turn_179584))
                     }
                     item(key = "section_circle_to_search") {
                         SettingsGroupCard {
@@ -1137,7 +1175,7 @@ private fun SettingsPageContent(
                             SwitchPref(
                                 context = context,
                                 prefs = prefs,
-                                title = stringResource(R.string.local_ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
+                                title = stringResource(R.string.ui_long_press_with_two_fingers_to_trigger_a_circle_sear_ab597a),
                                 key = Prefs.Keys.DOUBLE_FINGER_CIRCLE_TO_SEARCH,
                                 icon = Icons.Rounded.TouchApp,
                             )
@@ -1145,73 +1183,15 @@ private fun SettingsPageContent(
                     }
                 }
 
-                item(key = "section_general_title") {
-                    SmallTitle(stringResource(R.string.settings_general))
-                }
-                item(key = "section_general") {
-                    SettingsGroupCard {
-                        SwitchPref(
-                            context = context,
-                            prefs = agentPrefs,
-                            title = stringResource(R.string.settings_keep_screen_on),
-                            key = Prefs.Keys.AGENT_KEEP_SCREEN_ON_ENABLED,
-                            icon = Icons.Rounded.BrightnessHigh,
-                            history = enhancementHistory,
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.appearance_title),
-                            startAction = { SettingsIcon(Icons.Rounded.Palette) },
-                            onClick = { onNavigate(AppRoute.AppearanceSettings) },
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.speech_settings_title),
-                            startAction = { SettingsIcon(Icons.Rounded.Mic) },
-                            onClick = { onNavigate(AppRoute.SpeechSettings) },
-                        )
-                        LanguagePreference(
-                            startAction = { SettingsIcon(Icons.Rounded.Language) },
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.data_backup_title),
-                            startAction = { SettingsIcon(Icons.Rounded.Description) },
-                            onClick = { onNavigate(AppRoute.DataBackup) },
-                        )
-                    }
-                }
-
                 item(key = "section_permissions_title") {
-                    SmallTitle(stringResource(R.string.ui_permissions_560165))
+                    SmallTitle(stringResource(R.string.settings_permissions_enhancements))
                 }
                 item(key = "section_permissions") {
                     SettingsGroupCard {
                         ArrowPreference(
-                            title = stringResource(R.string.ui_floating_window_permissions_076b77),
-                            startAction = { SettingsIcon(Icons.Rounded.Layers) },
-                            endActions = {
-                                Text(
-                                    text = stringResource(
-                                        if (overlayGranted) R.string.status_authorized else R.string.status_unauthorized,
-                                    ),
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = if (overlayGranted) {
-                                        MiuixTheme.colorScheme.onSurfaceVariantActions
-                                    } else {
-                                        MiuixTheme.colorScheme.error
-                                    },
-                                )
-                            },
-                            onClick = {
-                                if (!overlayGranted) {
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(
-                                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                                Uri.parse("package:${context.packageName}"),
-                                            ),
-                                        )
-                                    }
-                                }
-                            },
+                            title = stringResource(R.string.ui_permission_health_3048bb),
+                            startAction = { SettingsIcon(MiuixIcons.Glass.SecurityStatus) },
+                            onClick = { onNavigate(AppRoute.Permissions) },
                         )
                         ArrowPreference(
                             title = stringResource(R.string.ui_accessibility_enhancement_tools_8fd257),
@@ -1245,13 +1225,18 @@ private fun SettingsPageContent(
                                 onCheckedChange = onAccessibilityProtectionToggle,
                                 startAction = {
                                     SettingsIcon(
-                                        icon = Icons.Rounded.VerifiedUser,
+                                        icon = Icons.Rounded.Lock,
                                         enabled = prefs != null && !accessibilityProtectionPending,
                                     )
                                 },
                                 enabled = prefs != null && !accessibilityProtectionPending,
                             )
                         }
+                        ArrowPreference(
+                            title = stringResource(R.string.capability_enhancements),
+                            startAction = { SettingsIcon(Icons.Rounded.Security) },
+                            onClick = { onNavigate(AppRoute.SystemEnhance) },
+                        )
                     }
                 }
 
