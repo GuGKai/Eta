@@ -4,15 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.itos.coui.dialog.CouiDialogAction
-import com.itos.coui.dialog.CouiDialogPlacement
-import com.itos.coui.dialog.Dialog
-import com.itos.coui.menu.rememberCouiWindowBackdrop
-import com.itos.coui.theme.CouiTheme
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.coui.rememberCouiDialogMaterial
+import io.github.mangi.eta.ui.components.coui.CouiSheetPanel
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 
@@ -20,7 +15,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
  * 会话内选模型弹窗。
  *
  * 外观与「设置 → 自动生成对话标题 → 生成标题模型」那个弹窗完全一致（同一份
- * [OptionalModelPickerContent] + 同一套 COUI Dialog / MIUIX OverlayBottomSheet 外壳），
+ * [OptionalModelPickerContent] + 同一套 COUI Sheet / MIUIX OverlayBottomSheet 外壳），
  * 只把标题换成「选择当前会话模型」，并去掉「跟随主模型」那一行 —— 会话必须落在某个具体模型上。
  */
 @Composable
@@ -31,7 +26,6 @@ internal fun ConversationModelPickerSheet(
     onSelectModel: (String) -> Unit,
 ) {
     val title = stringResource(R.string.local_chat_conversation_model_title)
-    val closeText = stringResource(R.string.action_close)
     val selectedModelId = pickerState.selectedModel?.id
 
     val content: @Composable () -> Unit = {
@@ -52,19 +46,12 @@ internal fun ConversationModelPickerSheet(
 
     when (LocalUiStyle.current) {
         AppearanceUiStyle.COUI -> {
-            val dark = CouiTheme.isDark
-            Dialog(
+            CouiSheetPanel(
                 visible = visible,
-                onDismissRequest = onDismissRequest,
-                dark = dark,
                 title = title,
-                confirmAction = CouiDialogAction(
-                    text = closeText,
-                    onClick = onDismissRequest,
-                ),
-                placement = CouiDialogPlacement.Bottom,
-                material = rememberCouiDialogMaterial(dark),
-                backdrop = rememberCouiWindowBackdrop(),
+                onDismissRequest = onDismissRequest,
+                // 正文自带 LazyColumn，滚动与边缘效果交给它自己。
+                scrollableContent = false,
             ) {
                 content()
             }

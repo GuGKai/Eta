@@ -526,9 +526,6 @@ private fun AgentTopBar(
             AgentTopBarChatHeader(
                 conversationTitle = homeTitle,
                 character = homeCharacter,
-                state = homeModelPickerState,
-                isStreaming = isHomeStreaming,
-                onModelSelected = onHomeModelSelected,
                 onOpenCharacter = onOpenCharacter,
             )
         }

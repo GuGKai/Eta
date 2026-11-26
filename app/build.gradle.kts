@@ -42,7 +42,7 @@ val etaApplicationId =
 // 这样两边 build.gradle.kts 保持逐字相同，合并上游时不会再因为出包配置产生冲突。
 //   -Peta.versionCode=2026112402      共存包自己的版本号
 //   -Peta.debugSignWithRelease=true   Debug 包用 release 签名（覆盖安装已装的同包名版本）
-val etaVersionCode = providers.gradleProperty("eta.versionCode").orNull?.toIntOrNull() ?: 2026112507
+val etaVersionCode = providers.gradleProperty("eta.versionCode").orNull?.toIntOrNull() ?: 2026112607
 val etaDebugSignWithRelease =
     providers.gradleProperty("eta.debugSignWithRelease").orNull?.toBoolean() ?: false
 

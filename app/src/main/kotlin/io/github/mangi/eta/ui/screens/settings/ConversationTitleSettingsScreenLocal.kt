@@ -1,0 +1,284 @@
+package io.github.mangi.eta.ui.screens.settings
+
+// 本文件是 fork 挂载点：上游同名文件 ConversationTitleSettingsScreen.kt 只保留上游声明，
+// 本文件承接带 LocalUiStyle / AppearanceUiStyle.COUI 双主题分支的会话标题设置页。
+
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import com.itos.coui.layout.Divider
+import com.itos.coui.layout.Footer
+import com.itos.coui.layout.Group
+import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.R
+import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.data.model.ConversationTitleSettings
+import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.enabledModel
+import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.components.FooterHint
+import io.github.mangi.eta.ui.app.LocalUiStyle
+import io.github.mangi.eta.ui.components.ScaffoldPage
+import io.github.mangi.eta.ui.components.OptionalModelPickerContent
+import io.github.mangi.eta.ui.components.coui.CouiDropdownPreference
+import io.github.mangi.eta.ui.components.coui.CouiPageBottomSpacer
+import io.github.mangi.eta.ui.components.coui.CouiPreference
+import io.github.mangi.eta.ui.components.coui.CouiScaffoldPage
+import io.github.mangi.eta.ui.components.coui.CouiSwitchPreference
+import io.github.mangi.eta.ui.components.coui.CouiSheetPanel
+import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
+import io.github.mangi.eta.ui.model.AgentModelPickerProjector
+import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.glass.GlassBottomSheet
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+@Composable
+internal fun ConversationTitleSettingsScreen(
+    onBack: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val providers by ProviderRepository.providersFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val primaryProviderId by RuntimeConfigRepository.selectedProviderIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val primaryModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val titleSettings by RuntimeConfigRepository.conversationTitleSettingsFlow()
+        .collectAsStateWithLifecycle(initialValue = ConversationTitleSettings())
+
+    LaunchedEffect(Unit) {
+        RuntimeConfigRepository.ensureDefaults(EtaApp.serviceInstance)
+    }
+
+    val pickerState = remember(providers, primaryProviderId, primaryModelId) {
+        AgentModelPickerProjector.project(providers, primaryProviderId, primaryModelId)
+    }
+    val resolvedCustom = remember(providers, titleSettings.modelId) {
+        titleSettings.modelId?.takeIf { it.isNotBlank() }?.let { id ->
+            providers.enabledModel(id)
+        }
+    }
+    val primaryModelName = pickerState.selectedModel?.displayName
+    val followTitle = stringResource(R.string.conversation_title_settings_follow_conversation)
+    val followSubtitle = primaryModelName?.let {
+        stringResource(R.string.conversation_title_settings_follow_conversation_with_name, it)
+    } ?: stringResource(R.string.conversation_title_settings_follow_conversation_hint)
+    val modelSummary = when {
+        resolvedCustom != null -> "${resolvedCustom.provider.name} / ${resolvedCustom.model.displayName}"
+        !primaryModelName.isNullOrBlank() ->
+            stringResource(R.string.conversation_title_settings_follow_conversation_with_name, primaryModelName)
+        else -> followTitle
+    }
+
+    val effectiveCapabilities = remember(providers, resolvedCustom, primaryModelId) {
+        val target = resolvedCustom ?: providers.enabledModel(primaryModelId)
+        target?.let { (provider, model) ->
+            RuntimeConfigRepository.reasoningCapabilities(provider, model)
+        }
+    }
+    val effortOptions = remember(effectiveCapabilities) {
+        val efforts = effectiveCapabilities?.selectableEfforts.orEmpty()
+        listOf<ReasoningEffort?>(null) + efforts
+    }
+    val autoMinimalLabel = stringResource(R.string.conversation_title_settings_reasoning_auto_minimal)
+    val providerDefaultLabel = stringResource(R.string.conversation_title_settings_reasoning_provider_default)
+    val effortLabels = remember(effortOptions, autoMinimalLabel, providerDefaultLabel) {
+        effortOptions.map { effort ->
+            when (effort) {
+                null -> autoMinimalLabel
+                ReasoningEffort.DEFAULT -> providerDefaultLabel
+                else -> effort.displayName
+            }
+        }
+    }
+    val selectedEffortIndex = remember(effortOptions, titleSettings.reasoningEffort) {
+        val current = titleSettings.resolvedReasoningEffort
+        effortOptions.indexOf(current).takeIf { it >= 0 } ?: 0
+    }
+
+    var showModelSheet by remember { mutableStateOf(false) }
+
+    val onToggleEnabled: (Boolean) -> Unit = { checked ->
+        scope.launch {
+            RuntimeConfigRepository.setConversationTitleSettings(
+                titleSettings.copy(enabled = checked),
+            )
+        }
+    }
+    val onSelectModel: (String?) -> Unit = { modelId ->
+        showModelSheet = false
+        val nextTarget = modelId?.let { providers.enabledModel(it) } ?: providers.enabledModel(primaryModelId)
+        val nextCapabilities = nextTarget?.let { (provider, model) ->
+            RuntimeConfigRepository.reasoningCapabilities(provider, model)
+        }
+        val currentEffort = titleSettings.resolvedReasoningEffort
+        val keepEffort = currentEffort != null &&
+            nextCapabilities?.selectableEfforts?.contains(currentEffort) == true
+        scope.launch {
+            RuntimeConfigRepository.setConversationTitleSettings(
+                titleSettings.copy(
+                    modelId = modelId,
+                    reasoningEffort = if (keepEffort) currentEffort.wireValue else null,
+                ),
+            )
+        }
+    }
+    val onEffortChange: (Int) -> Unit = { index ->
+        val chosen = effortOptions.getOrNull(index)
+        scope.launch {
+            RuntimeConfigRepository.setConversationTitleSettings(
+                titleSettings.copy(reasoningEffort = chosen?.wireValue),
+            )
+        }
+    }
+
+    val pageTitle = stringResource(R.string.conversation_title_settings_title)
+    val groupTitle = stringResource(R.string.conversation_title_settings_group)
+    val enabledTitle = stringResource(R.string.conversation_title_settings_enabled)
+    val modelTitle = stringResource(R.string.conversation_title_settings_model)
+    val effortTitle = stringResource(R.string.conversation_title_settings_reasoning_effort)
+    val unsupportedSummary = stringResource(R.string.conversation_title_settings_reasoning_unsupported)
+    val noteText = stringResource(R.string.conversation_title_settings_note)
+
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            CouiScaffoldPage(
+                title = pageTitle,
+                onBack = onBack,
+                overlay = {
+                    CouiSheetPanel(
+                        visible = showModelSheet,
+                        title = modelTitle,
+                        onDismissRequest = { showModelSheet = false },
+                        // 正文自带 LazyColumn，滚动与边缘效果交给它自己。
+                        scrollableContent = false,
+                    ) {
+                        OptionalModelPickerContent(
+                            pickerState = pickerState,
+                            selectedSecondaryModelId = resolvedCustom?.model?.id,
+                            followTitle = followTitle,
+                            followSubtitle = followSubtitle,
+                            onSelectModel = onSelectModel,
+                        )
+                    }
+                },
+            ) {
+                Group(title = groupTitle) {
+                    CouiSwitchPreference(
+                        title = enabledTitle,
+                        checked = titleSettings.enabled,
+                        onCheckedChange = onToggleEnabled,
+                    )
+                    Divider()
+                    CouiPreference(
+                        title = modelTitle,
+                        summary = modelSummary,
+                        enabled = titleSettings.enabled,
+                        onClick = { showModelSheet = true },
+                    )
+                    Divider()
+                    if (effortOptions.size > 1) {
+                        CouiDropdownPreference(
+                            title = effortTitle,
+                            items = effortLabels,
+                            selectedIndex = selectedEffortIndex,
+                            enabled = titleSettings.enabled,
+                            onSelectedIndexChange = onEffortChange,
+                            // 「自动（优先关闭或最低）」这类值比默认的 162dp 宽，两行会占掉半行高度；
+                            // 这一排左边留白很多，放宽到 220dp 并锁成单行，长值才走省略号。
+                            valueMaxLines = 1,
+                            valueMaxWidth = 240.dp,
+                        )
+                    } else {
+                        CouiPreference(
+                            title = effortTitle,
+                            summary = unsupportedSummary,
+                            enabled = false,
+                            showChevron = false,
+                        )
+                    }
+                }
+                Footer(text = noteText)
+                CouiPageBottomSpacer()
+            }
+        }
+
+        AppearanceUiStyle.MIUIX -> {
+            ScaffoldPage(
+                title = pageTitle,
+                onBack = onBack,
+                overlay = {
+                    GlassBottomSheet(
+                        show = showModelSheet,
+                        backdrop = currentGlassOverlayBackdrop(),
+                        progressiveBlur = false,
+                        title = modelTitle,
+                        onDismissRequest = { showModelSheet = false },
+                        insideMargin = DpSize(0.dp, 0.dp),
+                    ) { _ ->
+                        OptionalModelPickerContent(
+                            pickerState = pickerState,
+                            selectedSecondaryModelId = resolvedCustom?.model?.id,
+                            followTitle = followTitle,
+                            followSubtitle = followSubtitle,
+                            onSelectModel = onSelectModel,
+                        )
+                    }
+                },
+            ) {
+                item(key = "title_settings_group") {
+                    SmallTitle(groupTitle)
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
+                    ) {
+                        SwitchPreference(
+                            title = enabledTitle,
+                            checked = titleSettings.enabled,
+                            onCheckedChange = onToggleEnabled,
+                        )
+                        ArrowPreference(
+                            title = modelTitle,
+                            summary = modelSummary,
+                            enabled = titleSettings.enabled,
+                            onClick = { showModelSheet = true },
+                        )
+                        if (effortOptions.size > 1) {
+                            GlassDropdownPreference(
+                                title = effortTitle,
+                                items = effortLabels,
+                                selectedIndex = selectedEffortIndex,
+                                backdrop = currentGlassOverlayBackdrop(),
+                                enabled = titleSettings.enabled,
+                                onSelectedIndexChange = onEffortChange,
+                            )
+                        } else {
+                            BasicComponent(
+                                title = effortTitle,
+                                summary = unsupportedSummary,
+                                enabled = false,
+                            )
+                        }
+                    }
+                    FooterHint(text = noteText)
+                }
+            }
+        }
+    }
+}
